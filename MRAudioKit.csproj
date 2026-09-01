@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>MRAudioKit</AssemblyName>
+    <RootNamespace>MRAudioKit</RootNamespace>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- EXPLICIT. Without it the SDK self-contains the publish and fails NETSDK1150. -->
+    <SelfContained>false</SelfContained>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- CUE4Parse straight from NuGet: no path into any other checkout, so this
+         builds anywhere with `dotnet build`, and upstream fixes arrive by bumping
+         one version number. -->
+    <PackageReference Include="CUE4Parse" Version="1.2.2.202609" />
+  </ItemGroup>
+
+</Project>
