@@ -75,10 +75,28 @@ public static class TestBankBuilder
     /// the folder go, so a bank with more entries than you have clips either restarts
     /// per bank or runs out.
     /// </param>
+    /// <param name="only">
+    /// When given, only these media ids are numbered and everything else keeps its
+    /// vanilla audio. That is what makes "test just these sounds" work: the rest of
+    /// the character still sounds normal, so the test is usable in a real match.
+    /// </param>
+    /// <param name="muted">
+    /// Silenced instead of numbered. When several sounds fire together only the
+    /// loudest is intelligible, so muting the one you identified is how the others
+    /// become audible on the next run.
+    /// </param>
+    /// <param name="keepNumbers">
+    /// Numbers already assigned in an earlier build. Reusing them is what makes
+    /// repeated runs usable: if muting one sound renumbered the rest, every note the
+    /// author had already written would point at the wrong sound.
+    /// </param>
     public static Result Build(GameSession session, IEnumerable<string> bankPaths,
                                NumberedWems wems, string outRoot, int startAt,
                                bool silenceOverflow, SkinSounds context,
-                               bool restartPerBank = false, int skipEntries = 0)
+                               bool restartPerBank = false, int skipEntries = 0,
+                               IReadOnlySet<uint> only = null,
+                               IReadOnlySet<uint> muted = null,
+                               IReadOnlyDictionary<uint, int> keepNumbers = null)
     {
         var log = new StringBuilder();
         var legend = new List<Row>();
@@ -92,13 +110,24 @@ public static class TestBankBuilder
         var next = startAt;
         int banks = 0, numbered = 0, silenced = 0, unassigned = 0;
 
+        // Numbers already handed out are off the table, so a rebuild cannot give two
+        // sounds the same number.
+        var taken = keepNumbers is null ? [] : new HashSet<int>(keepNumbers.Values);
+        int NextFree()
+        {
+            while (taken.Contains(next)) next++;
+            return next;
+        }
+
         foreach (var bankPath in bankPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
             if (!session.Provider.Files.TryGetValue(bankPath, out var file)) continue;
             byte[] orig;
             try { orig = file.Read(); } catch { continue; }
 
-            var didx = BnkBuilder.ReadSections(orig).FirstOrDefault(s => s.Tag == "DIDX");
+            var sections = BnkBuilder.ReadSections(orig);
+            var didx = sections.FirstOrDefault(s => s.Tag == "DIDX");
+            var data = sections.FirstOrDefault(s => s.Tag == "DATA");
             if (didx is null) { log.AppendLine($"{Path.GetFileName(bankPath)}: no embedded media, skipped."); continue; }
 
             var bankName = Path.GetFileName(bankPath);
@@ -111,6 +140,8 @@ public static class TestBankBuilder
             var entryIndex = -1;
             foreach (var entry in BnkBuilder.ReadDidx(didx.Body))
             {
+                // Out of scope: left exactly as shipped, and not counted as a miss.
+                if (only is not null && !only.Contains(entry.Id)) continue;
                 // A second pass over a bank bigger than the clip set: skip what the
                 // first pass already numbered, so 1001 clips can cover 1056 entries.
                 entryIndex++;
@@ -120,22 +151,50 @@ public static class TestBankBuilder
                         payload[entry.Id] = Load(wems.SilentPath);
                     continue;
                 }
-                if (wems.ByNumber.TryGetValue(next, out var path))
+                var rowsFor = context?.Rows
+                    .Where(r => r.MediaId == entry.Id &&
+                                r.Bank.Equals(stem, StringComparison.OrdinalIgnoreCase))
+                    .ToList() ?? [];
+
+                // Muted: silence shaped like the original, but still listed in the
+                // legend under its number so "what was 33 again?" stays answerable.
+                if (muted is not null && muted.Contains(entry.Id))
+                {
+                    var src = data is null
+                        ? null : data.Body.AsSpan((int)entry.Offset, (int)entry.Size).ToArray();
+                    var quiet = src is null ? null : SilentBankBuilder.Like(src);
+                    if (quiet is not null)
+                    {
+                        payload[entry.Id] = quiet;
+                        silenced++;
+                        if (keepNumbers is not null && keepNumbers.TryGetValue(entry.Id, out var had))
+                            legend.Add(new Row(had, entry.Id, bankName,
+                                string.Join(" | ", rowsFor.Select(r => r.Display).Distinct()),
+                                rowsFor.FirstOrDefault()?.Category ?? "",
+                                rowsFor.FirstOrDefault()?.Subtitle ?? "",
+                                "(muted) " + (rowsFor.FirstOrDefault()?.Notes ?? ""),
+                                rowsFor.FirstOrDefault()?.Seconds));
+                        continue;
+                    }
+                }
+
+                // An earlier build already named this one; keep that number.
+                var assigned = keepNumbers is not null && keepNumbers.TryGetValue(entry.Id, out var prior)
+                    ? prior : NextFree();
+
+                if (wems.ByNumber.TryGetValue(assigned, out var path))
                 {
                     payload[entry.Id] = Load(path);
-                    var rows = context?.Rows
-                        .Where(r => r.MediaId == entry.Id &&
-                                    r.Bank.Equals(stem, StringComparison.OrdinalIgnoreCase))
-                        .ToList() ?? [];
                     legend.Add(new Row(
-                        next, entry.Id, bankName,
-                        string.Join(" | ", rows.Select(r => r.Display).Distinct()),
-                        rows.FirstOrDefault()?.Category ?? "",
-                        rows.FirstOrDefault()?.Subtitle ?? "",
-                        rows.FirstOrDefault()?.Notes ?? "",
-                        rows.FirstOrDefault()?.Seconds));
+                        assigned, entry.Id, bankName,
+                        string.Join(" | ", rowsFor.Select(r => r.Display).Distinct()),
+                        rowsFor.FirstOrDefault()?.Category ?? "",
+                        rowsFor.FirstOrDefault()?.Subtitle ?? "",
+                        rowsFor.FirstOrDefault()?.Notes ?? "",
+                        rowsFor.FirstOrDefault()?.Seconds));
                     numbered++;
-                    next++;
+                    taken.Add(assigned);
+                    if (assigned == next) next++;
                 }
                 else if (silenceOverflow && wems.SilentPath is not null)
                 {
@@ -173,7 +232,7 @@ public static class TestBankBuilder
         var header = new StringBuilder();
         header.AppendLine($"Numbered test build — {numbered} sound(s) numbered from {startAt}.");
         header.AppendLine("Trigger a sound in game, hear the number, look it up in test-bank-legend.csv.");
-        if (silenced > 0) header.AppendLine($"{silenced} entries past the end of the numbered clips were silenced.");
+        if (silenced > 0) header.AppendLine($"{silenced} entries were silenced (muted, or past the last clip).");
         if (unassigned > 0) header.AppendLine($"{unassigned} entries kept their ORIGINAL audio (ran out of numbers).");
         header.AppendLine();
         header.Append(log);

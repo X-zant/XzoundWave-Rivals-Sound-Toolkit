@@ -5,15 +5,77 @@
         Background="{StaticResource Bg}">
     <Grid Margin="8">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>   <!-- actions, one tab at a time -->
+            <RowDefinition Height="Auto"/>   <!-- project, filter, counts: always on -->
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- settings -->
-        <Expander x:Name="SettingsPanel" Grid.Row="0" IsExpanded="True" Foreground="{StaticResource Fg}"
-                  Header="Setup  (nothing here ships with the tool — supply your own)">
+        <!-- One row of chrome instead of four. You are testing, or building, or
+             comparing mods; the screen shows that job's tools and hides the rest. -->
+        <TabControl x:Name="Tabs" Grid.Row="0" Background="Transparent"
+                    BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
+
+          <TabItem Header="Browse">
+            <StackPanel Orientation="Horizontal" Margin="4,8,4,8">
+              <Button x:Name="BtnPlay" Content="▶  Play" Click="BtnPlay_Click"/>
+              <Button x:Name="BtnAuto" Content="▶▶  Autoplay" Click="BtnAuto_Click"
+                      ToolTip="Play the selection in order, or everything listed from the current row. Useful for scanning a character's lines without clicking each one."/>
+              <Button x:Name="BtnStop" Content="■  Stop" Click="BtnStop_Click"/>
+              <Button x:Name="BtnDur" Content="Measure durations" Click="BtnDur_Click"/>
+              <Border Width="1" Margin="8,2" Background="{StaticResource Line}"/>
+              <CheckBox x:Name="CbUnnamed" Content="show unnamed" Margin="4,0,0,0"
+                        Click="CbUnnamed_Click"
+                        ToolTip="The same switch as Settings › Rows › unnamed events."/>
+              <CheckBox x:Name="CbTranslate" Content="translate categories" Margin="12,0,0,0"
+                        Click="CbTranslate_Click"
+                        ToolTip="The Category column is authored in Chinese and the game ships no translation for it. Hero and ability names come from the game's own English text; the rest is a built-in glossary."/>
+            </StackPanel>
+          </TabItem>
+
+          <TabItem Header="Test">
+            <StackPanel Orientation="Horizontal" Margin="4,8,4,8">
+              <Button x:Name="BtnTestBank" Content="Numbered test bank…" Click="BtnTestBank_Click"
+                      ToolTip="Replace every sound in the selected bank(s) with a clip that speaks a number, and write a legend so you can identify what you hear in game."/>
+              <Button Content="Test the selection…" Click="MiTestSelection_Click"
+                      ToolTip="Number only the selected sounds. Everything else keeps its normal audio."/>
+              <Button Content="Test only the selection…" Click="MiTestOnlySelection_Click"
+                      ToolTip="Number the selected sounds and silence every other sound in the same bank(s)."/>
+              <Button Content="Mute / unmute selection" Click="MiToggleMute_Click"
+                      ToolTip="Silence these in the next test build, so quieter sounds firing at the same time can be heard. Their numbers are kept."/>
+              <Button Content="Silent bank…" Click="MiSilentSelection_Click"/>
+              <CheckBox x:Name="CbPerBank" Content="number per bank" Margin="12,0,0,0" IsChecked="True"
+                        ToolTip="Restart the numbering at the start value for each bank, instead of continuing the count across all of them."/>
+            </StackPanel>
+          </TabItem>
+
+          <TabItem Header="Build">
+            <StackPanel Orientation="Horizontal" Margin="4,8,4,8">
+              <Button x:Name="BtnBuild" Content="Build modded .bnk" Click="BtnBuild_Click"
+                      FontWeight="Bold" Foreground="{StaticResource Accent}"/>
+              <Button x:Name="BtnReplace" Content="Set replacement…" Click="BtnReplace_Click"/>
+              <Button x:Name="BtnClear" Content="Clear" Click="BtnClear_Click"/>
+              <Border Width="1" Margin="8,2" Background="{StaticResource Line}"/>
+              <Button Content="Set volume…" Click="MiSetVolume_Click"/>
+              <Button Content="Change all volumes…" Click="MiSetAllVolume_Click"/>
+              <Button Content="Build at these volumes…" Click="MiBuildVolume_Click"/>
+              <CheckBox x:Name="CbPrefetch" Content="prefetch mode" Margin="12,0,0,0"
+                        ToolTip="OFF (normal): the whole clip goes into the .bnk and nothing ships under Media/.&#10;ON: the bank keeps each sound's vanilla opening fragment and the full clip ships as a loose Media/ file."/>
+            </StackPanel>
+          </TabItem>
+
+          <TabItem Header="Mods">
+            <StackPanel Orientation="Horizontal" Margin="4,8,4,8">
+              <Button x:Name="BtnOpenBank" Content="Open bank / pak…" Click="BtnOpenBank_Click"
+                      ToolTip="Look inside a .bnk someone else built, or pick a bank out of a mod .pak."/>
+              <Button x:Name="BtnCloseBank" Content="Close opened" Click="BtnCloseBank_Click" IsEnabled="False"
+                      ToolTip="Go back to the game's own banks."/>
+              <Button x:Name="BtnMerge" Content="Merge mods…" Click="BtnMerge_Click"
+                      ToolTip="Combine two mods. Each is diffed against the shipped bank, so only what its author replaced is carried over; the first one you pick wins any sound both changed."/>
+            </StackPanel>
+          </TabItem>
+
+          <TabItem x:Name="TabSetup" Header="Setup">
             <Grid Margin="4,8,4,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -30,57 +92,90 @@
                 </Grid.RowDefinitions>
 
                 <Label Grid.Row="0" Grid.Column="0" Content="Paks folder"/>
-                <TextBox x:Name="TbPaks" Grid.Row="0" Grid.Column="1" Margin="0,0,8,4"/>
+                <DockPanel Grid.Row="0" Grid.Column="1" Margin="0,0,8,4">
+                    <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0"
+                            Click="BrowsePaks_Click"/>
+                    <TextBox x:Name="TbPaks"/>
+                </DockPanel>
                 <Label Grid.Row="0" Grid.Column="3" Content="AES key"/>
                 <TextBox x:Name="TbAes" Grid.Row="0" Grid.Column="4" Margin="0,0,0,4"/>
 
                 <Label Grid.Row="1" Grid.Column="0" Content="usmap"/>
-                <TextBox x:Name="TbUsmap" Grid.Row="1" Grid.Column="1" Margin="0,0,8,4"/>
+                <DockPanel Grid.Row="1" Grid.Column="1" Margin="0,0,8,4">
+                    <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0"
+                            Click="BrowseUsmap_Click"/>
+                    <TextBox x:Name="TbUsmap"/>
+                </DockPanel>
                 <Label Grid.Row="1" Grid.Column="3" Content="vgmstream-cli.exe"/>
-                <TextBox x:Name="TbVgm" Grid.Row="1" Grid.Column="4" Margin="0,0,0,4"/>
+                <DockPanel Grid.Row="1" Grid.Column="4" Margin="0,0,0,4">
+                    <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0"
+                            Click="BrowseVgm_Click"/>
+                    <TextBox x:Name="TbVgm"/>
+                </DockPanel>
 
-                <Label Grid.Row="2" Grid.Column="0" Content="WwiseConsole.exe"/>
-                <TextBox x:Name="TbWwiseConsole" Grid.Row="2" Grid.Column="1" Margin="0,0,8,4"/>
-                <Label Grid.Row="2" Grid.Column="3" Content="Wwise .wproj"/>
-                <TextBox x:Name="TbWwiseProj" Grid.Row="2" Grid.Column="4" Margin="0,0,0,4"/>
+                <Label Grid.Row="2" Grid.Column="0" Content="Translate"/>
+                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,0,8,4">
+                    <ComboBox x:Name="CbTransProvider" Width="140" SelectionChanged="CbTransProvider_Changed"/>
+                    <TextBlock x:Name="TransHint" Margin="10,0,0,0" VerticalAlignment="Center"
+                               Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+                    <Button x:Name="BtnDict" Content="Offline dictionary…" Margin="10,0,0,0"
+                            Click="BtnDict_Click"
+                            ToolTip="An offline Chinese-English dictionary for labels nothing else covers. About 4 MB, downloaded once, kept in your app data."/>
+                </StackPanel>
+                <Label Grid.Row="2" Grid.Column="3" Content="Key / server / model"/>
+                <StackPanel Grid.Row="2" Grid.Column="4" Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBox x:Name="TbTransKey" Width="150" ToolTip="DeepL API key. Not needed for a local model."/>
+                    <TextBox x:Name="TbTransUrl" Width="170" Margin="6,0,0,0"
+                             ToolTip="Local server, e.g. http://localhost:5000 for LibreTranslate or http://localhost:11434 for Ollama."/>
+                    <TextBox x:Name="TbTransModel" Width="110" Margin="6,0,0,0"
+                             ToolTip="Ollama model name, e.g. qwen2.5:7b"/>
+                </StackPanel>
 
                 <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="4"
                             Orientation="Horizontal" Margin="0,6,0,0">
                     <Button x:Name="BtnLoad" Content="Load game" Click="BtnLoad_Click"/>
                     <Label Content="Language" VerticalAlignment="Center"/>
                     <ComboBox x:Name="CbLang" Width="140" Margin="0,0,12,0"/>
-                    <TextBlock Text="AES key and usmap are per-patch and user-supplied. Wwise is optional — only needed to generate Vorbis test clips."
+                    <TextBlock Text="AES key and usmap are per-patch and user-supplied. Vorbis is encoded by XzoundCore — nothing else to install."
                                Foreground="{StaticResource Muted}" VerticalAlignment="Center"/>
                 </StackPanel>
             </Grid>
-        </Expander>
+          </TabItem>
+        </TabControl>
 
-        <!-- toolbar -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,8">
-            <Button x:Name="BtnPlay" Content="▶  Play" Click="BtnPlay_Click"/>
-            <Button x:Name="BtnStop" Content="■  Stop" Click="BtnStop_Click"/>
-            <Button x:Name="BtnDur" Content="Measure durations" Click="BtnDur_Click"/>
-            <Button x:Name="BtnWav" Content="Export WAV" Click="BtnWav_Click"/>
-            <Button x:Name="BtnWem" Content="Export WEM" Click="BtnWem_Click"/>
-            <Button x:Name="BtnCell" Content="Copy sheet cell" Click="BtnCell_Click"/>
-            <Button x:Name="BtnCsv" Content="Export CSV" Click="BtnCsv_Click"/>
-            <Separator Margin="8,0"/>
-            <Button x:Name="BtnReplace" Content="Set replacement…" Click="BtnReplace_Click"/>
-            <Button x:Name="BtnClear" Content="Clear" Click="BtnClear_Click"/>
-            <Button x:Name="BtnBuild" Content="Build modded .bnk" Click="BtnBuild_Click"
-                    FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-            <Button x:Name="BtnTestBank" Content="Numbered test bank…" Click="BtnTestBank_Click"
-                    ToolTip="Replace every sound in the selected bank(s) with a clip that speaks a number, and write a legend so you can identify what you hear in game."/>
-            <Separator Margin="8,0"/>
-            <Label Content="Filter" VerticalAlignment="Center"/>
-            <TextBox x:Name="TbFilter" Width="260" TextChanged="TbFilter_TextChanged"/>
-            <CheckBox x:Name="CbUnnamed" Content="show unnamed" Margin="12,0,0,0"
-                      Click="TbFilter_TextChanged"/>
-            <CheckBox x:Name="CbPerBank" Content="number per bank" Margin="12,0,0,0" IsChecked="True"
-                      ToolTip="Restart the numbering at the start value for each bank, instead of continuing the count across all of them."/>
-            <CheckBox x:Name="CbPrefetch" Content="prefetch mode" Margin="12,0,0,0"
-                      ToolTip="OFF (normal): the whole clip goes into the .bnk and nothing ships under Media/.&#10;ON: the bank keeps each sound's vanilla opening fragment and the full clip ships as a loose Media/ file."/>
-        </StackPanel>
+        <!-- Always on, whatever tab is open: which project, what is being shown,
+             and how much of it is in each state. -->
+        <DockPanel Grid.Row="1" Margin="0,6,0,6">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+            <Label Content="Filter"/>
+            <TextBox x:Name="TbFilter" Width="200" TextChanged="TbFilter_TextChanged"/>
+            <Button x:Name="BtnColumns" Content="Columns ▾" Margin="6,0,0,0" Click="BtnColumns_Click"
+                    ToolTip="Show or hide grid columns. Your choice is remembered."/>
+            <Button x:Name="BtnSettings" Content="Settings…" Margin="6,0,0,0" Click="BtnSettings_Click"
+                    ToolTip="Which rows and columns the list shows. Remembered between sessions."/>
+            <StackPanel x:Name="StatsPanel" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,2,0">
+              <TextBlock x:Name="StatTotal"   Foreground="{StaticResource Muted}"/>
+              <TextBlock x:Name="StatDefault" Foreground="{StaticResource Muted}" Margin="10,0,0,0"/>
+              <TextBlock x:Name="StatStaged"  Foreground="{StaticResource TagGreen}"  Margin="10,0,0,0"/>
+              <TextBlock x:Name="StatModded"  Foreground="{StaticResource TagPurple}" Margin="10,0,0,0"/>
+              <TextBlock x:Name="StatMuted"   Foreground="{StaticResource TagRed}"    Margin="10,0,0,0"/>
+              <TextBlock x:Name="StatVolume"  Foreground="{StaticResource Accent}"   Margin="10,0,0,0"/>
+            </StackPanel>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Project" Foreground="{StaticResource Muted}" VerticalAlignment="Center"
+                       Margin="2,0,8,0"/>
+            <TextBlock x:Name="ProjectLabel" Text="Untitled" FontWeight="Bold"
+                       VerticalAlignment="Center" Margin="0,0,12,0" MinWidth="180"/>
+            <Button Content="New" Click="BtnProjectNew_Click"/>
+            <Button Content="Open…" Click="BtnProjectOpen_Click"/>
+            <Button Content="Save" Click="BtnProjectSave_Click"/>
+            <Button Content="Save as…" Click="BtnProjectSaveAs_Click"/>
+            <TextBlock x:Name="ProjectPathLabel" Foreground="{StaticResource Muted}"
+                       VerticalAlignment="Center" Margin="12,0,0,0"
+                       TextTrimming="CharacterEllipsis"/>
+          </StackPanel>
+        </DockPanel>
 
         <!-- body -->
         <Grid Grid.Row="2">
@@ -101,12 +196,114 @@
                           Background="{StaticResource Line}"/>
 
             <DataGrid x:Name="Grid_" Grid.Column="2" AutoGenerateColumns="False"
-                      SelectionMode="Single" CellEditEnding="Grid_CellEditEnding"
+                      SelectionMode="Extended" CellEditEnding="Grid_CellEditEnding"
                       Background="{StaticResource Bg2}" Foreground="{StaticResource Fg}"
-                      RowBackground="{StaticResource Bg2}" AlternatingRowBackground="#26282B"
+                      AlternationCount="2"
                       BorderBrush="{StaticResource Line}" GridLinesVisibility="Horizontal"
                       HorizontalGridLinesBrush="{StaticResource Line}"
-                      MouseDoubleClick="Grid_MouseDoubleClick">
+                      MouseDoubleClick="Grid_MouseDoubleClick"
+                      AllowDrop="True" DragOver="Grid_DragOver" Drop="Grid_Drop">
+                <DataGrid.RowStyle>
+                    <!-- State at a glance. Tints rather than solid colour, so the row
+                         still reads as a row and the selection highlight still wins.
+                         Order matters: the last matching trigger applies, so a muted
+                         row that also has a replacement staged shows as muted, which
+                         is the thing that will surprise you in game. -->
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="Background" Value="{StaticResource Bg2}"/>
+                        <Style.Triggers>
+                            <!-- Row striping lives here rather than on the DataGrid:
+                                 AlternatingRowBackground sets the row's Background as a
+                                 local value, which beats any style trigger, so the state
+                                 colours below would never appear. -->
+                            <Trigger Property="AlternationIndex" Value="1">
+                                <Setter Property="Background" Value="#26282B"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding ModTag}" Value="MODDED">
+                                <Setter Property="Background" Value="#3B2A5C"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding ModTag}" Value="NEW">
+                                <Setter Property="Background" Value="#4A3570"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Mod}" Value="REPLACED">
+                                <Setter Property="Background" Value="#204A2F"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Muted}" Value="True">
+                                <Setter Property="Background" Value="#5A2A33"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
+                <DataGrid.ContextMenu>
+                    <!-- The tag list is rebuilt when the menu opens, not when the Tag
+                         row is hovered: a MenuItem with no children has no submenu to
+                         open, so waiting for SubmenuOpened would mean it never ran. -->
+                    <ContextMenu Opened="Ctx_Opened">
+                        <MenuItem x:Name="MiTestSel" Click="MiTestSelection_Click"
+                                  Header="Create test bank from selection…"
+                                  ToolTip="Replace only the selected sounds with clips that speak a number. Everything else keeps its normal audio, so the test is usable in a real match."/>
+                        <MenuItem x:Name="MiSilentSel" Click="MiSilentSelection_Click"
+                                  Header="Create silent bank from selection…"
+                                  ToolTip="Replace only the selected sounds with silence of the same length and format."/>
+                        <MenuItem x:Name="MiTestOnly" Click="MiTestOnlySelection_Click"
+                                  Header="Create test bank from selection, muting everything else"
+                                  ToolTip="Number the selected sounds and silence every other sound in the same bank(s), so only what you picked can be heard."/>
+                        <MenuItem x:Name="MiMuteSel" Click="MiToggleMute_Click"
+                                  Header="Mute / unmute in test builds"
+                                  ToolTip="Silence these in the next test build, so quieter sounds firing at the same time can be heard. Their numbers are kept."/>
+                        <Separator/>
+                        <!-- Items built in code from the SoundTags vocabulary, so the
+                             menu and the stored codes can never drift apart. -->
+                        <MenuItem x:Name="MiTags" Header="Tag"
+                                  SubmenuOpened="MiTags_SubmenuOpened"
+                                  ToolTip="Mark what these sounds are for, using wording everyone shares.">
+                            <!-- Replaced on open. Present so the item has a submenu at
+                                 all before any handler has run. -->
+                            <MenuItem Header="select one or more sounds first" IsEnabled="False"/>
+                        </MenuItem>
+                        <MenuItem x:Name="MiClearTags" Click="MiClearTags_Click"
+                                  Header="Clear tags on selection"/>
+                        <Separator/>
+                        <MenuItem x:Name="MiReplaceMany" Click="MiReplaceMany_Click"
+                                  Header="Replace ALL selected with one file…"
+                                  ToolTip="Give every selected sound the same audio. Dragging a single file onto a selection does the same thing."/>
+                        <MenuItem x:Name="MiExtractMod" Click="MiExtractModded_Click"
+                                  Header="Extract only the modded wems…"
+                                  ToolTip="From an opened bank or pak: write out just the sounds it changed from the game's own."/>
+                        <MenuItem x:Name="MiReplaceSel" Click="MiReplaceSelection_Click"
+                                  Header="Replace with an audio file…"
+                                  ToolTip="Stage a wav, mp3, ogg, flac or m4a for this sound."/>
+                        <Separator/>
+                        <MenuItem x:Name="MiSetVol" Click="MiSetVolume_Click"
+                                  Header="Set volume…"
+                                  ToolTip="Multiplier for the selected sounds. Marked as hand-set, so a bulk change leaves them alone."/>
+                        <MenuItem x:Name="MiSetAllVol" Click="MiSetAllVolume_Click"
+                                  Header="Change all volumes…"
+                                  ToolTip="Multiplier for every sound except the ones set by hand."/>
+                        <MenuItem x:Name="MiClearVol" Click="MiClearVolume_Click"
+                                  Header="Clear volume on selection"/>
+                        <MenuItem x:Name="MiBuildVol" Click="MiBuildVolume_Click"
+                                  Header="Build bank at these volumes…"
+                                  ToolTip="Writes the banks with every level applied, into a folder named after the bulk level."/>
+                        <Separator/>
+                        <MenuItem x:Name="MiPlayFrom" Click="MiPlayFrom_Click"
+                                  Header="Autoplay from here"/>
+                        <MenuItem x:Name="MiExportWav" Click="BtnWav_Click"
+                                  Header="Export WAV…"/>
+                        <MenuItem x:Name="MiExportWem" Click="BtnWem_Click"
+                                  Header="Export WEM…"/>
+                        <Separator/>
+                        <MenuItem x:Name="MiCopyIds" Click="MiCopyIds_Click"
+                                  Header="Copy media id(s)"/>
+                        <MenuItem x:Name="MiCopyCell" Click="BtnCell_Click"
+                                  Header="Copy sheet cell(s)"/>
+                        <MenuItem x:Name="MiFetchTrans" Click="MiFetchTranslations_Click"
+                                  Header="Fetch missing category translations online…"
+                                  ToolTip="Sends only the untranslated Chinese label text, and caches the result."/>
+                        <MenuItem x:Name="MiCsv" Click="BtnCsv_Click"
+                                  Header="Export the list to CSV…"/>
+                    </ContextMenu>
+                </DataGrid.ContextMenu>
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Mod"      Binding="{Binding Mod}"      Width="70"  IsReadOnly="True"/>
                     <DataGridTextColumn Header="Bank"     Binding="{Binding Bank}"     Width="175" IsReadOnly="True"/>
@@ -114,9 +311,14 @@
                     <DataGridTextColumn Header="Media ID" Binding="{Binding MediaId}"  Width="95"  IsReadOnly="True"/>
                     <DataGridTextColumn Header="Len"      Binding="{Binding Length}"   Width="55"  IsReadOnly="True"/>
                     <DataGridTextColumn Header="Codec"    Binding="{Binding Codec}"    Width="75"  IsReadOnly="True"/>
-                    <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="95" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Category" Binding="{Binding CategoryShown}" Width="150" IsReadOnly="True"/>
                     <DataGridTextColumn Header="Subtitle / line" Binding="{Binding Subtitle}" Width="*" IsReadOnly="True"/>
-                    <!-- the only editable columns: free text, saved to notes.json -->
+                    <DataGridTextColumn Header="Test #" Binding="{Binding TestLabel}" Width="60" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Vol"    Binding="{Binding VolumeLabel}" Width="56" IsReadOnly="True"/>
+                    <!-- Read-only on purpose: tags come from the right-click menu so
+                         that nobody can invent their own spelling of [ULT]. -->
+                    <DataGridTextColumn Header="Tags"   Binding="{Binding TagLabel}" Width="120" IsReadOnly="True"/>
+                    <!-- the only editable columns; everything here is saved in the project -->
                     <DataGridTextColumn Header="Notes"       Binding="{Binding Notes, UpdateSourceTrigger=PropertyChanged}"
                                         Width="200"/>
                     <DataGridTextColumn Header="Extra notes" Binding="{Binding ExtraNotes, UpdateSourceTrigger=PropertyChanged}"
@@ -140,11 +342,22 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Margin="10,8,10,6">
-                        <TextBlock Text="Custom .wem files" FontWeight="Bold"/>
-                        <TextBlock Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"
-                                   Text="Drag files or folders here — batches welcome."/>
-                        <TextBlock Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"
-                                   Text="Name them  {MediaID}-{your note}.wem  — everything after the first hyphen is yours to use as a reminder and is ignored when assigning."/>
+                        <!-- Collapsible: the naming rule matters enormously the first
+                             time and never again, so it should not keep taking room. -->
+                        <Expander x:Name="DropHelp" IsExpanded="True" Header="Custom audio"
+                                  Foreground="{StaticResource Fg}" FontWeight="Bold"
+                                  Expanded="DropHelp_Toggled" Collapsed="DropHelp_Toggled">
+                          <StackPanel Margin="0,4,0,0">
+                            <TextBlock Foreground="{StaticResource TagGreen}" FontWeight="Bold"
+                                       TextWrapping="Wrap"
+                                       Text="Drag files or folders here — batches welcome."/>
+                            <TextBlock Foreground="{StaticResource TagGreen}" FontWeight="Bold"
+                                       TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Text="Name them  {MediaID}-{your note}  — everything after the first hyphen is yours to use as a reminder and is ignored when assigning."/>
+                            <TextBlock Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Text="wav, mp3, ogg, flac, m4a and wem all work. Anything that is not already a wem is encoded to Vorbis on the way in."/>
+                          </StackPanel>
+                        </Expander>
                     </StackPanel>
 
                     <DataGrid x:Name="PendingGrid" Grid.Row="1" Margin="6,0,6,0"

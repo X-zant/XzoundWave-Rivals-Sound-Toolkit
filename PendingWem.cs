@@ -1,6 +1,8 @@
 using System.IO;
 using System.Text.RegularExpressions;
 
+using Xzound;
+
 namespace MRAudioKit;
 
 /// <summary>
@@ -20,6 +22,17 @@ public sealed class PendingWem
     public long Bytes { get; init; }
     public string Codec { get; init; }
     public ushort FormatTag { get; init; }
+
+    /// <summary>
+    /// The wem bytes, when this file was converted from mp3/wav/ogg/etc rather than
+    /// dropped in as a wem. Null means the file on disk is already the payload, so
+    /// the build reads it straight from <see cref="FullPath"/> and nothing is held
+    /// in memory for the common case of a folder full of wems.
+    /// </summary>
+    public byte[] Payload { get; init; }
+
+    /// <summary>Source extension when converted (e.g. "mp3"), empty when not.</summary>
+    public string Converted { get; init; } = "";
     /// <summary>Which bank this lands in — or that it ships as a loose streamed wem.</summary>
     public string Status { get; set; } = "";
 
@@ -47,6 +60,50 @@ public sealed class PendingWem
     private static readonly Regex Leading = new(@"^\s*(\d{1,10})", RegexOptions.Compiled);
 
     /// <summary>Null when the filename does not begin with a media id.</summary>
+    /// <summary>
+    /// Convert one file to wem bytes, whatever it started as. Split out of
+    /// <see cref="FromFile"/> so a single file can be staged against MANY sounds
+    /// without being decoded and re-encoded once per sound -- fifty ids would
+    /// otherwise mean fifty identical encodes.
+    /// </summary>
+    public static byte[] ToWemBytes(string path, out string reason)
+    {
+        reason = null;
+        try
+        {
+            if (AudioDecode.IsWem(path)) return File.ReadAllBytes(path);
+            return XzoundCore.Encode(AudioDecode.ToPcm(path));
+        }
+        catch (Exception ex)
+        {
+            reason = $"{Path.GetFileName(path)} — {ex.Message}";
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// One file assigned to one media id, with the id given rather than read from the
+    /// filename. Used when the author picks the targets in the grid instead of naming
+    /// them in the file.
+    /// </summary>
+    public static PendingWem ForMedia(uint mediaId, string path, byte[] bytes, string note)
+    {
+        var info = BnkBuilder.Inspect(bytes);
+        return new PendingWem
+        {
+            MediaId = mediaId,
+            Note = note ?? "",
+            FileName = Path.GetFileName(path),
+            FullPath = path,
+            Bytes = bytes.Length,
+            Codec = info.Codec,
+            FormatTag = info.FormatTag,
+            Payload = bytes,
+            Converted = AudioDecode.IsWem(path)
+                ? "" : Path.GetExtension(path).TrimStart('.').ToLowerInvariant(),
+        };
+    }
+
     public static PendingWem FromFile(string path, out string reason)
     {
         reason = null;
@@ -59,9 +116,29 @@ public sealed class PendingWem
             return null;
         }
 
-        byte[] data;
-        try { data = File.ReadAllBytes(path); }
-        catch (Exception ex) { reason = $"{Path.GetFileName(path)} — {ex.Message}"; return null; }
+        // A wem is used as-is. Anything else we can decode is converted here, so the
+        // author never has to know what a wem is to replace a sound with an mp3.
+        byte[] data, payload = null;
+        var converted = "";
+        if (AudioDecode.IsWem(path))
+        {
+            try { data = File.ReadAllBytes(path); }
+            catch (Exception ex) { reason = $"{Path.GetFileName(path)} — {ex.Message}"; return null; }
+        }
+        else
+        {
+            try
+            {
+                var pcm = AudioDecode.ToPcm(path);
+                data = payload = XzoundCore.Encode(pcm);
+                converted = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+            }
+            catch (Exception ex)
+            {
+                reason = $"{Path.GetFileName(path)} — {ex.Message}";
+                return null;
+            }
+        }
 
         var info = BnkBuilder.Inspect(data);
         if (!info.IsRiff)
@@ -85,6 +162,8 @@ public sealed class PendingWem
             Bytes = data.Length,
             Codec = info.Codec,
             FormatTag = info.FormatTag,
+            Payload = payload,
+            Converted = converted,
         };
     }
 }

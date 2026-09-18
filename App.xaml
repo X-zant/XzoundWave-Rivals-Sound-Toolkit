@@ -3,39 +3,295 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-        <SolidColorBrush x:Key="Bg"     Color="#1E1F22"/>
-        <SolidColorBrush x:Key="Bg2"    Color="#2B2D30"/>
-        <SolidColorBrush x:Key="Line"   Color="#3C3F41"/>
-        <SolidColorBrush x:Key="Fg"     Color="#DFE1E5"/>
-        <SolidColorBrush x:Key="Muted"  Color="#8B8F96"/>
-        <SolidColorBrush x:Key="Accent" Color="#4C8DF6"/>
+        <!-- One dark palette. Every control that draws its own surface has to be
+             styled explicitly: WPF's defaults are light, and a control that inherits
+             the window's light Foreground onto its own white surface is the
+             grey-on-white that made menus, tooltips and dropdowns unreadable. -->
+        <SolidColorBrush x:Key="Bg"       Color="#1E1F22"/>
+        <SolidColorBrush x:Key="Bg2"      Color="#2B2D30"/>
+        <SolidColorBrush x:Key="Bg3"      Color="#35383D"/>
+        <SolidColorBrush x:Key="Line"     Color="#3C3F41"/>
+        <SolidColorBrush x:Key="Fg"       Color="#DFE1E5"/>
+        <SolidColorBrush x:Key="Muted"    Color="#9BA1A9"/>
+        <SolidColorBrush x:Key="Accent"   Color="#6BA5F8"/>
+        <SolidColorBrush x:Key="Selected" Color="#2F4C7A"/>
+        <SolidColorBrush x:Key="Disabled" Color="#6A6E75"/>
+
+        <!-- Text versions of the row tints. The row colours are dark enough to sit
+             under text; as text themselves they have to be lifted to stay legible. -->
+        <SolidColorBrush x:Key="TagGreen"  Color="#6FD68F"/>
+        <SolidColorBrush x:Key="TagRed"    Color="#E88C97"/>
+        <SolidColorBrush x:Key="TagPurple" Color="#B79BE8"/>
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource Fg}"/>
         </Style>
+
         <Style TargetType="Label">
             <Setter Property="Foreground" Value="{StaticResource Muted}"/>
             <Setter Property="Padding" Value="0,3,6,0"/>
         </Style>
+
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="{StaticResource Bg2}"/>
             <Setter Property="Foreground" Value="{StaticResource Fg}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource Fg}"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource Selected}"/>
             <Setter Property="Padding" Value="4,3"/>
         </Style>
+
         <Style TargetType="Button">
             <Setter Property="Background" Value="{StaticResource Bg2}"/>
             <Setter Property="Foreground" Value="{StaticResource Fg}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
             <Setter Property="Padding" Value="10,4"/>
             <Setter Property="Margin" Value="0,0,6,0"/>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
+
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="{StaticResource Fg}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
+
+        <!-- ComboBox: the closed control and the popup list are separate surfaces,
+             and both have to be said, or the dropdown opens white. -->
         <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{StaticResource Bg2}"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
             <Setter Property="Padding" Value="4,3"/>
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="{StaticResource Bg2}"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Selected}"/>
+                    <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Right-click menus were the worst of it: a white popup carrying the
+             window's light text. -->
+        <Style TargetType="ContextMenu">
+            <Setter Property="Background" Value="{StaticResource Bg2}"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="0,4" SnapsToDevicePixels="True">
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- Templated rather than merely recoloured. The stock menu template paints
+             an icon gutter down the left and its own separator lines from system
+             brushes, so colour setters alone leave a white strip and bright rules on
+             an otherwise dark menu. None of these items use icons, so a plain row is
+             both correct and simpler. -->
+        <Style TargetType="MenuItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Grid>
+                            <Border x:Name="Row" Background="{TemplateBinding Background}"
+                                    Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                                <DockPanel>
+                                    <!-- Tick and arrow take no room at all on a plain
+                                         item, which is what keeps this menu free of the
+                                         icon gutter the stock template draws. They are
+                                         given width only by the triggers below. -->
+                                    <TextBlock x:Name="Check" DockPanel.Dock="Left" Text="&#x2713;"
+                                               Width="0" Visibility="Hidden"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="Arrow" DockPanel.Dock="Right" Text="&#x203A;"
+                                               Width="0" Visibility="Hidden" FontSize="15"
+                                               TextAlignment="Right" VerticalAlignment="Center"/>
+                                    <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"
+                                                      VerticalAlignment="Center"/>
+                                </DockPanel>
+                            </Border>
+
+                            <!-- Without this the template can only ever draw a single
+                                 row: an item with children had nowhere to put them, so
+                                 its submenu never opened and SubmenuOpened never fired. -->
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                                   IsOpen="{TemplateBinding IsSubmenuOpen}"
+                                   Placement="Right" HorizontalOffset="-3" VerticalOffset="-5">
+                                <Border Background="{StaticResource Bg2}"
+                                        BorderBrush="{StaticResource Line}" BorderThickness="1"
+                                        Padding="0,4" SnapsToDevicePixels="True">
+                                    <StackPanel IsItemsHost="True"
+                                                KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="True">
+                                <Setter TargetName="Arrow" Property="Width" Value="18"/>
+                                <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <!-- Reserve the tick column only where something can be
+                                 ticked, so the rest of the menu keeps its flush edge. -->
+                            <Trigger Property="IsCheckable" Value="True">
+                                <Setter TargetName="Check" Property="Width" Value="18"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Check" Property="Width" Value="18"/>
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Row" Property="Background"
+                                        Value="{StaticResource Selected}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <ControlTemplate x:Key="MenuRule" TargetType="Separator">
+            <Border Height="1" Margin="0,4" Background="{StaticResource Line}"
+                    SnapsToDevicePixels="True"/>
+        </ControlTemplate>
+
+        <Style TargetType="Separator">
+            <Setter Property="Template" Value="{StaticResource MenuRule}"/>
+        </Style>
+
+        <!-- Separators inside a menu are styled by this key, not by the implicit
+             TargetType style, so without it they keep the stock light rule and its
+             gutter indent. -->
+        <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+            <Setter Property="Template" Value="{StaticResource MenuRule}"/>
+        </Style>
+
+        <!-- Tooltips carry most of the explanation in this app, so an unreadable
+             one costs more than it looks. -->
+        <Style TargetType="ToolTip">
+            <Setter Property="Background" Value="{StaticResource Bg3}"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,5"/>
+        </Style>
+
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="{StaticResource Bg2}"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+        </Style>
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Selected}"/>
+                    <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="TreeViewItem">
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+        </Style>
+
+        <!-- Column headers default to a light chrome gradient, which put the
+             window's light text on a near-white strip. -->
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="{StaticResource Bg}"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+        <Style TargetType="DataGridCell">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Selected}"/>
+                    <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="DataGridRowHeader">
+            <Setter Property="Background" Value="{StaticResource Bg}"/>
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+        </Style>
+
+        <!-- The stock tab strip is light chrome with a light selected tab, which on
+             a dark window reads as an empty grey smear. Templated so the selected tab
+             is the one that looks lit, and the accent underline says which job you
+             are in without another colour. -->
+        <Style TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="Padding" Value="16,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Tab" Background="Transparent"
+                                BorderBrush="Transparent" BorderThickness="0,0,0,2"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Tab" Property="Background" Value="{StaticResource Bg2}"/>
+                                <Setter TargetName="Tab" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsSelected" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Tab" Property="Background" Value="{StaticResource Bg3}"/>
+                                <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Expander">
+            <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+            <Setter Property="Background" Value="Transparent"/>
         </Style>
     </Application.Resources>
 </Application>

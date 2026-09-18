@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- No UI, no Windows API: the encoder is usable from anything on .NET. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>XzoundCore</AssemblyName>
+    <RootNamespace>Xzound</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>XzoundCore</Product>
+    <Authors>Nikolas Becic</Authors>
+    <Copyright>Copyright (c) 2026 Nikolas Becic</Copyright>
+    <Description>Wwise Vorbis encoder and .wem container writer for Marvel Rivals.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OggVorbisEncoder" Version="1.2.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- aoTuV 6.03's Vorbis codebooks, the shared table Wwise's runtime carries.
+         aoTuV is an open-source libvorbis fork; this is its data, not Audiokinetic's.
+         Embedded so the encoder needs no side files. -->
+    <EmbeddedResource Include="Vorbis\packed_codebooks_aoTuV_603.bin" />
+  </ItemGroup>
+
+</Project>

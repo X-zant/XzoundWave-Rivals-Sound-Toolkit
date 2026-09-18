@@ -1,6 +1,8 @@
 using System.IO;
 using System.Reflection;
 
+using Xzound;
+
 namespace MRAudioKit;
 
 /// <summary>
@@ -55,14 +57,8 @@ public static class Tts
     /// Generate {first}.wem … {last}.wem plus a silent clip, in the folder the
     /// numbered-test-bank builder expects.
     /// </summary>
-    /// <param name="vorbis">
-    /// When supplied, each spoken WAV is handed to Wwise's encoder instead of being
-    /// wrapped as PCM. That is the only route to real Vorbis; without it the clips are
-    /// PCM, which the game's banks do not declare.
-    /// </param>
     public static int GenerateNumbers(string outDir, int first, int last,
-                                      Action<string> progress, int rateBoost = 2,
-                                      Func<string, (byte[] Bytes, string Error)> vorbis = null)
+                                      Action<string> progress, int rateBoost = 2)
     {
         Directory.CreateDirectory(outDir);
         var tmp = Path.Combine(Path.GetTempPath(), "MRAudioKit", "tts");
@@ -70,24 +66,23 @@ public static class Tts
 
         var made = 0;
         int rate = 0; short ch = 0;
+
         for (var n = first; n <= last; n++)
         {
             var wav = Path.Combine(tmp, $"{n}.wav");
-            // Digits, not "four hundred and thirty-three" -- shorter, and far easier to
-            // catch when a sound is half a second long.
-            SpeakToWav(string.Join(" ", n.ToString().ToCharArray()), wav, rateBoost);
+            // Spoken as a NUMBER -- "one hundred two" -- not digit by digit. Digits are
+            // shorter but ambiguous: a clipped or overlapped "one zero two" is hard to
+            // tell from "one zero" or "zero two", whereas the wording of a spoken number
+            // carries its own magnitude and cannot be half-heard as a different one.
+            SpeakToWav(n.ToString(), wav, rateBoost);
             var w = WwiseWem.ReadWav(File.ReadAllBytes(wav));
             rate = w.SampleRate; ch = w.Channels;
 
-            byte[] wem = null;
-            if (vorbis is not null)
-            {
-                var (bytes, err) = vorbis(wav);
-                if (bytes is null)
-                    throw new InvalidOperationException($"Vorbis encoding failed on {n}: {err}");
-                wem = bytes;
-            }
-            wem ??= WwiseWem.Write(w);
+            // Wwise Vorbis, no Wwise install and no account. PCM only if the encoder
+            // fails on an input we have not anticipated.
+            byte[] wem;
+            try { wem = XzoundCore.Encode(w); }
+            catch { wem = WwiseWem.Write(w); }
             File.WriteAllBytes(Path.Combine(outDir, $"{n}.wem"), wem);
             File.Delete(wav);
             made++;
@@ -100,19 +95,14 @@ public static class Tts
         {
             var silentWav = Path.Combine(tmp, "silent.wav");
             var half = new byte[rate * ch * 2 / 2];
-            byte[] silentWem = null;
-            if (vorbis is not null)
-            {
-                File.WriteAllBytes(silentWav, BuildWav(rate, ch, half));
-                silentWem = vorbis(silentWav).Bytes;
-                File.Delete(silentWav);
-            }
-            silentWem ??= WwiseWem.Write(new WwiseWem.WavData(rate, ch, 16, half));
+            var sw = new WwiseWem.WavData(rate, ch, 16, half);
+            byte[] silentWem;
+            try { silentWem = XzoundCore.Encode(sw); }
+            catch { silentWem = WwiseWem.Write(sw); }
             File.WriteAllBytes(Path.Combine(outDir, "0-Silent.wem"), silentWem);
         }
 
-        progress($"generated {made} spoken number(s) at {rate} Hz, {ch}ch " +
-                 $"as {(vorbis is null ? "PCM" : "Vorbis")} into {outDir}");
+        progress($"generated {made} spoken number(s) at {rate} Hz, {ch}ch as Vorbis into {outDir}");
         return made;
     }
 

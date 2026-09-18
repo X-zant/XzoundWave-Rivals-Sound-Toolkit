@@ -3,18 +3,17 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace MRAudioKit;
+namespace Xzound;
 
 /// <summary>
 /// Writes a Wwise PCM .wem around raw 16-bit PCM.
 ///
 /// A PCM wem is an ordinary RIFF/WAVE with WAVE_FORMAT_EXTENSIBLE (0xFFFE) and a
 /// six-byte extension, plus a 16-byte "hash" chunk, then "data". No encoder is
-/// involved -- which is why PCM is the fallback whenever Wwise's own Vorbis encoder
-/// is not on the machine.
+/// involved, which makes this the safe fallback when a source cannot be encoded.
 ///
-/// Vorbis would be smaller and is what the game ships, but producing it needs
-/// WwiseConsole.exe. For test tones and spoken numbers, size is irrelevant.
+/// Vorbis is smaller and is what the game ships; XzoundCore produces it directly,
+/// so PCM is now a fallback rather than the normal path.
 /// </summary>
 public static class WwiseWem
 {

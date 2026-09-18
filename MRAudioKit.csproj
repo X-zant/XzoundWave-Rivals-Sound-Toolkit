@@ -12,6 +12,14 @@
     <!-- EXPLICIT. Without it the SDK self-contains the publish and fails NETSDK1150. -->
     <SelfContained>false</SelfContained>
     <InvariantGlobalization>false</InvariantGlobalization>
+
+    <Version>1.0.0</Version>
+    <Product>XzoundWave</Product>
+    <Authors>Nikolas Becic</Authors>
+    <Company>Nikolas Becic</Company>
+    <Copyright>Copyright (c) 2026 Nikolas Becic</Copyright>
+    <Description>Marvel Rivals sound toolkit — browse, preview, tag and re-pack Wwise soundbanks.</Description>
+    <RepositoryUrl>https://github.com/XzantGaming/XzoundWave-Rivals-Sound-Toolkit</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +27,27 @@
          builds anywhere with `dotnet build`, and upstream fixes arrive by bumping
          one version number. -->
     <PackageReference Include="CUE4Parse" Version="1.2.2.202609" />
+    <PackageReference Include="NAudio" Version="3.0.1" />
+    <PackageReference Include="NVorbis" Version="0.10.5" />
+    <!-- Pulled in transitively by CUE4Parse at 9.0.0, which carries a high-severity
+         advisory (GHSA-73j8-2gch-69rq). Pinned forward here; drop this line once
+         CUE4Parse itself moves past it. -->
+    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The encoder is its own assembly so other tools can use it without taking
+         a dependency on this app. -->
+    <ProjectReference Include="XzoundCore\XzoundCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The library lives in a subfolder, and this project's default glob would
+         otherwise compile its sources (and its obj/) a second time, into this
+         assembly as well. -->
+    <Compile Remove="XzoundCore\**" />
+    <EmbeddedResource Remove="XzoundCore\**" />
+    <None Remove="XzoundCore\**" />
   </ItemGroup>
 
 </Project>

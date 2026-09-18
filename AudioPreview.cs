@@ -11,10 +11,20 @@ namespace MRAudioKit;
 public sealed class AudioPreview : IDisposable
 {
     private readonly MediaPlayer _player = new();
+
+    /// <summary>Raised when a clip finishes on its own, which is what lets one
+    /// sound lead into the next without polling or guessing at durations.</summary>
+    public event Action Finished;
     private readonly string _cache = Path.Combine(Path.GetTempPath(), "MRAudioKit");
     public string VgmstreamPath { get; set; }
 
-    public AudioPreview() => Directory.CreateDirectory(_cache);
+    public AudioPreview()
+    {
+        Directory.CreateDirectory(_cache);
+        // A clip that fails to open must advance too, or one bad file stalls the run.
+        _player.MediaEnded += (_, _) => Finished?.Invoke();
+        _player.MediaFailed += (_, _) => Finished?.Invoke();
+    }
 
     /// <summary>
     /// The loose streamed file when one exists, otherwise the bank's copy.
@@ -23,6 +33,15 @@ public sealed class AudioPreview : IDisposable
     /// </summary>
     public byte[] Bytes(GameSession session, SkinSounds sounds, SoundRow row)
     {
+        // Bytes we were handed win: a bank opened from a mod reuses the shipped media
+        // ids, so asking the game first would play the vanilla sound instead.
+        if (sounds.Raw.TryGetValue(row.MediaId, out var held) && held is { Length: > 0 })
+        {
+            row.Origin = "opened bank";
+            row.Bytes = held.Length;
+            return held;
+        }
+
         var loose = session.LooseMedia(row.MediaId);
         if (loose is not null)
         {

@@ -21,6 +21,16 @@ public sealed class SoundRow
     public string Origin { get; set; }         // where the bytes actually came from
     public long Bytes { get; set; }
     public string Category { get; set; } = "";
+
+    /// <summary>
+    /// The Category column is authored in Chinese and is not localized by the game.
+    /// Both forms are kept: the original is the truth, the translation is a reading
+    /// aid, and one switch decides which the grid shows.
+    /// </summary>
+    public string CategoryEnglish { get; set; }
+    public static bool ShowTranslatedCategory { get; set; }
+    public string CategoryShown =>
+        ShowTranslatedCategory && !string.IsNullOrEmpty(CategoryEnglish) ? CategoryEnglish : Category;
     public string Subtitle { get; set; } = "";
     public double? Seconds { get; set; }
 
@@ -28,9 +38,59 @@ public sealed class SoundRow
     public string Notes { get; set; } = "";
     public string ExtraNotes { get; set; } = "";
 
+    /// <summary>
+    /// Tags from the shared vocabulary -- see <see cref="SoundTags"/>. Separate from
+    /// the free-text notes above on purpose: these are the part that can be searched
+    /// and compared between two people's findings, which only works if nobody is free
+    /// to invent their own wording.
+    /// </summary>
+    public List<string> Tags { get; set; } = [];
+    public string TagLabel => SoundTags.Format(Tags);
+    public bool HasTag(string code) => SoundTags.Matches(Tags, code);
+
+    /// <summary>Number assigned by the last numbered test bank, if any.</summary>
+    public int? TestNumber { get; set; }
+    public string TestLabel => TestNumber is null ? "" : "#" + TestNumber;
+
+    /// <summary>
+    /// Silence this one in the next test build. When several sounds fire at once you
+    /// can only make out the loudest; muting the number you already identified is how
+    /// the ones underneath it become audible.
+    /// </summary>
+    public bool Muted { get; set; }
+
+    /// <summary>
+    /// Loudness multiplier for this sound, or null to follow the project's bulk
+    /// level. Always applied to the ORIGINAL audio, so changing it twice does not
+    /// compound the loss of two lossy round trips.
+    /// </summary>
+    public double? Volume { get; set; }
+
+    /// <summary>Set by hand, so a bulk change leaves it alone.</summary>
+    public bool VolumeByHand { get; set; }
+
+    /// <summary>The level actually used, given the project's bulk setting.</summary>
+    public double EffectiveVolume(double bulk) => Volume ?? bulk;
+
+    public string VolumeLabel => Volume is null ? "" : $"{Volume:0.0#}x" + (VolumeByHand ? "*" : "");
+
     /// <summary>Custom .wem staged for this media id, if any.</summary>
     public string ReplacementPath { get; set; }
-    public string Mod => ReplacementPath is null ? "" : "REPLACED";
+
+    /// <summary>Set when something other than staging decides the tag, e.g. a bank
+    /// opened from a mod where this entry differs from the shipped one.</summary>
+    public string ModTag { get; set; }
+
+    /// <summary>
+    /// Staging wins over the diff tag: a file you just dropped in is the thing you
+    /// are working on. Note the explicit null test -- ModTag is "" for an entry a mod
+    /// left untouched, and "" is not null, so `ModTag ?? ...` would swallow every
+    /// staged row in an opened bank.
+    /// </summary>
+    public string Mod =>
+        Muted ? "MUTED"
+        : ReplacementPath is not null ? "REPLACED"
+        : ModTag ?? "";
 
     public string Display => EventName ?? $"<unnamed:{EventHash}>";
     /// <summary>The spreadsheet's cell format, generated rather than typed.</summary>
@@ -46,6 +106,14 @@ public sealed class SkinSounds
     /// <summary>media id -> the bank that actually embeds it. Knowing which bank a
     /// swap lands in is what stops people rebuilding banks they never touched.</summary>
     public Dictionary<uint, string> BankOfMedia { get; } = [];
+
+    /// <summary>
+    /// Bytes held directly rather than read from the game, which is how a bank
+    /// somebody else built gets played and exported. These win over everything else:
+    /// a mod keeps the shipped media ids, so looking the id up in the game would
+    /// return the VANILLA sound and quietly show the wrong audio.
+    /// </summary>
+    public Dictionary<uint, byte[]> Raw { get; } = [];
 }
 
 public static class SoundIndex
@@ -155,6 +223,14 @@ public static class SoundIndex
             row.Category = s.Cat;
             row.Subtitle = s.Line;
         }
+        else if (evName is not null && session.VoiceLine(evName) is { } any)
+        {
+            // Not in this character's own tables. Boss, NPC, system and tutorial banks
+            // belong to no character at all, and even a hero has lines that only a
+            // shared table describes -- so fall back to every voice table in the game.
+            row.Category = any.Category;
+            row.Subtitle = any.Subtitle;
+        }
         return row;
     }
 
@@ -182,19 +258,36 @@ public static class SoundIndex
     }
 
     /// <summary>
-    /// event name -> (category, subtitle), from the skin's own HeroVoice DataTable,
-    /// falling back to the character's default skin when a skin ships none.
+    /// event name -> (category, subtitle).
+    ///
+    /// A character's lines are spread across SEVERAL tables, not one: the skin's own,
+    /// every other skin of the same character, and seasonal tables named after the
+    /// event that added them (2207_1016001_HeroVoice). Reading only the first one
+    /// found left 453 of Loki's 1032 events with no subtitle even though they speak
+    /// in game -- the newer map lines live in a later table.
+    ///
+    /// They are merged in priority order and the first writer wins, so a skin's own
+    /// wording beats another skin's for the same event.
     /// </summary>
     private static Dictionary<string, (string, string)> LoadSubtitles(
         GameSession session, string skinId, string charId)
     {
         var map = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
-        foreach (var candidate in new[] { skinId, charId + "001" }.Distinct())
-        {
-            var hit = session.Provider.Files.Keys.FirstOrDefault(k =>
-                k.EndsWith($"/{candidate}_HeroVoice.uasset", StringComparison.OrdinalIgnoreCase));
-            if (hit is null) continue;
 
+        // A bank with no character (ambience, music, UI) has no voice table. Without
+        // this, an empty charId makes the Contains() below match ALL 185 of them.
+        if (string.IsNullOrWhiteSpace(charId) || charId.Length < 4) return map;
+
+        var tables = session.Provider.Files.Keys
+            .Where(k => k.EndsWith("_HeroVoice.uasset", StringComparison.OrdinalIgnoreCase) &&
+                        Path.GetFileName(k).Contains(charId, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(k => Rank(k, skinId, charId))
+            .ThenBy(k => k, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var hit in tables)
+        {
             try
             {
                 var pkg = hit[..^".uasset".Length];
@@ -204,14 +297,24 @@ public static class SoundIndex
                 {
                     var ev = row.GetOrDefault<FPackageIndex>("Event")?.Name;
                     if (string.IsNullOrEmpty(ev)) continue;
+                    // First writer wins: the tables are already in priority order.
+                    if (map.ContainsKey(ev)) continue;
                     map[ev] = (row.GetOrDefault<FName>("Category").Text ?? "",
                                session.Localize(row.GetOrDefault<FText>("Lines")));
                 }
             }
             catch { /* a missing usmap makes this unreadable; the list still works */ }
-
-            if (map.Count > 0) break;
         }
         return map;
+    }
+
+    /// <summary>This skin first, then the character's default, then everything else.</summary>
+    private static int Rank(string path, string skinId, string charId)
+    {
+        var name = Path.GetFileNameWithoutExtension(path);
+        if (name.Equals($"{skinId}_HeroVoice", StringComparison.OrdinalIgnoreCase)) return 0;
+        if (name.Equals($"{charId}001_HeroVoice", StringComparison.OrdinalIgnoreCase)) return 1;
+        if (name.StartsWith(charId, StringComparison.OrdinalIgnoreCase)) return 2;
+        return 3;   // seasonal tables, named after the event that added them
     }
 }

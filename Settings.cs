@@ -18,9 +18,49 @@ public sealed class Settings
     /// <summary>Folder of numbered test clips ({n}.wem, plus an optional silent one).</summary>
     public string TestWemDir { get; set; } = "";
 
-    /// <summary>Optional: Audiokinetic WwiseConsole.exe and any .wproj, for Vorbis output.</summary>
-    public string WwiseConsolePath { get; set; } = "";
-    public string WwiseProjectPath { get; set; } = "";
+    /// <summary>
+    /// Optional translator for the Chinese Category labels the game ships no English
+    /// for. Off unless chosen: the local options keep everything on your machine, and
+    /// nothing is ever sent without being asked for. See <see cref="LiveTranslate"/>.
+    /// </summary>
+    /// <summary>
+    /// Grid columns the author turned off, by header. Kept here rather than in the
+    /// project because it is a preference about the tool, not about a mod: it should
+    /// survive opening a different project tomorrow.
+    ///
+    /// Null means "never chosen", which is not the same as "nothing hidden" -- it is
+    /// what lets the first run start from a sensible set rather than every column.
+    /// </summary>
+    public List<string> HiddenColumns { get; set; }
+
+    /// <summary>
+    /// Kinds of row the author turned off, by key -- see <see cref="RowClasses"/>.
+    /// Same reasoning as <see cref="HiddenColumns"/>: a preference about the tool, and
+    /// null means "never chosen" rather than "nothing hidden".
+    /// </summary>
+    public List<string> HiddenRowClasses { get; set; }
+
+    /// <summary>The naming rule in the drop pane, once you know it, is just clutter.</summary>
+    public bool ShowDropHelp { get; set; } = true;
+
+    public string TranslateProvider { get; set; } = "none";
+    public string DeepLKey { get; set; } = "";
+    public string LocalTranslateUrl { get; set; } = "";
+    public string LocalTranslateModel { get; set; } = "";
+
+    /// <summary>Reopened on launch, plus the Open menu's recent list.</summary>
+    public string LastProject { get; set; } = "";
+    public List<string> RecentProjects { get; set; } = [];
+
+    public void NoteRecentProject(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        RecentProjects.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        RecentProjects.Insert(0, path);
+        while (RecentProjects.Count > 10) RecentProjects.RemoveAt(RecentProjects.Count - 1);
+        LastProject = path;
+    }
+
 
     private static string Dir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MRAudioKit");

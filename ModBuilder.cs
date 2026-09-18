@@ -31,7 +31,8 @@ public static class ModBuilder
         var log = new StringBuilder();
         var outputs = new List<string>();
         var payload = new Dictionary<uint, byte[]>();
-        foreach (var p in pending) payload[p.MediaId] = File.ReadAllBytes(p.FullPath);
+        foreach (var p in pending)
+            payload[p.MediaId] = p.Payload ?? File.ReadAllBytes(p.FullPath);
 
         var banksWritten = 0;
         var trimmed = 0;
@@ -92,17 +93,22 @@ public static class ModBuilder
             if (placed.Contains(id) && !prefetchMode) continue;   // fully in the bank now
             if (src is null && placed.Contains(id)) continue;
 
+            // Mirror the game's own path whenever it ships this id loose -- that is the
+            // only way to get the language folder right, and 77,209 of the 80,664 loose
+            // files are under one. The bucket rule below is a last resort for an id the
+            // game never ships loose, where there is no language to derive.
             var dest = src is not null
                 ? Path.Combine(outRoot, src.Path.Replace('/', Path.DirectorySeparatorChar))
-                : Path.Combine(outRoot, "Marvel", "Content", "WwiseAudio", "Media",
-                               id.ToString()[..2], $"{id}.wem");
+                : Path.Combine(outRoot,
+                               MediaLayout.PathFor(id).Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             File.WriteAllBytes(dest, bytes);
             loose++;
             outputs.Add(Path.GetRelativePath(outRoot, dest));
             var note = pending.FirstOrDefault(p => p.MediaId == id)?.Note;
             log.AppendLine($"AUDIO {id} -> {Path.GetRelativePath(outRoot, dest)}" +
-                           (string.IsNullOrWhiteSpace(note) ? "" : $"   [{note}]"));
+                           (string.IsNullOrWhiteSpace(note) ? "" : $"   [{note}]") +
+                           (src is null ? "   [no shipped original — path derived]" : ""));
         }
 
         var header = new StringBuilder();

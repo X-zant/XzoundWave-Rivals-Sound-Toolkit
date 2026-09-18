@@ -1,0 +1,45 @@
+<Window x:Class="MRAudioKit.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Height="560" Width="760"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{StaticResource Bg}">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Categories down the side rather than tabs across the top: this list is
+             expected to grow, and a growing tab strip is where settings go to die. -->
+        <ListBox x:Name="Categories" Grid.Row="0" Grid.Column="0" Width="170"
+                 Margin="0,0,10,0" SelectionChanged="Categories_Changed"
+                 BorderBrush="{StaticResource Line}" BorderThickness="1"/>
+
+        <Border Grid.Row="0" Grid.Column="1" BorderBrush="{StaticResource Line}"
+                BorderThickness="1" Background="{StaticResource Bg2}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12">
+                <StackPanel>
+                    <TextBlock x:Name="PaneTitle" FontWeight="Bold" FontSize="15"
+                               Foreground="{StaticResource Fg}"/>
+                    <TextBlock x:Name="PaneHint" Margin="0,4,0,10" TextWrapping="Wrap"
+                               Foreground="{StaticResource Muted}"/>
+                    <StackPanel x:Name="PaneBody"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <DockPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,10,0,0">
+            <TextBlock x:Name="Summary" DockPanel.Dock="Left" VerticalAlignment="Center"
+                       Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Reset this page" Click="Reset_Click"/>
+                <Button Content="Close" Click="Close_Click" Margin="8,0,0,0" MinWidth="90"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>
