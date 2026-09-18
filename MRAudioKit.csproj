@@ -42,6 +42,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- These ship BESIDE the exe, not just in the repo. The embedded aoTuV codebooks
+         are redistributed under libvorbis's licence, whose binary clause asks that the
+         notice travel with the materials, so a zip of the publish folder has to contain
+         it and not only the source tree. -->
+    <Content Include="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The library lives in a subfolder, and this project's default glob would
          otherwise compile its sources (and its obj/) a second time, into this
          assembly as well. -->
