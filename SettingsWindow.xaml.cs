@@ -25,7 +25,7 @@ public partial class SettingsWindow : Window
         _grid = grid;
         _changed = changed;
 
-        foreach (var name in new[] { "Rows", "Columns", "List help", "Tools" })
+        foreach (var name in new[] { "Rows", "Columns", "List help", "Tools", "Diagnostics" })
             Categories.Items.Add(name);
         Categories.SelectedIndex = 0;
     }
@@ -40,6 +40,7 @@ public partial class SettingsWindow : Window
             case "Rows": BuildRows(); break;
             case "Columns": BuildColumns(); break;
             case "Tools": BuildTools(); break;
+            case "Diagnostics": BuildDiagnostics(); break;
             default: BuildHelp(); break;
         }
         RefreshSummary();
@@ -193,6 +194,70 @@ public partial class SettingsWindow : Window
     }
 
     private void Add(UIElement e) => PaneBody.Children.Add(e);
+
+    // ---- diagnostics -----------------------------------------------------------
+
+    /// <summary>
+    /// The same report as the --doctor verb, reachable without a command line.
+    /// Someone whose audio will not play is exactly the person least able to run a
+    /// console command and read its output, and this application is windowed, so
+    /// there is no console to read anyway.
+    /// </summary>
+    private void BuildDiagnostics()
+    {
+        PaneTitle.Text = "Diagnostics";
+        PaneHint.Text =
+            "What this machine provides, and anything that looks wrong. Copy this into " +
+            "a bug report if something is not working.";
+
+        var text = EnvCheck.Report();
+
+        var box = new TextBox
+        {
+            Text = text,
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.NoWrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+            Height = 260,
+            Margin = new Thickness(0, 4, 0, 8),
+        };
+        Add(box);
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var copy = new Button { Content = "Copy to clipboard" };
+        copy.Click += (_, _) =>
+        {
+            try { Clipboard.SetText(box.Text); Summary.Text = "diagnostics copied."; }
+            catch { Summary.Text = "could not reach the clipboard."; }
+        };
+        row.Children.Add(copy);
+
+        var save = new Button { Content = "Save as a file…" };
+        save.Click += (_, _) =>
+        {
+            var dlg = new Microsoft.Win32.SaveFileDialog
+            {
+                FileName = "XzoundWave-diagnostics.txt",
+                Filter = "Text|*.txt|All files|*.*",
+            };
+            if (dlg.ShowDialog() != true) return;
+            try
+            {
+                System.IO.File.WriteAllText(dlg.FileName, box.Text);
+                Summary.Text = "saved to " + dlg.FileName;
+            }
+            catch (Exception ex) { Summary.Text = ex.Message; }
+        };
+        row.Children.Add(save);
+
+        var refresh = new Button { Content = "Run again" };
+        refresh.Click += (_, _) => Build();
+        row.Children.Add(refresh);
+        Add(row);
+    }
 
     // ---- help ------------------------------------------------------------------
 

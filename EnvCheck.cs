@@ -114,10 +114,18 @@ public static class EnvCheck
         return true;
     }
 
-    /// <summary>XzoundWave.exe --doctor — what this machine provides.</summary>
-    public static int Run()
+    /// <summary>Where the report is always saved, so it can be sent to someone.</summary>
+    public static string ReportPath => Path.Combine(Settings.AppDataDir, "diagnostics.txt");
+
+    /// <summary>
+    /// The report as text. Built rather than printed straight out, because this is a
+    /// windowed application: started from Explorer or cmd there is no console, and the
+    /// person who most needs this is the one least able to read a pipe.
+    /// </summary>
+    public static string Report()
     {
-        void W(string s) => Console.WriteLine(s);
+        var sb = new System.Text.StringBuilder();
+        void W(string s) => sb.AppendLine(s);
 
         W("XzoundWave " + (typeof(EnvCheck).Assembly.GetName().Version?.ToString() ?? "?"));
         W("");
@@ -147,16 +155,47 @@ public static class EnvCheck
 
         W("");
         var problems = Check();
-        if (problems.Count == 0)
-        {
-            W("no problems found.");
-            return 0;
-        }
+        if (problems.Count == 0) W("no problems found.");
         foreach (var p in problems)
         {
             W($"{(p.Fatal ? "BLOCKING" : "warning ")}  {p.Title}");
             foreach (var line in p.Detail.Split('\n')) W("          " + line.TrimEnd());
         }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// XzoundWave.exe --doctor. Prints when there is a console, and shows a window when
+    /// there is not — the double-click case. It also always saves a copy, because "I
+    /// ran it and nothing happened" is the least useful bug report there is, and that
+    /// is exactly what a windowed program printing to a console it does not have looks
+    /// like from the outside.
+    /// </summary>
+    public static int Run()
+    {
+        var text = Report();
+        var problems = Check();
+
+        try
+        {
+            Directory.CreateDirectory(Settings.AppDataDir);
+            File.WriteAllText(ReportPath, text);
+        }
+        catch { /* a report we cannot save is still a report we can show */ }
+
+        if (ConsoleBridge.HasConsole)
+        {
+            Console.Write(text);
+            Console.WriteLine();
+            Console.WriteLine("saved to " + ReportPath);
+        }
+        else
+        {
+            MessageBox.Show(
+                text + Environment.NewLine + "Saved to:" + Environment.NewLine + ReportPath,
+                "XzoundWave diagnostics", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
         return problems.Any(p => p.Fatal) ? 1 : 0;
     }
 }

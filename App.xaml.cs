@@ -6,6 +6,12 @@ public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
+        // A windowed application gets no console, so every verb below would print into
+        // nothing when started from Explorer or cmd. Attach to the caller's console if
+        // there is one; --doctor also shows its output when there is not.
+        if (e.Args.Any(a => a.StartsWith("--", StringComparison.Ordinal)))
+            ConsoleBridge.Attach();
+
         // Headless verification path -- see SelfTest.
         var w2w = Array.FindIndex(e.Args, a => a.Equals("--wav2wem", StringComparison.OrdinalIgnoreCase));
         if (w2w >= 0 && w2w + 2 < e.Args.Length)
