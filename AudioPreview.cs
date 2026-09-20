@@ -19,7 +19,7 @@ public sealed class AudioPreview : IDisposable
     /// broken decoder, and it is what a tester hit on a machine where every other check
     /// came back clean. NAudio talks to WASAPI and needs none of it.
     /// </summary>
-    private WaveOutEvent _out;
+    private WaveOut _out;
     private WaveFileReader _reader;
     private bool _stoppedOnPurpose;
 
@@ -218,7 +218,7 @@ public sealed class AudioPreview : IDisposable
         try
         {
             _reader = new WaveFileReader(wavPath);
-            _out = new WaveOutEvent();
+            _out = new WaveOut();
             _out.PlaybackStopped += (_, e) =>
             {
                 if (e.Exception is not null) PlaybackFailed?.Invoke(e.Exception.Message);
