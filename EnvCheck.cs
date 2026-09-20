@@ -44,6 +44,25 @@ public static class EnvCheck
                 $"instead of the x64 one.\n\nInstall the x64 build from:\n{DownloadUrl}",
                 Fatal: true));
 
+        // vgmstream is a native binary we unpack and run. Existing is not enough: a
+        // missing Visual C++ runtime or an antivirus quarantine leaves the file sitting
+        // there and playback silently doing nothing.
+        var vgm = Bundled.EnsureVgmstream(out var unpackError);
+        if (vgm is null)
+            problems.Add(new Problem(
+                "Audio playback is unavailable",
+                "vgmstream could not be unpacked, so nothing can be played, measured or " +
+                "volume-scaled.\n\n" + (unpackError ?? "unknown reason") +
+                "\n\nSettings > Tools can point at your own copy of vgmstream-cli.exe.",
+                Fatal: false));
+        else if (AudioPreview.LaunchProblem(vgm) is { } why)
+            problems.Add(new Problem(
+                "Audio playback is unavailable",
+                "vgmstream is unpacked but will not run on this machine, so nothing can " +
+                "be played, measured or volume-scaled.\n\n" + why +
+                "\n\nIt lives in:\n" + Bundled.ToolsDir,
+                Fatal: false));
+
         if (!MediaFoundationWorks(out var mfError))
             problems.Add(new Problem(
                 "Windows Media Foundation is not available",
@@ -108,10 +127,21 @@ public static class EnvCheck
         W($"  os            {RuntimeInformation.OSDescription}");
         W($"  app data      {Settings.AppDataDir}");
 
-        var vgm = Bundled.EnsureVgmstream(out var vgmError);
-        W($"  vgmstream     {(vgm is not null ? vgm : "NOT AVAILABLE — " + vgmError)}");
-        if (vgm is not null)
-            W($"                {(File.Exists(vgm) ? new FileInfo(vgm).Length.ToString("N0") + " B, unpacked from the exe" : "missing")}");
+        var vgmPath = Bundled.EnsureVgmstream(out var vgmError);
+        W($"  vgmstream     {(vgmPath is not null ? vgmPath : "NOT AVAILABLE — " + vgmError)}");
+        if (vgmPath is not null)
+        {
+            W($"                {(File.Exists(vgmPath) ? new FileInfo(vgmPath).Length.ToString("N0") + " B, unpacked from the exe" : "missing")}");
+            // The question that matters is whether it RUNS, not whether it is there.
+            var why = AudioPreview.LaunchProblem(vgmPath);
+            W($"                {(why is null ? "runs: yes" : "RUNS: NO — " + why)}");
+            if (why is null)
+            {
+                var dlls = Directory.Exists(Bundled.ToolsDir)
+                    ? Directory.GetFiles(Bundled.ToolsDir, "*.dll").Length : 0;
+                W($"                {dlls} codec dll(s) beside it");
+            }
+        }
 
         W($"  licences      {(Bundled.Licence is not null && Bundled.Notices is not null ? "embedded" : "MISSING")}");
 

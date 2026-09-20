@@ -17,6 +17,12 @@ something Windows Update hands out. If it is missing, Windows says so when you d
 click and points you at the installer. Run `XzoundWave.exe --doctor` to see what your
 machine provides and whether anything is wrong.
 
+If audio will not play, run `XzoundWave.exe --doctor` first. It says whether vgmstream
+unpacked **and whether it actually starts**, which is the usual culprit: vgmstream is a
+native program, so it needs the
+[Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+and it will not run if antivirus has removed one of the codec DLLs beside it.
+
 ## Build
 
 ```

@@ -78,16 +78,25 @@ public sealed class AudioPreview : IDisposable
         error = null;
         if (string.IsNullOrWhiteSpace(VgmstreamPath) || !File.Exists(VgmstreamPath))
         {
-            error = "vgmstream-cli.exe not set — point Settings at it to enable playback.";
+            error = "vgmstream is not available. It normally unpacks itself from the exe; " +
+                    "Settings > Tools shows what it is using and can point at your own copy.";
             return null;
         }
         var wem = WriteWem(data, mediaId);
         var wav = Path.Combine(_cache, $"{mediaId}.wav");
         try
         {
-            Run($"-o \"{wav}\" \"{wem}\"");
-            if (!File.Exists(wav)) { error = "vgmstream produced no output."; return null; }
-            return wav;
+            Run($"-o \"{wav}\" \"{wem}\"", out var stderr, out var exit);
+            if (File.Exists(wav)) return wav;
+
+            // Say which kind of failure it was: a decoder that will not start at all
+            // is a different problem from one that rejected this particular sound.
+            var launch = LaunchProblem(VgmstreamPath);
+            error = launch is not null
+                ? "vgmstream could not run — " + launch
+                : $"vgmstream produced no output (exit {exit})." +
+                  (string.IsNullOrWhiteSpace(stderr) ? "" : " " + stderr.Trim());
+            return null;
         }
         catch (Exception ex) { error = ex.Message; return null; }
     }
@@ -119,7 +128,14 @@ public sealed class AudioPreview : IDisposable
         return null;
     }
 
-    private string Run(string args)
+    private string Run(string args) => Run(args, out _, out _);
+
+    /// <summary>
+    /// Keep what vgmstream said. Throwing stderr away turned "it could not start at
+    /// all" and "it did not like that file" into the same blank failure, which is the
+    /// hardest kind to diagnose from someone else's machine.
+    /// </summary>
+    private string Run(string args, out string stderr, out int exitCode)
     {
         var psi = new ProcessStartInfo(VgmstreamPath, args)
         {
@@ -130,10 +146,63 @@ public sealed class AudioPreview : IDisposable
         };
         using var p = Process.Start(psi);
         var o = p.StandardOutput.ReadToEnd();
-        p.StandardError.ReadToEnd();
+        stderr = p.StandardError.ReadToEnd();
         p.WaitForExit();
+        exitCode = p.ExitCode;
         return o;
     }
+
+    /// <summary>
+    /// Can vgmstream actually start on this machine? Existing on disk is not the same
+    /// thing: it is a native binary, so a missing Visual C++ runtime or an antivirus
+    /// quarantine stops it dead with nothing written to the log.
+    /// </summary>
+    public static string LaunchProblem(string exePath)
+    {
+        if (string.IsNullOrWhiteSpace(exePath)) return "no path set.";
+        if (!File.Exists(exePath)) return $"not on disk: {exePath}";
+        try
+        {
+            var psi = new ProcessStartInfo(exePath, "-h")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var p = Process.Start(psi);
+            var text = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+            p.WaitForExit(15000);
+            // It prints its banner whatever the arguments, so seeing the name is the
+            // proof that the process started and its DLLs loaded.
+            if (text.Contains("vgmstream", StringComparison.OrdinalIgnoreCase)) return null;
+            return Explain(p.ExitCode);
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            return $"Windows refused to start it ({ex.NativeErrorCode}): {ex.Message}";
+        }
+        catch (Exception ex) { return "could not start it: " + ex.Message; }
+    }
+
+    /// <summary>
+    /// Turn a process exit code into something a person can act on. These two account
+    /// for nearly every "it just does not play" report: vgmstream is a native binary,
+    /// and it fails before printing anything when a dependency is missing.
+    /// </summary>
+    private static string Explain(int exitCode) => (uint)exitCode switch
+    {
+        0xC0000135 =>
+            "a DLL it needs is missing (STATUS_DLL_NOT_FOUND). Most often that is the " +
+            "Microsoft Visual C++ Redistributable (x64), from " +
+            "https://aka.ms/vs/17/release/vc_redist.x64.exe — or antivirus has removed " +
+            "one of the codec DLLs next to it.",
+        0xC000007B =>
+            "it is the wrong architecture for this machine (STATUS_INVALID_IMAGE_FORMAT).",
+        0xC0000142 =>
+            "a DLL it needs failed to initialise (STATUS_DLL_INIT_FAILED).",
+        _ => $"it started but said nothing recognisable (exit {exitCode}, 0x{(uint)exitCode:X8})."
+    };
 
     public void Play(string wavPath)
     {
