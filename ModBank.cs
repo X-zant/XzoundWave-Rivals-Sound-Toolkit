@@ -59,7 +59,7 @@ public static class ModBank
         // Mount the pak ALONE. Pointing the provider at the file's own folder would
         // pull in every other mod sitting next to it, and the author would be looking
         // at banks they did not open.
-        var temp = Path.Combine(Path.GetTempPath(), "MRAudioKit", "modpak_" + Guid.NewGuid().ToString("N")[..8]);
+        var temp = Path.Combine(Path.GetTempPath(), "XzoundWave", "modpak_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(temp);
         try
         {

@@ -1,7 +1,7 @@
 <Window x:Class="MRAudioKit.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MRAudioKit" Height="780" Width="1360"
+        Title="XzoundWave" Height="780" Width="1360"
         Background="{StaticResource Bg}">
     <Grid Margin="8">
         <Grid.RowDefinitions>

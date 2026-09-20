@@ -13,7 +13,7 @@ namespace MRAudioKit;
 /// </summary>
 public static class MountDiag
 {
-    /// <summary>MRAudioKit.exe --mountdiag &lt;folder&gt;</summary>
+    /// <summary>XzoundWave.exe --mountdiag &lt;folder&gt;</summary>
     public static int Run(string dir)
     {
         void W(string s) => Console.WriteLine(s);

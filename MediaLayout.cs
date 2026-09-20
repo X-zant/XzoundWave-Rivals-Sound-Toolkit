@@ -30,7 +30,7 @@ public static class MediaLayout
             ? $"{Root}{Bucket(mediaId)}/{mediaId}.wem"
             : $"{Root}{language}/{Bucket(mediaId)}/{mediaId}.wem";
 
-    /// <summary>MRAudioKit.exe --medialayout — prove the rule and count the overlap.</summary>
+    /// <summary>XzoundWave.exe --medialayout — prove the rule and count the overlap.</summary>
     public static int Run()
     {
         void W(string s) => Console.WriteLine(s);

@@ -7,6 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>XzoundCore</AssemblyName>
     <RootNamespace>Xzound</RootNamespace>
+    <!-- Folded into the assembly so the single-file publish stays a single file. -->
+    <DebugType>embedded</DebugType>
     <Version>1.0.0</Version>
     <Product>XzoundCore</Product>
     <Authors>Nikolas Becic</Authors>

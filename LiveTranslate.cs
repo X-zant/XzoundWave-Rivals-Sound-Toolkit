@@ -66,7 +66,7 @@ public static class LiveTranslate
 
     private static readonly string CachePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "MRAudioKit", "translations.json");
+        "XzoundWave", "translations.json");
 
     private static Dictionary<string, string> _cache;
 
@@ -118,7 +118,7 @@ public static class LiveTranslate
         if (todo.Count == 0) return 0;
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-        http.DefaultRequestHeaders.Add("User-Agent", "MRAudioKit");
+        http.DefaultRequestHeaders.Add("User-Agent", "XzoundWave");
 
         var added = 0;
         for (var i = 0; i < todo.Count; i++)

@@ -13,7 +13,7 @@ namespace MRAudioKit;
 /// </summary>
 public static class SubtitleProbe
 {
-    /// <summary>MRAudioKit.exe --subprobe &lt;skinId&gt;</summary>
+    /// <summary>XzoundWave.exe --subprobe &lt;skinId&gt;</summary>
     public static int Run(string skinId)
     {
         var sb = new StringBuilder();
@@ -111,7 +111,7 @@ public static class SubtitleProbe
         W($"  {absent} are in no voice table at all");
         foreach (var r in blanks.Take(6)) W($"    {r.EventName}");
 
-        var report = Path.Combine(Path.GetTempPath(), "MRAudioKit", "subtitles.txt");
+        var report = Path.Combine(Path.GetTempPath(), "XzoundWave", "subtitles.txt");
         Directory.CreateDirectory(Path.GetDirectoryName(report)!);
         File.WriteAllText(report, sb.ToString(), new UTF8Encoding(true));
         Console.WriteLine("wrote " + report);

@@ -2072,7 +2072,7 @@ public partial class MainWindow : Window
     {
         ProjectLabel.Text = _project.Title;
         ProjectPathLabel.Text = _project.IsSaved ? _project.Path : "(not saved yet)";
-        Title = $"MRAudioKit — {_project.Title}";
+        Title = $"XzoundWave — {_project.Title}";
     }
 
     /// <summary>Pull the current UI state into the project before saving.</summary>
@@ -2137,7 +2137,7 @@ public partial class MainWindow : Window
             var dlg = new SaveFileDialog
             {
                 Title = "Save project",
-                Filter = $"MRAudioKit project (*{Project.Extension})|*{Project.Extension}",
+                Filter = $"XzoundWave project (*{Project.Extension})|*{Project.Extension}",
                 FileName = (string.IsNullOrWhiteSpace(_project.Name) ? "project" : _project.Name)
                            + Project.Extension,
             };
@@ -2179,7 +2179,7 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog
         {
             Title = "Open project",
-            Filter = $"MRAudioKit project (*{Project.Extension})|*{Project.Extension}",
+            Filter = $"XzoundWave project (*{Project.Extension})|*{Project.Extension}",
         };
         if (dlg.ShowDialog() != true) return;
         OpenProject(dlg.FileName, announce: true);

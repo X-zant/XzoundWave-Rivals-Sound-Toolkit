@@ -17,7 +17,7 @@ namespace MRAudioKit;
 /// </summary>
 public static class MenuSelfTest
 {
-    /// <summary>MRAudioKit.exe --menutest</summary>
+    /// <summary>XzoundWave.exe --menutest</summary>
     public static int Run()
     {
         void W(string s) => Console.WriteLine(s);

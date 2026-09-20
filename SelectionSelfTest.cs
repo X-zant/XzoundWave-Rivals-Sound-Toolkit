@@ -12,7 +12,7 @@ namespace MRAudioKit;
 /// </summary>
 public static class SelectionSelfTest
 {
-    /// <summary>MRAudioKit.exe --seltest &lt;skinId&gt; &lt;outFolder&gt; [count]</summary>
+    /// <summary>XzoundWave.exe --seltest &lt;skinId&gt; &lt;outFolder&gt; [count]</summary>
     public static int Run(string skinId, string outRoot, int count)
     {
         void W(string s) => Console.WriteLine(s);

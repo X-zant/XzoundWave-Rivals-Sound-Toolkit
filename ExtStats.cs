@@ -24,7 +24,7 @@ public static class ExtStats
         public int MaxPacket, PacketCount;
     }
 
-    /// <summary>MRAudioKit.exe --extstats [outCsv] — survey shipped Vorbis headers.</summary>
+    /// <summary>XzoundWave.exe --extstats [outCsv] — survey shipped Vorbis headers.</summary>
     public static int Run(string outCsv)
     {
         void W(string s) => Console.WriteLine(s);

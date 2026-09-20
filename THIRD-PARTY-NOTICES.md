@@ -3,8 +3,10 @@
 XzoundWave is MIT licensed (see `LICENSE`). The components below are not, and their
 terms travel with any copy you distribute.
 
-Only the first item is **embedded in the binary**. Everything after it either arrives
-as a NuGet package at build time or is supplied by the user and never bundled.
+XzoundWave ships as a single `.exe`. The first two sections below are **inside that
+file**: the aoTuV codebooks are compiled into `XzoundCore.dll`, and vgmstream is an
+embedded zip written out to your app data the first time it is needed. The rest either
+arrive as NuGet packages at build time or are supplied by you and never bundled.
 
 ---
 
@@ -52,6 +54,34 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 This notice satisfies the binary-redistribution condition. If you ship XzoundWave or
 `XzoundCore.dll` onward, ship this file with it.
 
+## vgmstream — embedded, unpacked on first use
+
+`vgmstream-cli.exe` and the codec libraries it loads are embedded in XzoundWave.exe and
+written to `%AppData%/XzoundWave/vgmstream/` the first time playback, duration
+measurement or volume scaling needs them. They are **unmodified** binaries from the
+official win64 release of [vgmstream](https://github.com/vgmstream/vgmstream), with the
+Winamp and XMPlay plugins removed because the command-line tool does not use them.
+vgmstream's own `COPYING` is unpacked alongside them.
+
+XzoundWave runs `vgmstream-cli.exe` as a separate process. It does not link against it,
+and the two remain separate programs.
+
+The bundle includes components under the **LGPL**, which is worth stating plainly
+because it is the strongest condition attached to anything XzoundWave redistributes:
+
+| Component | Licence |
+| --- | --- |
+| vgmstream itself | ISC |
+| `avcodec` / `avformat` / `avutil` / `swresample` (FFmpeg) | LGPL 2.1+ |
+| `libmpg123-0` | LGPL 2.1 |
+| `libvorbis` | BSD 3-clause (Xiph.Org) |
+| `libatrac9`, `libcelt`, `libg719_decode`, `libspeex` | see vgmstream's `COPYING` |
+
+The LGPL requires that these libraries can be replaced. They are: they sit on disk as
+ordinary `.dll` files in the folder above, and swapping one for your own build works
+without touching XzoundWave. Source for the exact binaries is published by the vgmstream
+project at the link above; nothing here is a modified build.
+
 ## NuGet packages — restored at build time
 
 | Package | Licence |
@@ -62,16 +92,12 @@ This notice satisfies the binary-redistribution condition. If you ship XzoundWav
 | [OggVorbisEncoder](https://github.com/SteveLillis/.NET-Ogg-Vorbis-Encoder) | MIT — Steve Lillis |
 | Microsoft.Bcl.Memory | MIT |
 
-## Supplied by the user — never bundled
+## Supplied by you — never bundled
 
 **The Marvel Rivals AES key.** Yours to obtain and yours to keep. It is not in this
 repository, not in any release, and is stored only in your own `%AppData%`.
 
 **The `.usmap` mappings file.** Per patch, from the modding community.
-
-**[vgmstream](https://github.com/vgmstream/vgmstream)** (`vgmstream-cli.exe`), used for
-playback and duration measurement. ISC licence, plus components under other terms —
-see vgmstream's own COPYING. Point XzoundWave at your own copy.
 
 **Audiokinetic Wwise** (`WwiseConsole.exe` and a `.wproj`), optional, only for
 generating test clips. Nobody bundles it; Audiokinetic's licence does not allow it.

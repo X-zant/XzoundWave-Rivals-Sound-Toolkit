@@ -61,7 +61,7 @@ public static class Tts
                                       Action<string> progress, int rateBoost = 2)
     {
         Directory.CreateDirectory(outDir);
-        var tmp = Path.Combine(Path.GetTempPath(), "MRAudioKit", "tts");
+        var tmp = Path.Combine(Path.GetTempPath(), "XzoundWave", "tts");
         Directory.CreateDirectory(tmp);
 
         var made = 0;

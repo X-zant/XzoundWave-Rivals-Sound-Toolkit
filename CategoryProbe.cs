@@ -13,7 +13,7 @@ namespace MRAudioKit;
 /// </summary>
 public static class CategoryProbe
 {
-    /// <summary>MRAudioKit.exe --catprobe &lt;skinId&gt;</summary>
+    /// <summary>XzoundWave.exe --catprobe &lt;skinId&gt;</summary>
     public static int Run(string skinId)
     {
         var sb = new StringBuilder();
@@ -83,7 +83,7 @@ public static class CategoryProbe
         W($"{cats.Count - untouched}/{cats.Count} fully translated, {untouched} still carry Chinese.");
 
         // The console mangles CJK; the file is the readable copy.
-        var report = Path.Combine(Path.GetTempPath(), "MRAudioKit", "categories.txt");
+        var report = Path.Combine(Path.GetTempPath(), "XzoundWave", "categories.txt");
         Directory.CreateDirectory(Path.GetDirectoryName(report)!);
         File.WriteAllText(report, sb.ToString(), new UTF8Encoding(true));
         Console.WriteLine("wrote " + report);

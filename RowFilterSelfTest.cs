@@ -7,7 +7,7 @@ namespace MRAudioKit;
 /// </summary>
 public static class RowFilterSelfTest
 {
-    /// <summary>MRAudioKit.exe --rowfilters</summary>
+    /// <summary>XzoundWave.exe --rowfilters</summary>
     public static int Run()
     {
         void W(string s) => Console.WriteLine(s);

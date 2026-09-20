@@ -29,10 +29,13 @@ public static class Cedict
         var exeDir = AppContext.BaseDirectory;
         yield return Path.Combine(exeDir, FileName);
         yield return Path.Combine(exeDir, FileName + ".gz");
-        var appData = Path.Combine(
+        yield return Path.Combine(Settings.AppDataDir, FileName);
+        yield return Path.Combine(Settings.AppDataDir, FileName + ".gz");
+        // A copy downloaded before the tool was renamed is still perfectly good.
+        var legacy = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MRAudioKit");
-        yield return Path.Combine(appData, FileName);
-        yield return Path.Combine(appData, FileName + ".gz");
+        yield return Path.Combine(legacy, FileName);
+        yield return Path.Combine(legacy, FileName + ".gz");
     }
 
     public static string FoundAt() => SearchPaths().FirstOrDefault(File.Exists);
@@ -108,15 +111,14 @@ public static class Cedict
     public static async Task<string> DownloadAsync(Action<string> progress,
                                                    CancellationToken cancel = default)
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MRAudioKit");
+        var dir = Settings.AppDataDir;
         Directory.CreateDirectory(dir);
         var dest = Path.Combine(dir, FileName + ".gz");
 
         progress?.Invoke("downloading the dictionary…");
         using (var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMinutes(3) })
         {
-            http.DefaultRequestHeaders.Add("User-Agent", "MRAudioKit");
+            http.DefaultRequestHeaders.Add("User-Agent", "XzoundWave");
             var bytes = await http.GetByteArrayAsync(Source, cancel).ConfigureAwait(false);
             await File.WriteAllBytesAsync(dest, bytes, cancel).ConfigureAwait(false);
         }

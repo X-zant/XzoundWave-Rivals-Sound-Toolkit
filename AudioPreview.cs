@@ -15,7 +15,7 @@ public sealed class AudioPreview : IDisposable
     /// <summary>Raised when a clip finishes on its own, which is what lets one
     /// sound lead into the next without polling or guessing at durations.</summary>
     public event Action Finished;
-    private readonly string _cache = Path.Combine(Path.GetTempPath(), "MRAudioKit");
+    private readonly string _cache = Path.Combine(Path.GetTempPath(), "XzoundWave");
     public string VgmstreamPath { get; set; }
 
     public AudioPreview()

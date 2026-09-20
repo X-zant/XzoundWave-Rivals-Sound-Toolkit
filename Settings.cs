@@ -62,8 +62,16 @@ public sealed class Settings
     }
 
 
-    private static string Dir => Path.Combine(
+    /// <summary>Settings, notes and unpacked tools all live here.</summary>
+    public static string AppDataDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XzoundWave");
+
+    /// <summary>The folder used before the tool was renamed, read once so an existing
+    /// user keeps their paks path and AES key instead of starting over.</summary>
+    private static string LegacyDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MRAudioKit");
+
+    private static string Dir => AppDataDir;
     private static string File_ => Path.Combine(Dir, "settings.json");
 
     public static Settings Load()
@@ -72,6 +80,15 @@ public sealed class Settings
         {
             if (File.Exists(File_))
                 return JsonSerializer.Deserialize<Settings>(File.ReadAllText(File_)) ?? new Settings();
+
+            // First run after the rename: adopt the old settings rather than asking
+            // for the AES key and paks path again. The old folder is left alone.
+            var legacy = Path.Combine(LegacyDir, "settings.json");
+            if (File.Exists(legacy))
+            {
+                var moved = JsonSerializer.Deserialize<Settings>(File.ReadAllText(legacy));
+                if (moved is not null) { moved.Save(); return moved; }
+            }
         }
         catch { /* a corrupt settings file must not stop the app starting */ }
         return new Settings();
@@ -109,10 +126,14 @@ public sealed class Settings
             }
         }
 
+        // vgmstream ships inside the exe. A copy the user pointed at themselves wins;
+        // otherwise one beside the exe, and failing that the bundled one is unpacked.
+        if (!string.IsNullOrWhiteSpace(VgmstreamPath) && !File.Exists(VgmstreamPath))
+            VgmstreamPath = "";
         if (string.IsNullOrWhiteSpace(VgmstreamPath))
         {
             var beside = Path.Combine(AppContext.BaseDirectory, "vgmstream-cli.exe");
-            if (File.Exists(beside)) VgmstreamPath = beside;
+            VgmstreamPath = File.Exists(beside) ? beside : Bundled.EnsureVgmstream(out _) ?? "";
         }
 
         // A usmap sitting next to the exe is the common case once someone drops one in.

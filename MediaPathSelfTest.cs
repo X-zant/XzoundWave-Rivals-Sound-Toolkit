@@ -12,7 +12,7 @@ namespace MRAudioKit;
 /// </summary>
 public static class MediaPathSelfTest
 {
-    /// <summary>MRAudioKit.exe --mediapath [samplesPerFolder]</summary>
+    /// <summary>XzoundWave.exe --mediapath [samplesPerFolder]</summary>
     public static int Run(int sample = 400)
     {
         void W(string s) => Console.WriteLine(s);

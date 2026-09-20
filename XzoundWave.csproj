@@ -6,12 +6,26 @@
     <UseWPF>true</UseWPF>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>MRAudioKit</AssemblyName>
+    <AssemblyName>XzoundWave</AssemblyName>
     <RootNamespace>MRAudioKit</RootNamespace>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- EXPLICIT. Without it the SDK self-contains the publish and fails NETSDK1150. -->
     <SelfContained>false</SelfContained>
     <InvariantGlobalization>false</InvariantGlobalization>
+
+    <!-- One file. Everything the tool needs is either a managed assembly folded in
+         here, or an embedded resource written out on first use. The .NET runtime is
+         the single exception and is the user's to install: bundling it would quadruple
+         the download for something most machines already have. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Not EnableCompressionInSingleFile: the SDK only allows it for self-contained
+         builds, and bundling the runtime is exactly what we are not doing. The largest
+         payload, vgmstream, is an already-compressed zip either way. -->
+    <DebugType>embedded</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Run on a newer major runtime rather than refusing to start on .NET 11. -->
+    <RollForward>LatestMajor</RollForward>
 
     <Version>1.0.0</Version>
     <Product>XzoundWave</Product>
@@ -42,13 +56,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- These ship BESIDE the exe, not just in the repo. The embedded aoTuV codebooks
-         are redistributed under libvorbis's licence, whose binary clause asks that the
-         notice travel with the materials, so a zip of the publish folder has to contain
-         it and not only the source tree. -->
-    <Content Include="LICENSE" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="README.md" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Embedded rather than copied beside the exe: the release IS one file, and a
+         licence notice cannot travel with a distribution it is not inside. Both are
+         readable via the licences verb and written out beside the unpacked vgmstream. -->
+    <EmbeddedResource Include="LICENSE" LogicalName="XzoundWave.LICENSE" />
+    <EmbeddedResource Include="THIRD-PARTY-NOTICES.md" LogicalName="XzoundWave.THIRD-PARTY-NOTICES.md" />
+    <!-- vgmstream-cli and the codec DLLs it loads, unpacked to app data on first use.
+         Trimmed from the official win64 zip: the Winamp and XMPlay plugins are 4.3 MB
+         the CLI does not need. -->
+    <EmbeddedResource Include="vendor/vgmstream-cli-win64.zip" LogicalName="XzoundWave.vgmstream.zip" />
   </ItemGroup>
 
   <ItemGroup>

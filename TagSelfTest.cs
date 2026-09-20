@@ -9,7 +9,7 @@ namespace MRAudioKit;
 /// </summary>
 public static class TagSelfTest
 {
-    /// <summary>MRAudioKit.exe --tags</summary>
+    /// <summary>XzoundWave.exe --tags</summary>
     public static int Run()
     {
         void W(string s) => Console.WriteLine(s);

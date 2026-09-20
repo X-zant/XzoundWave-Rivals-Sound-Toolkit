@@ -8,13 +8,13 @@ namespace MRAudioKit;
 
 /// <summary>
 /// Runs the exact code paths the window uses, with no window, and writes a report.
-///     MRAudioKit.exe --selftest &lt;skinId&gt; [reportPath]
+///     XzoundWave.exe --selftest &lt;skinId&gt; [reportPath]
 /// Present so the pipeline can be verified without a human clicking through it.
 /// </summary>
 public static class SelfTest
 {
     /// <summary>
-    ///     MRAudioKit.exe --wav2wem &lt;in.wav&gt; &lt;out.wem&gt;
+    ///     XzoundWave.exe --wav2wem &lt;in.wav&gt; &lt;out.wem&gt;
     /// The WAV -> Wwise wem path on its own. Vorbis via XzoundCore; PCM only if the
     /// encoder cannot handle the input, since the game's banks all declare Vorbis.
     /// </summary>
@@ -42,7 +42,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --vorbistest &lt;in.wav&gt; &lt;out.wem&gt;
+    ///     XzoundWave.exe --vorbistest &lt;in.wav&gt; &lt;out.wem&gt;
     /// Encode with our own Wwise Vorbis writer and check vgmstream reads it back.
     /// </summary>
     public static int VorbisTest(string inWav, string outWem)
@@ -78,7 +78,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --setuproundtrip &lt;file.wem&gt;
+    ///     XzoundWave.exe --setuproundtrip &lt;file.wem&gt;
     /// Read a shipped stripped setup packet, write it back, and diff. Byte-identical
     /// means the writer is correct; a mismatch localises the bad field.
     /// </summary>
@@ -131,7 +131,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --recompress &lt;bankOrFolder&gt; &lt;outFolder&gt;
+    ///     XzoundWave.exe --recompress &lt;bankOrFolder&gt; &lt;outFolder&gt;
     /// Re-encode every PCM entry in a bank (or every .bnk in a folder) to Vorbis.
     /// </summary>
     public static int Recompress(string input, string outDir)
@@ -168,7 +168,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --import &lt;audioFile&gt; &lt;out.wem&gt;
+    ///     XzoundWave.exe --import &lt;audioFile&gt; &lt;out.wem&gt;
     /// Convert any supported audio file (wav, mp3, ogg, flac, m4a, aac, wma) to a
     /// Wwise Vorbis wem -- the same path a drag-and-drop takes.
     /// </summary>
@@ -200,7 +200,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --openbank &lt;bnkOrPak&gt; [rows]
+    ///     XzoundWave.exe --openbank &lt;bnkOrPak&gt; [rows]
     /// What the window shows when someone opens a bank that did not come from the game.
     /// </summary>
     public static int OpenBank(string path, int show)
@@ -251,7 +251,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --volume &lt;skinId&gt; &lt;gain&gt; &lt;outFolder&gt; [bankFilter]
+    ///     XzoundWave.exe --volume &lt;skinId&gt; &lt;gain&gt; &lt;outFolder&gt; [bankFilter]
     /// Write banks with every sound scaled by gain, and check the result decodes.
     /// </summary>
     public static int Volume(string skinId, string gainText, string outDir, string bankFilter)
@@ -286,7 +286,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --translate &lt;skinId&gt; [--fetch]
+    ///     XzoundWave.exe --translate &lt;skinId&gt; [--fetch]
     /// Show what the Category column translates to, and optionally fetch the rest
     /// from whichever provider is configured.
     /// </summary>
@@ -331,7 +331,7 @@ public static class SelfTest
             if (CategoryTranslator.NeedsTranslation(t)) left++;
             report.AppendLine($"{c}\t{t}");
         }
-        var path = Path.Combine(Path.GetTempPath(), "MRAudioKit", "translated.tsv");
+        var path = Path.Combine(Path.GetTempPath(), "XzoundWave", "translated.tsv");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, report.ToString(), new UTF8Encoding(true));
         W($"{cats.Count - left}/{cats.Count} translated; wrote {path}");
@@ -339,7 +339,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --merge &lt;priority&gt; &lt;secondary&gt; &lt;outFolder&gt;
+    ///     XzoundWave.exe --merge &lt;priority&gt; &lt;secondary&gt; &lt;outFolder&gt;
     /// Combine two mods, priority winning any sound both changed.
     /// </summary>
     public static int Merge(string priority, string secondary, string outDir)
@@ -363,7 +363,7 @@ public static class SelfTest
         catch (Exception ex) { W("MERGE FAILED: " + ex.Message); return 1; }
     }
 
-    /// <summary>MRAudioKit.exe --banks — what the picker can reach.</summary>
+    /// <summary>XzoundWave.exe --banks — what the picker can reach.</summary>
     public static int Banks()
     {
         void W(string s) => Console.WriteLine(s);
@@ -403,7 +403,7 @@ public static class SelfTest
         return 0;
     }
 
-    /// <summary>MRAudioKit.exe --dumpmedia &lt;id&gt; &lt;out.wem&gt; — pull one loose media file out.</summary>
+    /// <summary>XzoundWave.exe --dumpmedia &lt;id&gt; &lt;out.wem&gt; — pull one loose media file out.</summary>
     public static int DumpMedia(string idText, string outPath)
     {
         var settings = Settings.Load();
@@ -419,7 +419,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --streamonly
+    ///     XzoundWave.exe --streamonly
     /// How much of the game's audio can ONLY be modded as a loose Media/ file --
     /// i.e. how much genuinely requires Vorbis, since PCM is fine inside a bank.
     /// </summary>
@@ -479,7 +479,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --bankmax
+    ///     XzoundWave.exe --bankmax
     /// The largest number of media entries in any single bank — i.e. how far a
     /// numbered clip set actually has to go.
     /// </summary>
@@ -517,7 +517,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --tts &lt;outFolder&gt; &lt;first&gt; &lt;last&gt;
+    ///     XzoundWave.exe --tts &lt;outFolder&gt; &lt;first&gt; &lt;last&gt;
     /// Generates spoken-number wems and checks each one decodes.
     /// </summary>
     public static int TtsTest(string outDir, int first, int last)
@@ -568,7 +568,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --testbank &lt;skinId&gt; &lt;numberedWemFolder&gt; &lt;outFolder&gt; [bankFilter]
+    ///     XzoundWave.exe --testbank &lt;skinId&gt; &lt;numberedWemFolder&gt; &lt;outFolder&gt; [bankFilter]
     /// </summary>
     public static int TestBank(string skinId, string wemDir, string outDir, string bankFilter)
     {
@@ -609,7 +609,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --build &lt;skinId&gt; &lt;wemFolder&gt; &lt;outFolder&gt;
+    ///     XzoundWave.exe --build &lt;skinId&gt; &lt;wemFolder&gt; &lt;outFolder&gt;
     /// The same ModBuilder the window calls, with no window.
     /// </summary>
     public static int BuildMod(string skinId, string wemDir, string outDir, bool prefetch = false)
@@ -654,7 +654,7 @@ public static class SelfTest
     }
 
     /// <summary>
-    ///     MRAudioKit.exe --media &lt;bankPath&gt; &lt;id&gt; [&lt;id&gt;...]
+    ///     XzoundWave.exe --media &lt;bankPath&gt; &lt;id&gt; [&lt;id&gt;...]
     /// What the game actually ships for a given media id: is it embedded, how big is
     /// the bank's copy, is there a loose streamed file, and how do they relate.
     /// </summary>
@@ -903,7 +903,7 @@ public static class SelfTest
             W($"  donor codec check: {info.Codec}, {info.SampleRate} Hz, {info.Channels}ch");
 
             var built = BnkBuilder.Build(orig, new Dictionary<uint, byte[]> { [target.Id] = donorBytes });
-            var outDir = Path.Combine(Path.GetTempPath(), "MRAudioKit", "modbuild");
+            var outDir = Path.Combine(Path.GetTempPath(), "XzoundWave", "modbuild");
             var outPath = Path.Combine(outDir, Path.GetFileName(displayBank.Path));
             Directory.CreateDirectory(outDir);
             File.WriteAllBytes(outPath, built.Bytes);
@@ -933,7 +933,7 @@ public static class SelfTest
             var sample = new byte[didx[1].Size];
             Buffer.BlockCopy(dataBody, (int)didx[1].Offset, sample, 0, (int)didx[1].Size);
 
-            var stage = Path.Combine(Path.GetTempPath(), "MRAudioKit", "stagetest");
+            var stage = Path.Combine(Path.GetTempPath(), "XzoundWave", "stagetest");
             if (Directory.Exists(stage)) Directory.Delete(stage, true);
             Directory.CreateDirectory(stage);
 
@@ -1111,7 +1111,7 @@ public static class SelfTest
 
         // ---- projects: notes, staged files, surviving a media-id change ------
         {
-            var projPath = Path.Combine(Path.GetTempPath(), "MRAudioKit", "selftest.mrak");
+            var projPath = Path.Combine(Path.GetTempPath(), "XzoundWave", "selftest.mrak");
             Directory.CreateDirectory(Path.GetDirectoryName(projPath)!);
             if (File.Exists(projPath)) File.Delete(projPath);
 

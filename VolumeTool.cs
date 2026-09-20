@@ -65,7 +65,7 @@ public static class VolumeTool
 
         if (string.IsNullOrWhiteSpace(vgmstreamPath) || !File.Exists(vgmstreamPath)) return null;
 
-        var tmp = Path.Combine(Path.GetTempPath(), "MRAudioKit", "vol_" + Guid.NewGuid().ToString("N")[..8]);
+        var tmp = Path.Combine(Path.GetTempPath(), "XzoundWave", "vol_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(tmp);
         try
         {

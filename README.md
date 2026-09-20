@@ -3,9 +3,19 @@
 A sound toolkit for Marvel Rivals. Browse, preview, annotate and re-pack the game's
 Wwise soundbanks.
 
-Standalone: it reads your paks directly. Nothing has to be exported from FModel first,
-and no audio tooling has to be installed to build a working mod — the Vorbis encoder is
-built in.
+Standalone in the literal sense: the release is **one `XzoundWave.exe`**. Nothing to
+install, nothing to unzip beside it, no folders exported from FModel first. The Vorbis
+encoder and vgmstream both ship inside the binary.
+
+## Running it
+
+Download `XzoundWave.exe` and run it.
+
+The one thing it does not carry is the **[.NET 10 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0)**.
+Most machines already have it; bundling it would have quadrupled the download for
+something Windows Update hands out. If it is missing, Windows says so when you double
+click and points you at the installer. Run `XzoundWave.exe --doctor` to see what your
+machine provides and whether anything is wrong.
 
 ## Build
 
@@ -23,11 +33,14 @@ sibling checkouts and no paths into another project.
 | Paks folder | `…\MarvelRivals\MarvelGame\Marvel\Content\Paks` | everything |
 | AES key | per patch, from the modding community | everything |
 | usmap | per patch mappings file | voice lines and categories |
-| vgmstream-cli.exe | https://github.com/vgmstream/vgmstream | playback, durations |
 
-The Paks folder, `vgmstream-cli.exe` and a `*.usmap` sitting beside the exe are found
-automatically on first run. Settings live in `%AppData%\MRAudioKit\`; your work lives in
-a `.mrak` project file wherever you choose to put it.
+That is the whole list — vgmstream used to be here and no longer is, because it now
+unpacks itself out of the exe.
+
+The Paks folder and a `*.usmap` sitting beside the exe are found automatically on first
+run. Settings, the unpacked tools and the optional dictionary live in
+`%AppData%/XzoundWave/`; your work lives in a `.mrak` project file wherever you put it.
+Upgrading from a build called MRAudioKit carries your old settings over on first start.
 
 **The AES key is never bundled.** It is yours to supply.
 
@@ -91,18 +104,20 @@ Working out which sound is which is most of the job, so:
 Everything is verifiable without a window, driving the same code the UI does.
 
 ```
-MRAudioKit.exe --selftest <skinId> [report.txt]        full pipeline check
-MRAudioKit.exe --build <skinId> <wemDir> <outDir> [--prefetch]
-MRAudioKit.exe --testbank <skinId> <clipDir> <outDir> [bankFilter]
-MRAudioKit.exe --openbank <bnk|pak> [rows]             diff a mod against the game
-MRAudioKit.exe --merge <modA> <modB> <outDir>          A wins collisions
-MRAudioKit.exe --import <file> <outDir>                any supported format -> wem
-MRAudioKit.exe --recompress <bnk> <outDir>             PCM bank -> Vorbis
-MRAudioKit.exe --volume <skinId> <wemDir> <outDir> <gain>
-MRAudioKit.exe --media <id> [<id>…] [--bank <name>]    where a media lives, and how
-MRAudioKit.exe --medialayout                           loose-media layout and overlap
-MRAudioKit.exe --banks                                 every bank, grouped
-MRAudioKit.exe --tts <outDir> <first> <last>           generate spoken numbers
+XzoundWave.exe --selftest <skinId> [report.txt]        full pipeline check
+XzoundWave.exe --build <skinId> <wemDir> <outDir> [--prefetch]
+XzoundWave.exe --testbank <skinId> <clipDir> <outDir> [bankFilter]
+XzoundWave.exe --openbank <bnk|pak> [rows]             diff a mod against the game
+XzoundWave.exe --merge <modA> <modB> <outDir>          A wins collisions
+XzoundWave.exe --import <file> <outDir>                any supported format -> wem
+XzoundWave.exe --recompress <bnk> <outDir>             PCM bank -> Vorbis
+XzoundWave.exe --volume <skinId> <wemDir> <outDir> <gain>
+XzoundWave.exe --media <id> [<id>…] [--bank <name>]    where a media lives, and how
+XzoundWave.exe --medialayout                           loose-media layout and overlap
+XzoundWave.exe --banks                                 every bank, grouped
+XzoundWave.exe --tts <outDir> <first> <last>           generate spoken numbers
+XzoundWave.exe --doctor                                what this machine provides
+XzoundWave.exe --licences                              every notice inside the binary
 ```
 
 Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
@@ -135,7 +150,13 @@ zero-length buffer and the sound plays as silence — with no error reported any
 
 ## Licence
 
-MIT — see `LICENSE`. Third-party components keep their own terms; see
-`THIRD-PARTY-NOTICES.md`, which must travel with any copy you distribute.
+MIT — see `LICENSE`.
+
+Third-party components keep their own terms, set out in `THIRD-PARTY-NOTICES.md`. Two
+of them ride inside the exe: the **aoTuV Vorbis codebooks** (Xiph BSD) and **vgmstream**
+with its codec libraries, some of which are **LGPL**. Both notices are compiled in, so
+they travel with the binary automatically — `XzoundWave.exe --licences` prints them, and
+they are written out beside the unpacked vgmstream. If you redistribute the exe, that
+obligation is already met; if you repackage it, keep them with it.
 
 Marvel Rivals and its audio belong to NetEase and Marvel. This tool ships none of it.

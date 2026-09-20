@@ -8,7 +8,7 @@ namespace MRAudioKit;
 /// </summary>
 public static class BulkSelfTest
 {
-    /// <summary>MRAudioKit.exe --bulktest &lt;skinId&gt; &lt;sourceAudio&gt; &lt;moddedBnk&gt; &lt;outFolder&gt;</summary>
+    /// <summary>XzoundWave.exe --bulktest &lt;skinId&gt; &lt;sourceAudio&gt; &lt;moddedBnk&gt; &lt;outFolder&gt;</summary>
     public static int Run(string skinId, string source, string moddedBank, string outRoot)
     {
         void W(string s) => Console.WriteLine(s);

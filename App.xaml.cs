@@ -58,6 +58,20 @@ public partial class App : Application
             return;
         }
 
+        if (Array.FindIndex(e.Args, a => a.Equals("--doctor", StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            Shutdown(EnvCheck.Run());
+            return;
+        }
+
+        if (Array.FindIndex(e.Args, a =>
+                a.Equals("--licences", StringComparison.OrdinalIgnoreCase) ||
+                a.Equals("--licenses", StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            Shutdown(Bundled.PrintLicences());
+            return;
+        }
+
         var mp = Array.FindIndex(e.Args, a => a.Equals("--mediapath", StringComparison.OrdinalIgnoreCase));
         if (mp >= 0)
         {
@@ -216,11 +230,15 @@ public partial class App : Application
             return;
         }
 
+        // Say what is wrong before the window appears, rather than letting it surface
+        // later as an import that quietly fails.
+        if (!EnvCheck.WarnIfNeeded()) { Shutdown(1); return; }
+
         // A parse failure deep in a soundbank should surface as a message, not a
         // silent process exit -- modders run this without a console attached.
         DispatcherUnhandledException += (_, args) =>
         {
-            MessageBox.Show(args.Exception.ToString(), "MRAudioKit",
+            MessageBox.Show(args.Exception.ToString(), "XzoundWave",
                             MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };
