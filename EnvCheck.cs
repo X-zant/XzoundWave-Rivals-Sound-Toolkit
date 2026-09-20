@@ -63,6 +63,13 @@ public static class EnvCheck
                 "\n\nIt lives in:\n" + Bundled.ToolsDir,
                 Fatal: false));
 
+        if (AudioPreview.OutputProblem() is { } outErr)
+            problems.Add(new Problem(
+                "No audio output",
+                "Nothing can be heard because Windows reports no playback device.\n\n" +
+                outErr + "\n\nEverything else in the tool still works.",
+                Fatal: false));
+
         if (!MediaFoundationWorks(out var mfError))
             problems.Add(new Problem(
                 "Windows Media Foundation is not available",
@@ -114,6 +121,62 @@ public static class EnvCheck
         return true;
     }
 
+    /// <summary>
+    /// XzoundWave.exe --playtest &lt;mediaId&gt; — decode one sound and actually play it.
+    ///
+    /// The decode and the playback are separate failures with the same symptom, and a
+    /// tester whose machine reported no problems at all still heard nothing. This runs
+    /// the whole chain so the two can be told apart.
+    /// </summary>
+    public static int PlayTest(uint mediaId)
+    {
+        void W(string s) => Console.WriteLine(s);
+        var settings = Settings.Load();
+        settings.AutoDetect();
+
+        W($"audio out     {AudioPreview.OutputSummary()}");
+        var outProblem = AudioPreview.OutputProblem();
+        if (outProblem is not null) { W("FAIL  " + outProblem); return 1; }
+
+        var session = new GameSession();
+        session.Mount(settings, _ => { });
+
+        var file = session.LooseMedia(mediaId);
+        if (file is null) { W($"FAIL  media {mediaId} is not a loose file in this build."); return 1; }
+
+        using var preview = new AudioPreview { VgmstreamPath = settings.VgmstreamPath };
+        var wav = preview.Decode(file.Read(), mediaId, out var decodeError);
+        if (wav is null) { W("FAIL  decode: " + decodeError); return 1; }
+        W($"decoded       {new FileInfo(wav).Length:N0} B -> {wav}");
+
+        string failure = null;
+        var finished = false;
+        preview.PlaybackFailed += m => failure = m;
+        preview.Finished += () => finished = true;
+
+        var started = DateTime.UtcNow;
+        preview.Play(wav);
+
+        // Watch the player itself rather than waiting for Finished: that event is
+        // posted to this thread's synchronization context, and this loop is what is
+        // occupying it. Give it a moment to start, then wait for it to stop.
+        System.Threading.Thread.Sleep(300);
+        var everPlayed = preview.IsPlaying;
+        while (preview.IsPlaying && failure is null && (DateTime.UtcNow - started).TotalSeconds < 30)
+            System.Threading.Thread.Sleep(100);
+
+        var elapsed = (DateTime.UtcNow - started).TotalSeconds;
+        if (failure is not null) { W("FAIL  playback: " + failure); return 1; }
+        if (!everPlayed) { W("FAIL  the player never started."); return 1; }
+        if (preview.IsPlaying) { W($"FAIL  still playing after {elapsed:0.0}s."); return 1; }
+
+        W($"played        started, ran {elapsed:0.0}s, stopped on its own");
+        _ = finished;
+        W("");
+        W("ALL CHECKS PASSED");
+        return 0;
+    }
+
     /// <summary>Where the report is always saved, so it can be sent to someone.</summary>
     public static string ReportPath => Path.Combine(Settings.AppDataDir, "diagnostics.txt");
 
@@ -151,6 +214,7 @@ public static class EnvCheck
             }
         }
 
+        W($"  audio out     {AudioPreview.OutputSummary()}");
         W($"  licences      {(Bundled.Licence is not null && Bundled.Notices is not null ? "embedded" : "MISSING")}");
 
         W("");

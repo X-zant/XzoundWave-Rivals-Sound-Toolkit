@@ -71,6 +71,14 @@ public partial class App : Application
             return;
         }
 
+        var pt = Array.FindIndex(e.Args, a => a.Equals("--playtest", StringComparison.OrdinalIgnoreCase));
+        if (pt >= 0)
+        {
+            Shutdown(EnvCheck.PlayTest(
+                pt + 1 < e.Args.Length && uint.TryParse(e.Args[pt + 1], out var id) ? id : 1641578u));
+            return;
+        }
+
         if (Array.FindIndex(e.Args, a => a.Equals("--doctor", StringComparison.OrdinalIgnoreCase)) >= 0)
         {
             Shutdown(EnvCheck.Run());

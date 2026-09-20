@@ -32,6 +32,10 @@ public partial class MainWindow : Window
         TbUsmap.Text = _settings.UsmapPath;
         ApplyColumnVisibility();
         SyncRowSwitches();
+        // A failure to play used to be swallowed entirely, so "no sound" looked the
+        // same as a broken decoder. Say it once, where the user is already looking.
+        _preview.PlaybackFailed += msg => Dispatcher.BeginInvoke(new Action(() =>
+            Say("playback failed: " + msg)));
         RefreshUsmapInfo();
         DropHelp.IsExpanded = _settings.ShowDropHelp;
         CbTransProvider.ItemsSource = LiveTranslate.Providers;

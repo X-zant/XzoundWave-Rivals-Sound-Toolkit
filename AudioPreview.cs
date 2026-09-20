@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.IO;
-using System.Windows.Media;
+using NAudio.Wave;
 
 namespace MRAudioKit;
 
@@ -10,21 +10,29 @@ namespace MRAudioKit;
 /// </summary>
 public sealed class AudioPreview : IDisposable
 {
-    private readonly MediaPlayer _player = new();
+    /// <summary>
+    /// Playback goes through NAudio rather than WPF's MediaPlayer.
+    ///
+    /// MediaPlayer is a front end for Windows Media Player, so on an edition without
+    /// Media Features -- an N build, or one where they have been turned off -- it opens
+    /// the file, reports nothing, and plays silence. That is indistinguishable from a
+    /// broken decoder, and it is what a tester hit on a machine where every other check
+    /// came back clean. NAudio talks to WASAPI and needs none of it.
+    /// </summary>
+    private WaveOutEvent _out;
+    private WaveFileReader _reader;
+    private bool _stoppedOnPurpose;
 
     /// <summary>Raised when a clip finishes on its own, which is what lets one
     /// sound lead into the next without polling or guessing at durations.</summary>
     public event Action Finished;
+
+    /// <summary>Raised when playback itself fails, rather than the decode.</summary>
+    public event Action<string> PlaybackFailed;
     private readonly string _cache = Path.Combine(Path.GetTempPath(), "XzoundWave");
     public string VgmstreamPath { get; set; }
 
-    public AudioPreview()
-    {
-        Directory.CreateDirectory(_cache);
-        // A clip that fails to open must advance too, or one bad file stalls the run.
-        _player.MediaEnded += (_, _) => Finished?.Invoke();
-        _player.MediaFailed += (_, _) => Finished?.Invoke();
-    }
+    public AudioPreview() => Directory.CreateDirectory(_cache);
 
     /// <summary>
     /// The loose streamed file when one exists, otherwise the bank's copy.
@@ -206,12 +214,79 @@ public sealed class AudioPreview : IDisposable
 
     public void Play(string wavPath)
     {
-        _player.Stop();
-        _player.Open(new Uri(wavPath));
-        _player.Play();
+        Release();
+        try
+        {
+            _reader = new WaveFileReader(wavPath);
+            _out = new WaveOutEvent();
+            _out.PlaybackStopped += (_, e) =>
+            {
+                if (e.Exception is not null) PlaybackFailed?.Invoke(e.Exception.Message);
+                // Stopping on purpose is not the end of a clip, and must not advance
+                // an autoplay run to the next one.
+                if (!_stoppedOnPurpose) Finished?.Invoke();
+            };
+            _out.Init(_reader);
+            _stoppedOnPurpose = false;
+            _out.Play();
+        }
+        catch (Exception ex)
+        {
+            Release();
+            PlaybackFailed?.Invoke(ex.Message);
+            // A clip that cannot play must still advance, or one bad file stalls a run.
+            Finished?.Invoke();
+        }
     }
 
-    public void Stop() => _player.Stop();
+    /// <summary>
+    /// Whether sound is coming out right now. Polling this is how a headless check can
+    /// watch a clip through: PlaybackStopped is posted to the synchronization context
+    /// that created the player, so a caller blocking that thread never sees the event.
+    /// </summary>
+    public bool IsPlaying => _out?.PlaybackState == PlaybackState.Playing;
 
-    public void Dispose() => _player.Close();
+    public void Stop()
+    {
+        _stoppedOnPurpose = true;
+        try { _out?.Stop(); } catch { }
+    }
+
+    private void Release()
+    {
+        _stoppedOnPurpose = true;
+        try { _out?.Stop(); } catch { }
+        try { _out?.Dispose(); } catch { }
+        try { _reader?.Dispose(); } catch { }
+        _out = null;
+        _reader = null;
+    }
+
+    /// <summary>
+    /// Is there anywhere for sound to go? Reported by the diagnostics, because "no
+    /// output device" and "the decoder is broken" look identical from the outside.
+    /// </summary>
+    public static string OutputProblem()
+    {
+        try
+        {
+            return WaveOut.DeviceCount > 0
+                ? null
+                : "Windows reports no audio output device.";
+        }
+        catch (Exception ex) { return "could not query audio output: " + ex.Message; }
+    }
+
+    public static string OutputSummary()
+    {
+        try
+        {
+            var n = WaveOut.DeviceCount;
+            if (n == 0) return "none";
+            return $"{n} device(s), default: {WaveOut.GetCapabilities(0).ProductName}";
+        }
+        catch (Exception ex) { return "unknown — " + ex.Message; }
+    }
+
+    public void Dispose() => Release();
 }
