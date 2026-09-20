@@ -93,6 +93,12 @@ public partial class App : Application
             return;
         }
 
+        if (Array.FindIndex(e.Args, a => a.Equals("--themetest", StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            Shutdown(MenuSelfTest.RunTheme());
+            return;
+        }
+
         if (Array.FindIndex(e.Args, a => a.Equals("--menutest", StringComparison.OrdinalIgnoreCase)) >= 0)
         {
             Shutdown(MenuSelfTest.Run());

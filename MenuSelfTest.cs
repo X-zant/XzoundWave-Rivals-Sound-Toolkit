@@ -71,6 +71,86 @@ public static class MenuSelfTest
         return fails == 0 ? 0 : 1;
     }
 
+    /// <summary>
+    /// XzoundWave.exe --themetest — every control that can be disabled must say what it
+    /// looks like disabled.
+    ///
+    /// WPF's stock chrome is light. A style that sets Background and Foreground but
+    /// leaves the template alone gets overruled in exactly the states nobody checks:
+    /// a disabled button painted itself near-white with grey text while the rest of the
+    /// window was dark. The rule this enforces is that a style either replaces the
+    /// template or carries an explicit IsEnabled=False trigger.
+    /// </summary>
+    /// <remarks>
+    /// This reads the styles, not the pixels. Rendering each control off-screen and
+    /// measuring its brightness would be the stronger check and was tried: controls
+    /// like TextBox and ComboBox build no visual tree without a window, so they came
+    /// back as empty bitmaps that read as "perfectly dark" and passed a check they had
+    /// never taken. Giving them a hidden window needs a dispatcher pump, which is not
+    /// available this early in startup. A structural check that is honest about its
+    /// limits beats a visual one that quietly lies, so the pixels are checked by eye.
+    /// </remarks>
+    public static int RunTheme()
+    {
+        void W(string s) => Console.WriteLine(s);
+        var fails = 0;
+        void Check(string what, bool ok, string detail = null)
+        {
+            W($"  {(ok ? "ok  " : "FAIL")}  {what}" + (detail is null ? "" : $"   {detail}"));
+            if (!ok) fails++;
+        }
+
+        W("disabled states are stated, not inherited from the system theme");
+        foreach (var type in new[]
+                 {
+                     typeof(Button), typeof(TextBox), typeof(CheckBox),
+                     typeof(ComboBox), typeof(MenuItem),
+                 })
+        {
+            var style = Application.Current?.TryFindResource(type) as Style;
+            if (style is null) { Check($"{type.Name} is styled", false); continue; }
+
+            var template = style.Setters.OfType<Setter>()
+                .FirstOrDefault(s => s.Property == Control.TemplateProperty)?.Value as ControlTemplate;
+
+            var inStyle = style.Triggers.OfType<Trigger>()
+                .Any(t => t.Property == UIElement.IsEnabledProperty && Equals(t.Value, false));
+            var inTemplate = template?.Triggers.OfType<Trigger>()
+                .Any(t => t.Property == UIElement.IsEnabledProperty && Equals(t.Value, false)) ?? false;
+
+            Check($"{type.Name,-10} says how it looks disabled", inStyle || inTemplate,
+                  template is null ? "style trigger" : "templated");
+        }
+
+        // The button is the one that actually bit, so check its states individually.
+        W("");
+        W("button states");
+        var btn = Application.Current?.TryFindResource(typeof(Button)) as Style;
+        var btnTemplate = btn?.Setters.OfType<Setter>()
+            .FirstOrDefault(s => s.Property == Control.TemplateProperty)?.Value as ControlTemplate;
+        Check("the stock chrome is replaced", btnTemplate is not null);
+        if (btnTemplate is not null)
+        {
+            var props = btnTemplate.Triggers.OfType<Trigger>().Select(t => t.Property.Name).ToList();
+            W($"  triggers on: {string.Join(", ", props)}");
+            foreach (var p in new[] { "IsMouseOver", "IsPressed", "IsEnabled" })
+                Check($"{p} is handled", props.Contains(p));
+
+            // Disabled text must be set on the template, or a button carrying its own
+            // Foreground keeps it and stays bright while greyed out.
+            var disabled = btnTemplate.Triggers.OfType<Trigger>()
+                .FirstOrDefault(t => t.Property == UIElement.IsEnabledProperty);
+            var targetsChrome = disabled?.Setters.OfType<Setter>()
+                .Any(s => s.TargetName is not null
+                          && s.Property.Name.Contains("Foreground", StringComparison.Ordinal)) ?? false;
+            Check("disabled text is set on the template, not the control", targetsChrome);
+        }
+
+        W("");
+        W(fails == 0 ? "ALL CHECKS PASSED" : $"{fails} CHECK(S) FAILED");
+        return fails == 0 ? 0 : 1;
+    }
+
     private static IEnumerable<DependencyObject> Walk(DependencyObject node)
     {
         if (node is null) yield break;

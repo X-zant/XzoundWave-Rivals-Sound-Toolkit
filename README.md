@@ -131,8 +131,8 @@ XzoundWave.exe --licences                              every notice inside the b
 Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 
 ```
---selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --mediapath
---vorbistest  --setuproundtrip
+--selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
+--mediapath  --vorbistest  --setuproundtrip
 ```
 
 ## XzoundCore

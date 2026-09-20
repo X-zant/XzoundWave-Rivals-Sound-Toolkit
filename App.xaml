@@ -39,33 +39,215 @@
             <Setter Property="CaretBrush" Value="{StaticResource Fg}"/>
             <Setter Property="SelectionBrush" Value="{StaticResource Selected}"/>
             <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <!-- The stock chrome repaints a disabled or read-only box from system
+                 brushes, so the colours above only hold while it is editable. -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Box" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                SnapsToDevicePixels="True">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Box" Property="Background"
+                                        Value="{StaticResource Bg}"/>
+                                <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
+        <!-- Templated, for the same reason the menus are. The stock button keeps its
+             own chrome and ignores Background in every state but the plain one, so a
+             disabled button painted itself near-white with grey text: the one piece of
+             daylight left in a dark window. Hover and pressed were borrowed from the
+             system theme too, and equally out of place. -->
         <Style TargetType="Button">
             <Setter Property="Background" Value="{StaticResource Bg2}"/>
             <Setter Property="Foreground" Value="{StaticResource Fg}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,4"/>
             <Setter Property="Margin" Value="0,0,6,0"/>
-            <Style.Triggers>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter x:Name="Content"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background"
+                                        Value="{StaticResource Bg3}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background"
+                                        Value="{StaticResource Selected}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Background"
+                                        Value="{StaticResource Bg}"/>
+                                <!-- Set on the presenter, not the Button: a button with
+                                     its own Foreground (the accented Build button) keeps
+                                     that through a style trigger, and setting it on the
+                                     surrounding Border loses to inheritance from the
+                                     templated parent. The presenter is what the text
+                                     actually inherits from. -->
+                                <Setter TargetName="Content" Property="TextElement.Foreground"
+                                        Value="{StaticResource Disabled}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
+        <!-- The box itself is the problem here: stock WPF draws a white square with a
+             black tick, which on a dark toolbar is a bright chip of daylight whatever
+             the Foreground is set to. Templated so the box belongs to the theme. -->
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="{StaticResource Fg}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Border x:Name="Box" Width="14" Height="14"
+                                    Background="{StaticResource Bg2}"
+                                    BorderBrush="{StaticResource Line}" BorderThickness="1"
+                                    VerticalAlignment="Center" SnapsToDevicePixels="True">
+                                <Path x:Name="Tick" Visibility="Collapsed"
+                                      Stretch="Uniform" Margin="2"
+                                      Stroke="{StaticResource Accent}" StrokeThickness="2"
+                                      StrokeEndLineCap="Round" StrokeStartLineCap="Round"
+                                      Data="M 0,4 L 3,7 L 8,0"/>
+                            </Border>
+                            <ContentPresenter Margin="6,0,0,0" VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Tick" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="{x:Null}">
+                                <Setter TargetName="Box" Property="Background"
+                                        Value="{StaticResource Selected}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush"
+                                        Value="{StaticResource Accent}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Box" Property="Background"
+                                        Value="{StaticResource Bg}"/>
+                                <Setter TargetName="Tick" Property="Stroke"
+                                        Value="{StaticResource Disabled}"/>
+                                <Setter Property="Foreground" Value="{StaticResource Disabled}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- ComboBox: the closed control and the popup list are separate surfaces,
              and both have to be said, or the dropdown opens white. -->
+        <!-- The worst offender of the lot. A ComboBox keeps its own chrome whatever
+             Background says, so a disabled one on the Setup tab drew a white box with
+             grey text. Templated: a toggle for the face, a popup for the list. Only
+             non-editable combos are used here, so there is no text-box part. -->
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="{StaticResource Bg2}"/>
             <Setter Property="Foreground" Value="{StaticResource Fg}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
-            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay,
+                                                      RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Face"
+                                                Background="{StaticResource Bg2}"
+                                                BorderBrush="{StaticResource Line}"
+                                                BorderThickness="1" SnapsToDevicePixels="True">
+                                            <TextBlock x:Name="Arrow" Text="&#x25BE;"
+                                                       HorizontalAlignment="Right"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,7,0"
+                                                       Foreground="{StaticResource Muted}"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Face" Property="Background"
+                                                        Value="{StaticResource Bg3}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter TargetName="Face" Property="Background"
+                                                        Value="{StaticResource Bg}"/>
+                                                <Setter TargetName="Arrow" Property="Foreground"
+                                                        Value="{StaticResource Disabled}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <ContentPresenter x:Name="Sel" IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                                   Placement="Bottom" PopupAnimation="None"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}">
+                                <Border Background="{StaticResource Bg2}"
+                                        BorderBrush="{StaticResource Line}" BorderThickness="1"
+                                        MinWidth="{Binding ActualWidth,
+                                                   RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        SnapsToDevicePixels="True">
+                                    <ScrollViewer>
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Sel" Property="TextElement.Foreground"
+                                        Value="{StaticResource Disabled}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="ComboBoxItem">
             <Setter Property="Background" Value="{StaticResource Bg2}"/>
