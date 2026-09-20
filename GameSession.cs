@@ -59,8 +59,18 @@ public sealed class GameSession
         _ => "en",
     };
 
+    /// <summary>
+    /// Bumped by every mount. Anything caching work derived from this session has to
+    /// include it in its key: the window mounts one session object in place rather
+    /// than replacing it, so object identity alone cannot tell "before the game was
+    /// loaded" from "after", and a cache keyed on identity keeps serving the empty
+    /// answer it computed first.
+    /// </summary>
+    public int Generation { get; private set; }
+
     public void Mount(Settings s, Action<string> progress)
     {
+        Generation++;
         Language = s.Language;
 
         progress("Mounting paks...");

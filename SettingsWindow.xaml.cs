@@ -54,7 +54,7 @@ public partial class SettingsWindow : Window
         PaneHint.Text =
             "Turn a kind off and those rows disappear from the list everywhere — the counts, " +
             "Export to CSV and Autoplay all follow what is on screen. Nothing is deleted, and " +
-            "a build still writes every sound in the bank.";
+            "a build still writes every sound in the .bnk.";
 
         var hidden = _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault];
         foreach (var cls in RowClasses.All)

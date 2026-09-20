@@ -116,8 +116,9 @@ Working out which sound is which is most of the job, so:
 - **Extract only the modded wems**, named so they drop straight back in.
 - **Merge** two mods: each is diffed against the shipped bank so only what its author
   replaced carries over, and the first one you pick wins any collision.
-- **Recompress** a PCM bank to Vorbis — around 8× smaller, and refused if it would come
-  out larger.
+- **Recompress .bnk** — re-encode a `.bnk`'s uncompressed PCM audio to Vorbis, around
+  8× smaller. Only the audio changes; event ids, media ids and the sound hierarchy are
+  untouched. An entry that would come out larger is left as PCM.
 
 ## Headless verbs
 

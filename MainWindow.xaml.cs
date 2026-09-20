@@ -113,7 +113,7 @@ public partial class MainWindow : Window
             {
                 var skinNode = new TreeViewItem
                 {
-                    Header = $"{s.Label}   ({s.Banks.Count} bank{(s.Banks.Count == 1 ? "" : "s")})",
+                    Header = $"{s.Label}   ({s.Banks.Count} .bnk{(s.Banks.Count == 1 ? "" : " files")})",
                     Tag = new Pick(c.CharId, s, null),
                 };
                 // Third level. Which bank a wem lives in decides which file you have to
@@ -134,7 +134,7 @@ public partial class MainWindow : Window
         if (_session.OtherBanks.Count == 0) return;
         var others = new TreeViewItem
         {
-            Header = $"Other banks   ({_session.OtherBanks.Sum(g => g.Skins.Count)})",
+            Header = $"Other .bnk files   ({_session.OtherBanks.Sum(g => g.Skins.Count)})",
         };
         foreach (var g in _session.OtherBanks)
         {
@@ -176,8 +176,8 @@ public partial class MainWindow : Window
             RefreshPendingStatus();
 
             if (_bankFilter is null)
-                Say($"{_skin.Label} — {_sounds.Rows.Count} sounds across {_skin.Banks.Count} bank(s). " +
-                    "Pick a bank to work on just that file.");
+                Say($"{_skin.Label} — {_sounds.Rows.Count} sounds across {_skin.Banks.Count} .bnk(s). " +
+                    "Pick a .bnk to work on just that file.");
             else
             {
                 var n = _sounds.Rows.Count(r => r.Bank.Equals(BankStem(_bankFilter), StringComparison.OrdinalIgnoreCase));
@@ -186,7 +186,7 @@ public partial class MainWindow : Window
                     "Only this file needs rebuilding for swaps made here.");
             }
         }
-        catch (Exception ex) { Say("Failed to read banks: " + ex.Message); }
+        catch (Exception ex) { Say("Failed to read .bnk files: " + ex.Message); }
     }
 
     private static string BankStem(string fileName) => Path.GetFileNameWithoutExtension(fileName);
@@ -483,7 +483,7 @@ public partial class MainWindow : Window
         if (openable.Count > 0)
         {
             if (openable.Count > 1)
-                Say($"opening {Path.GetFileName(openable[0])} — drop one bank or pak at a time.");
+                Say($"opening {Path.GetFileName(openable[0])} — drop one .bnk or .pak at a time.");
             OpenModPath(openable[0]);
             return;
         }
@@ -552,7 +552,7 @@ public partial class MainWindow : Window
         // 50 dialogs, but a silent codec mismatch is the exact failure worth naming.
         var problems = new List<string>(rejected);
         problems.AddRange(_pending.Where(p => p.FormatTag != 0xFFFF)
-            .Select(p => $"{p.FileName} — {p.Codec}; this game's banks declare VORBIS"));
+            .Select(p => $"{p.FileName} — {p.Codec}; this game's .bnk files declare VORBIS"));
         if (problems.Count > 0)
             MessageBox.Show(string.Join(Environment.NewLine, problems.Take(30)) +
                             (problems.Count > 30 ? $"{Environment.NewLine}… and {problems.Count - 30} more" : ""),
@@ -697,7 +697,7 @@ public partial class MainWindow : Window
     private void BtnTestBank_Click(object sender, RoutedEventArgs e)
     {
         if (BlockedByOpenedBank()) return;
-        if (_skin is null) { Say("pick a skin or bank first."); return; }
+        if (_skin is null) { Say("pick a skin or .bnk first."); return; }
 
         if (string.IsNullOrWhiteSpace(_settings.TestWemDir) || !Directory.Exists(_settings.TestWemDir))
         {
@@ -768,10 +768,10 @@ public partial class MainWindow : Window
         var short_ = Math.Max(0, need - have);
 
         var msg = new StringBuilder();
-        msg.AppendLine($"Scope: {(_bankFilter ?? _skin.Label)}   —   {scope.Count} bank(s), {entries} media entries.");
+        msg.AppendLine($"Scope: {(_bankFilter ?? _skin.Label)}   —   {scope.Count} .bnk(s), {entries} media entries.");
         msg.AppendLine($"Numbered clips available: {have}  (lowest {lowest}, highest {wems.Max}).");
         msg.AppendLine(perBank
-            ? $"Numbering restarts at {lowest} for each bank; the largest bank needs {need}."
+            ? $"Numbering restarts at {lowest} for each .bnk; the largest .bnk needs {need}."
             : $"Numbering runs continuously from {lowest}; that needs {need}.");
         msg.AppendLine();
         if (short_ == 0)
@@ -785,7 +785,7 @@ public partial class MainWindow : Window
         msg.AppendLine();
         msg.AppendLine("Continue?");
 
-        if (MessageBox.Show(msg.ToString(), "Numbered test bank",
+        if (MessageBox.Show(msg.ToString(), "Numbered test .bnk",
                             MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
 
@@ -805,15 +805,15 @@ public partial class MainWindow : Window
             RefreshStats();
             RefreshProjectLabel();
 
-            Say($"test bank: {r.Numbered} numbered, {r.Silenced} silenced, {r.Banks} bank(s) written; " +
+            Say($"test .bnk: {r.Numbered} numbered, {r.Silenced} silenced, {r.Banks} .bnk(s) written; " +
                 $"{tagged} sound(s) tagged with their number in \"{_project.Name}\".");
             MessageBox.Show(r.Log + Environment.NewLine +
                             "Legend written to test-bank-legend.csv." + Environment.NewLine +
                             $"{tagged} sound(s) now carry their number in the Test # column — " +
                             "save the project to keep it.",
-                            "Test bank built", MessageBoxButton.OK, MessageBoxImage.Information);
+                            "Test .bnk built", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) { Say("test bank failed: " + ex.Message); }
+        catch (Exception ex) { Say("test .bnk failed: " + ex.Message); }
     }
 
     // ---- opening somebody else's bank ---------------------------------------
@@ -825,8 +825,8 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Open a soundbank, or a mod pak to pick one from",
-            Filter = "Soundbank or mod pak|*.bnk;*.pak;*.utoc|Soundbank|*.bnk|Mod pak|*.pak;*.utoc|All files|*.*",
+            Title = "Open a .bnk, or a mod .pak to pick one from",
+            Filter = ".bnk or mod .pak|*.bnk;*.pak;*.utoc|.bnk|*.bnk|Mod .pak|*.pak;*.utoc|All files|*.*",
         };
         if (dlg.ShowDialog() == true) OpenModPath(dlg.FileName);
     }
@@ -857,7 +857,7 @@ public partial class MainWindow : Window
         if (sounds.Rows.Count == 0)
         {
             MessageBox.Show($"{bank.Name} has no embedded media — nothing to show.\n\n" +
-                            "Banks that only carry events keep their audio in loose Media/ files.",
+                            ".bnk files that only carry events keep their audio in loose Media/ files.",
                             "Nothing to show", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -874,8 +874,8 @@ public partial class MainWindow : Window
         var changed = _sounds.Rows.Count(r => r.ModTag is "MODDED" or "NEW");
         var compared = _sounds.Rows.Any(r => r.ModTag is not null);
         Say($"opened {bank.Label} — {_sounds.Rows.Count} media, {named} matched to shipped events" +
-            (compared ? $", {changed} changed from the shipped bank" : ", no shipped bank to compare against") +
-            (siblings > 1 ? $"  ({siblings} banks in that pak)" : "") +
+            (compared ? $", {changed} changed from the shipped .bnk" : ", no shipped .bnk to compare against") +
+            (siblings > 1 ? $"  ({siblings} .bnk files in that .pak)" : "") +
             (skipped is { Count: > 0 } ? $"  —  {skipped.Count} container(s) skipped" : "") +
             ".  Building is disabled until you close it.");
 
@@ -912,7 +912,7 @@ public partial class MainWindow : Window
         var body = new DockPanel { Margin = new Thickness(14) };
         var head = new TextBlock
         {
-            Text = $"{banks.Count} banks in {source}",
+            Text = $"{banks.Count} .bnk files in {source}",
             Margin = new Thickness(0, 0, 0, 8),
             Foreground = (System.Windows.Media.Brush)FindResource("Fg"),
         };
@@ -924,7 +924,7 @@ public partial class MainWindow : Window
 
         var win = new Window
         {
-            Title = "Pick a bank",
+            Title = "Pick a .bnk",
             Content = body,
             Width = 460,
             Height = 380,
@@ -961,7 +961,7 @@ public partial class MainWindow : Window
     private bool BlockedByOpenedBank()
     {
         if (_openedBank is null) return false;
-        Say($"viewing {_openedBank.Name} — close it first to build against the game's banks.");
+        Say($"viewing {_openedBank.Name} — close it first to build against the game's .bnk files.");
         return true;
     }
 
@@ -1126,6 +1126,84 @@ public partial class MainWindow : Window
     /// author actually replaced is carried over, and the priority mod wins any sound
     /// both of them changed.
     /// </summary>
+    /// <summary>
+    /// Re-encode a .bnk's PCM audio to Vorbis. Handy after building a mod by hand, or
+    /// with tools that embed uncompressed audio: the game's own entries are Vorbis and
+    /// a PCM voice pack runs to hundreds of megabytes for the same sound.
+    /// </summary>
+    private async void BtnRecompress_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Pick a .bnk to recompress",
+            Filter = "Soundbank|*.bnk|All files|*.*",
+        };
+        if (dlg.ShowDialog() != true) return;
+
+        var source = dlg.FileName;
+        var outDlg = new OpenFolderDialog { Title = "Where to write the recompressed .bnk" };
+        if (outDlg.ShowDialog() != true) return;
+
+        var dest = Path.Combine(outDlg.FolderName, Path.GetFileName(source));
+        if (string.Equals(dest, source, StringComparison.OrdinalIgnoreCase))
+        {
+            // Writing over the input would leave nothing to fall back on if the
+            // conversion is not what the author wanted.
+            MessageBox.Show("Pick a different folder — this would overwrite the .bnk you chose.",
+                            "Same file", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        BtnRecompress.IsEnabled = false;
+        Say("recompressing…");
+        try
+        {
+            var original = await Task.Run(() => File.ReadAllBytes(source));
+            var r = await Task.Run(() => BankRecompress.Run(
+                original, m => Dispatcher.BeginInvoke(new Action(() => Say(m)))));
+
+            if (r.Converted == 0)
+            {
+                Say($"nothing to convert in {Path.GetFileName(source)}.");
+                MessageBox.Show(
+                    string.Join(Environment.NewLine, r.Notes.DefaultIfEmpty(
+                        "Every entry is already compressed.")),
+                    "Nothing to do", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            Directory.CreateDirectory(outDlg.FolderName);
+            await Task.Run(() => File.WriteAllBytes(dest, r.Bytes));
+
+            var saved = original.Length - r.Bytes.Length;
+            var factor = r.MediaAfter > 0 ? (double)r.MediaBefore / r.MediaAfter : 0;
+            Say($"recompressed {r.Converted} entry(s) — {original.Length:N0} B -> {r.Bytes.Length:N0} B.");
+            MessageBox.Show(
+                $"{Path.GetFileName(source)}" + Environment.NewLine + Environment.NewLine +
+                $"{r.Converted} entry(s) converted to Vorbis" + Environment.NewLine +
+                $"{r.Skipped} already compressed" +
+                (r.Failed > 0 ? Environment.NewLine + $"{r.Failed} left as PCM" : "") +
+                Environment.NewLine + Environment.NewLine +
+                $"{original.Length:N0} B  ->  {r.Bytes.Length:N0} B" +
+                (saved > 0 ? $"   ({saved:N0} B smaller" +
+                             (factor > 1 ? $", audio {factor:0.0}x" : "") + ")" : "") +
+                Environment.NewLine + Environment.NewLine +
+                "Written to:" + Environment.NewLine + dest +
+                (r.Notes.Count > 0
+                    ? Environment.NewLine + Environment.NewLine +
+                      string.Join(Environment.NewLine, r.Notes.Take(10))
+                    : ""),
+                "Recompressed", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            Say("recompress failed: " + ex.Message);
+            MessageBox.Show(ex.Message, "Could not recompress",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally { BtnRecompress.IsEnabled = true; }
+    }
+
     private async void BtnMerge_Click(object sender, RoutedEventArgs e)
     {
         if (_session is null) { Say("load the game first."); return; }
@@ -1160,7 +1238,7 @@ public partial class MainWindow : Window
                 Path.Combine(outRoot, "_extracted"),
                 m => Dispatcher.BeginInvoke(new Action(() => Say(m)))));
 
-            Say($"merged: {r.Banks} bank(s), {r.FromPriority} from priority, " +
+            Say($"merged: {r.Banks} .bnk(s), {r.FromPriority} from priority, " +
                 $"{r.FromSecondary} from secondary, {r.Collisions.Count} collision(s).");
 
             // The collisions are the part worth reading: they are the sounds where the
@@ -1271,7 +1349,7 @@ public partial class MainWindow : Window
         if (_openedBank is null || _sounds is null)
         {
             MessageBox.Show(
-                "Open a bank or a mod pak first — this writes out the sounds that bank " +
+                "Open a .bnk or a mod .pak first — this writes out the sounds that .bnk " +
                 "changed, which is only known once it has been compared with the game's own.",
                 "Nothing opened", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -1284,7 +1362,7 @@ public partial class MainWindow : Window
             .ToList();
         if (changed.Count == 0)
         {
-            MessageBox.Show($"{_openedBank.Name} changes nothing from the shipped bank.",
+            MessageBox.Show($"{_openedBank.Name} changes nothing from the shipped .bnk.",
                             "Nothing changed", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -1400,11 +1478,22 @@ public partial class MainWindow : Window
     /// and a length as a bare number is not how anyone compares two clips -- that is
     /// a job for a waveform. Both stay one click away.
     /// </summary>
-    internal static readonly string[] HiddenColumnsByDefault = ["Bank", "Len"];
+    internal static readonly string[] HiddenColumnsByDefault = [".bnk", "Len"];
+
+    /// <summary>
+    /// Column headers are the key a hidden-column preference is stored under, so
+    /// renaming one silently un-hides it for everybody who had already turned it off.
+    /// Rewrite the old name on load rather than stranding the setting.
+    /// </summary>
+    private static readonly (string Old, string New)[] RenamedColumns = [("Bank", ".bnk")];
 
     private void ApplyColumnVisibility()
     {
         _settings.HiddenColumns ??= [.. HiddenColumnsByDefault];
+        foreach (var (was, now) in RenamedColumns)
+            for (var i = 0; i < _settings.HiddenColumns.Count; i++)
+                if (_settings.HiddenColumns[i].Equals(was, StringComparison.OrdinalIgnoreCase))
+                    _settings.HiddenColumns[i] = now;
         foreach (var c in Grid_.Columns)
         {
             var header = c.Header as string;
@@ -1622,7 +1711,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void MiSetAllVolume_Click(object sender, RoutedEventArgs e)
     {
-        if (_sounds is null) { Say("open a skin or a bank first."); return; }
+        if (_sounds is null) { Say("open a skin or a .bnk first."); return; }
 
         var byHand = _sounds.Rows.Count(r => r.VolumeByHand);
         var gain = AskGain("Change all volumes",
@@ -1685,7 +1774,7 @@ public partial class MainWindow : Window
 
         var banks = BanksFor(levels.Keys.ToList());
         var vgm = _settings.VgmstreamPath;
-        Say($"scaling {levels.Count} sound(s) across {banks.Count} bank(s)…");
+        Say($"scaling {levels.Count} sound(s) across {banks.Count} .bnk(s)…");
 
         try
         {
@@ -1693,7 +1782,7 @@ public partial class MainWindow : Window
                 _session, banks, id => levels.GetValueOrDefault(id, 1.0), outRoot,
                 _sounds, vgm, m => Dispatcher.BeginInvoke(new Action(() => Say(m)))));
 
-            Say($"volume build: {r.Scaled} scaled, {r.Failed} failed, {r.Banks} bank(s) -> {outRoot}");
+            Say($"volume build: {r.Scaled} scaled, {r.Failed} failed, {r.Banks} .bnk(s) -> {outRoot}");
             MessageBox.Show(r.Log + Environment.NewLine +
                             "Levels written to volume-legend.csv.",
                             "Volume build", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -1825,7 +1914,7 @@ public partial class MainWindow : Window
 
         if (MessageBox.Show(
                 $"Number {ids.Count} selected sound(s) and SILENCE the other {others.Count} " +
-                $"in {banks.Count} bank(s)." + Environment.NewLine + Environment.NewLine +
+                $"in {banks.Count} .bnk(s)." + Environment.NewLine + Environment.NewLine +
                 "Only what you picked will be audible." + Environment.NewLine + Environment.NewLine +
                 "Continue?",
                 "Test only the selection", MessageBoxButton.OKCancel, MessageBoxImage.Question)
@@ -1854,14 +1943,14 @@ public partial class MainWindow : Window
             RefreshStats();
             RefreshProjectLabel();
 
-            Say($"test bank: {r.Numbered} numbered, {r.Silenced} silenced, {r.Banks} bank(s); " +
+            Say($"test .bnk: {r.Numbered} numbered, {r.Silenced} silenced, {r.Banks} .bnk(s); " +
                 $"{tagged} tagged in the project.");
             MessageBox.Show(r.Log + Environment.NewLine +
                             "Legend written to test-bank-legend.csv." + Environment.NewLine +
                             "Everything you did not select is silent in this build.",
-                            "Test bank built", MessageBoxButton.OK, MessageBoxImage.Information);
+                            "Test .bnk built", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) { Say("test bank failed: " + ex.Message); }
+        catch (Exception ex) { Say("test .bnk failed: " + ex.Message); }
     }
 
     // ---- actions on the selected sounds -------------------------------------
@@ -1966,7 +2055,7 @@ public partial class MainWindow : Window
             RefreshStats();
             RefreshProjectLabel();
 
-            Say($"test bank: {r.Numbered} numbered, {r.Silenced} muted, across {r.Banks} bank(s); " +
+            Say($"test .bnk: {r.Numbered} numbered, {r.Silenced} muted, across {r.Banks} .bnk(s); " +
                 $"{tagged} tagged in the project.");
             MessageBox.Show(r.Log + Environment.NewLine +
                             "Legend written to test-bank-legend.csv." + Environment.NewLine +
@@ -1979,9 +2068,9 @@ public partial class MainWindow : Window
                                     + Environment.NewLine
                                 : "") +
                             "Every sound you did not select keeps its normal audio.",
-                            "Test bank built", MessageBoxButton.OK, MessageBoxImage.Information);
+                            "Test .bnk built", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) { Say("test bank failed: " + ex.Message); }
+        catch (Exception ex) { Say("test .bnk failed: " + ex.Message); }
     }
 
     /// <summary>Replaces the selected sounds with silence of the same length and format.</summary>
@@ -2020,13 +2109,13 @@ public partial class MainWindow : Window
             RefreshStats();
             RefreshProjectLabel();
 
-            Say($"silent bank: {r.Silenced} sound(s) silenced across {r.Banks} bank(s); " +
+            Say($"silent .bnk: {r.Silenced} sound(s) silenced across {r.Banks} .bnk(s); " +
                 $"{marked} marked (Mute) in the project.");
             MessageBox.Show(r.Log + Environment.NewLine +
                             "Legend written to silent-bank-legend.csv.",
-                            "Silent bank built", MessageBoxButton.OK, MessageBoxImage.Information);
+                            "Silent .bnk built", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) { Say("silent bank failed: " + ex.Message); }
+        catch (Exception ex) { Say("silent .bnk failed: " + ex.Message); }
     }
 
     /// <summary>
@@ -2049,7 +2138,7 @@ public partial class MainWindow : Window
         RefreshProjectLabel();
         var muted = _sounds?.Rows.Count(r => r.Muted) ?? 0;
         Say($"{rows.Count} sound(s) {(turnOn ? "muted" : "unmuted")} — {muted} muted in total. " +
-            "Rebuild the test bank to hear the difference.");
+            "Rebuild the test .bnk to hear the difference.");
     }
 
     private void MiReplaceSelection_Click(object sender, RoutedEventArgs e) => BtnReplace_Click(sender, e);
@@ -2104,29 +2193,29 @@ public partial class MainWindow : Window
         {
             var shared = _pending.Select(p => p.MediaId)
                 .Where(id => _session.BanksForMedia(id).Count > 1)
-                .Select(id => $"  {id} in {_session.BanksForMedia(id).Count} banks")
+                .Select(id => $"  {id} in {_session.BanksForMedia(id).Count} .bnk files")
                 .Take(10).ToList();
 
-            var msg = $"{outside.Count} bank(s) outside {_skin.SkinId} also embed the media you staged:"
+            var msg = $"{outside.Count} .bnk(s) outside {_skin.SkinId} also embed the media you staged:"
                     + Environment.NewLine + Environment.NewLine + string.Join(Environment.NewLine, shared)
                     + Environment.NewLine + Environment.NewLine
                     + "Yes - rebuild all of them (the sound changes everywhere it is used)." + Environment.NewLine
-                    + $"No  - only this skin's banks ({skinBanks.Count} file(s)).";
+                    + $"No  - only this skin's .bnk files ({skinBanks.Count}).";
 
             var answer = MessageBox.Show(msg, "This media is shared",
                                          MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (answer == MessageBoxResult.Cancel) { Say("build cancelled."); return; }
             if (answer == MessageBoxResult.No) bankPaths.RemoveWhere(p => !skinBanks.Contains(p));
             scopeNote = answer == MessageBoxResult.Yes
-                ? $"scope: every bank containing a staged media ({bankPaths.Count})."
-                : $"scope: this skin only ({bankPaths.Count}); {outside.Count} other bank(s) left stale.";
+                ? $"scope: every .bnk containing a staged media ({bankPaths.Count})."
+                : $"scope: this skin only ({bankPaths.Count}); {outside.Count} other .bnk(s) left stale.";
         }
 
         ModBuilder.Result built;
         try { built = ModBuilder.Build(_session, _skin, _pending.ToList(), outRoot, bankPaths, CbPrefetch.IsChecked == true); }
         catch (Exception ex) { Say("build failed: " + ex.Message); return; }
 
-        Say($"built {built.Banks} bank(s) and {built.Loose} audio file(s) into {outRoot} - " +
+        Say($"built {built.Banks} .bnk(s) and {built.Loose} audio file(s) into {outRoot} - " +
             (built.Loose == 0 ? "the .bnk is the whole mod." : "ship the whole folder to repak."));
         MessageBox.Show((scopeNote.Length > 0 ? scopeNote + Environment.NewLine + Environment.NewLine : "") + built.Log,
                         "Build complete", MessageBoxButton.OK, MessageBoxImage.Information);

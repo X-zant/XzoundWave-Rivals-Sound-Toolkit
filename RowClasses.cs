@@ -21,7 +21,7 @@ public static class RowClasses
     public static readonly IReadOnlyList<RowClass> All =
     [
         new("unnamed", "Unnamed events",
-            "Sounds the bank references by hash, with no name shipped anywhere.",
+            "Sounds the .bnk references by hash, with no name shipped anywhere.",
             r => r.EventName is null),
 
         new("muted", "Muted sounds",
@@ -33,7 +33,7 @@ public static class RowClasses
             r => r.ReplacementPath is not null),
 
         new("modded", "Changed entries, in an opened mod",
-            "What a bank or pak you opened actually replaced.",
+            "What a .bnk or .pak you opened actually replaced.",
             r => r.ModTag is "MODDED" or "NEW"),
 
         // Deliberately matches "" and not null. The diff writes an empty tag for an
@@ -44,7 +44,7 @@ public static class RowClasses
             r => r.ModTag == ""),
 
         new("streamed", "Streamed sources",
-            "Sounds the bank streams from a loose file rather than embedding.",
+            "Sounds the .bnk streams from a loose file rather than embedding.",
             r => r.Streamed),
 
         new("nonvorbis", "Non-Vorbis codecs",
@@ -53,7 +53,7 @@ public static class RowClasses
                  !r.Codec.Equals("VORBIS", StringComparison.OrdinalIgnoreCase)),
 
         new("nosub", "Lines with no subtitle",
-            "Useful on a voice bank, where a line without text is rarely the one you want.",
+            "Useful on a voice .bnk, where a line without text is rarely the one you want.",
             r => string.IsNullOrWhiteSpace(r.Subtitle)),
 
         new("tagged", "Tagged sounds",

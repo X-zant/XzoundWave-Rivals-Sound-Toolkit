@@ -50,7 +50,7 @@ public sealed class PendingWem
             var head = string.IsNullOrWhiteSpace(OriginalEvent)
                 ? Original : $"{OriginalEvent}\n{Original}".TrimEnd();
             var tail = Status.StartsWith("loose", StringComparison.OrdinalIgnoreCase)
-                ? "\n\nNo bank embeds this id, so it ships as a loose Media/ wem instead."
+                ? "\n\nNo .bnk embeds this id, so it ships as a loose Media/ wem instead."
                 : "";
             var banks = string.IsNullOrWhiteSpace(BankList) ? "" : $"\n\nEmbedded in:\n{BankList}";
             return head + tail + banks;
@@ -71,7 +71,11 @@ public sealed class PendingWem
         reason = null;
         try
         {
-            if (AudioDecode.IsWem(path)) return File.ReadAllBytes(path);
+            if (AudioDecode.IsWem(path))
+            {
+                var converted = "";
+                return VorbisIfPcm(File.ReadAllBytes(path), ref converted);
+            }
             return XzoundCore.Encode(AudioDecode.ToPcm(path));
         }
         catch (Exception ex)
@@ -79,6 +83,30 @@ public sealed class PendingWem
             reason = $"{Path.GetFileName(path)} — {ex.Message}";
             return null;
         }
+    }
+
+    /// <summary>
+    /// A .wem that is really PCM is re-encoded to Vorbis.
+    ///
+    /// Being a wem was taken as meaning "ready to use", but the community's tools
+    /// produce uncompressed wems in quantity and this game's banks are Vorbis. Passing
+    /// one straight through embeds a ~400 KB blob where the shipped bank held a 2 KB
+    /// prefetch stub: a voice bank went from 1.2 MB to 102 MB, and banks built that way
+    /// did not work in game. Converting here is the difference between a mod that
+    /// loads and one that does not.
+    /// </summary>
+    /// <param name="converted">Set to "pcm" when a conversion happened, for the UI.</param>
+    private static byte[] VorbisIfPcm(byte[] wem, ref string converted)
+    {
+        // 0xFFFE is WAVE_FORMAT_EXTENSIBLE, i.e. PCM. 0xFFFF is Wwise Vorbis, which is
+        // already what we want; anything else is left alone rather than guessed at.
+        if (BnkBuilder.Inspect(wem).FormatTag != 0xFFFE) return wem;
+
+        var src = WwiseWem.ReadWav(wem);
+        if (src.Bits != 16) return wem;      // reported as not-VORBIS by the caller
+        var encoded = XzoundCore.Encode(src);
+        converted = "pcm";
+        return encoded;
     }
 
     /// <summary>
@@ -122,7 +150,13 @@ public sealed class PendingWem
         var converted = "";
         if (AudioDecode.IsWem(path))
         {
-            try { data = File.ReadAllBytes(path); }
+            try
+            {
+                data = VorbisIfPcm(File.ReadAllBytes(path), ref converted);
+                // Re-encoded bytes exist only in memory, so they have to be carried
+                // rather than re-read from the file at build time.
+                if (converted.Length > 0) payload = data;
+            }
             catch (Exception ex) { reason = $"{Path.GetFileName(path)} — {ex.Message}"; return null; }
         }
         else

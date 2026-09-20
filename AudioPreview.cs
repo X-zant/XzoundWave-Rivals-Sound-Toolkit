@@ -45,7 +45,7 @@ public sealed class AudioPreview : IDisposable
         // ids, so asking the game first would play the vanilla sound instead.
         if (sounds.Raw.TryGetValue(row.MediaId, out var held) && held is { Length: > 0 })
         {
-            row.Origin = "opened bank";
+            row.Origin = "opened .bnk";
             row.Bytes = held.Length;
             return held;
         }
@@ -65,7 +65,7 @@ public sealed class AudioPreview : IDisposable
             var d = def.GetData();
             if (d is { Length: > 0 })
             {
-                row.Origin = "bank (embedded)";
+                row.Origin = ".bnk (embedded)";
                 row.Bytes = d.Length;
                 return d;
             }

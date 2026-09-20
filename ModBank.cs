@@ -309,14 +309,21 @@ public static class ModBank
 
     private static GameSession _indexedFor;
     private static string _indexedStem;
+    private static int _indexedGeneration = -1;
     private static Dictionary<uint, SoundRow> _index;
 
     private static Dictionary<uint, SoundRow> VanillaIndex(GameSession session, string stem)
     {
-        if (ReferenceEquals(_indexedFor, session) && _indexedStem == stem) return _index;
+        // Generation, not just identity: the window mounts one session in place, so a
+        // lookup made before the game was loaded would otherwise cache an empty index
+        // against that same object and every later lookup would match the key and get
+        // the empty answer back -- for ever, with the diff beside it working fine.
+        if (ReferenceEquals(_indexedFor, session) && _indexedStem == stem
+            && _indexedGeneration == (session?.Generation ?? -1)) return _index;
 
         _indexedFor = session;
         _indexedStem = stem;
+        _indexedGeneration = session?.Generation ?? -1;
         _index = [];
 
         var m = Regex.Match(stem, @"(\d{7})");

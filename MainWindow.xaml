@@ -35,17 +35,17 @@
 
           <TabItem Header="Test">
             <StackPanel Orientation="Horizontal" Margin="4,8,4,8">
-              <Button x:Name="BtnTestBank" Content="Numbered test bank…" Click="BtnTestBank_Click"
-                      ToolTip="Replace every sound in the selected bank(s) with a clip that speaks a number, and write a legend so you can identify what you hear in game."/>
+              <Button x:Name="BtnTestBank" Content="Numbered test .bnk…" Click="BtnTestBank_Click"
+                      ToolTip="Replace every sound in the selected .bnk(s) with a clip that speaks a number, and write a legend so you can identify what you hear in game."/>
               <Button Content="Test the selection…" Click="MiTestSelection_Click"
                       ToolTip="Number only the selected sounds. Everything else keeps its normal audio."/>
               <Button Content="Test only the selection…" Click="MiTestOnlySelection_Click"
-                      ToolTip="Number the selected sounds and silence every other sound in the same bank(s)."/>
+                      ToolTip="Number the selected sounds and silence every other sound in the same .bnk(s)."/>
               <Button Content="Mute / unmute selection" Click="MiToggleMute_Click"
                       ToolTip="Silence these in the next test build, so quieter sounds firing at the same time can be heard. Their numbers are kept."/>
-              <Button Content="Silent bank…" Click="MiSilentSelection_Click"/>
-              <CheckBox x:Name="CbPerBank" Content="number per bank" Margin="12,0,0,0" IsChecked="True"
-                        ToolTip="Restart the numbering at the start value for each bank, instead of continuing the count across all of them."/>
+              <Button Content="Silent .bnk…" Click="MiSilentSelection_Click"/>
+              <CheckBox x:Name="CbPerBank" Content="number per .bnk" Margin="12,0,0,0" IsChecked="True"
+                        ToolTip="Restart the numbering at the start value for each .bnk, instead of continuing the count across all of them."/>
             </StackPanel>
           </TabItem>
 
@@ -60,18 +60,20 @@
               <Button Content="Change all volumes…" Click="MiSetAllVolume_Click"/>
               <Button Content="Build at these volumes…" Click="MiBuildVolume_Click"/>
               <CheckBox x:Name="CbPrefetch" Content="prefetch mode" Margin="12,0,0,0"
-                        ToolTip="OFF (normal): the whole clip goes into the .bnk and nothing ships under Media/.&#10;ON: the bank keeps each sound's vanilla opening fragment and the full clip ships as a loose Media/ file."/>
+                        ToolTip="OFF (normal): the whole clip goes into the .bnk and nothing ships under Media/.&#10;ON: the .bnk keeps each sound's vanilla opening fragment and the full clip ships as a loose Media/ file."/>
             </StackPanel>
           </TabItem>
 
           <TabItem Header="Mods">
             <StackPanel Orientation="Horizontal" Margin="4,8,4,8">
-              <Button x:Name="BtnOpenBank" Content="Open bank / pak…" Click="BtnOpenBank_Click"
-                      ToolTip="Look inside a .bnk someone else built, or pick a bank out of a mod .pak."/>
+              <Button x:Name="BtnOpenBank" Content="Open .bnk / .pak…" Click="BtnOpenBank_Click"
+                      ToolTip="Look inside a .bnk someone else built, or pick a .bnk out of a mod .pak."/>
               <Button x:Name="BtnCloseBank" Content="Close opened" Click="BtnCloseBank_Click" IsEnabled="False"
-                      ToolTip="Go back to the game's own banks."/>
+                      ToolTip="Go back to the game's own .bnk files."/>
               <Button x:Name="BtnMerge" Content="Merge mods…" Click="BtnMerge_Click"
-                      ToolTip="Combine two mods. Each is diffed against the shipped bank, so only what its author replaced is carried over; the first one you pick wins any sound both changed."/>
+                      ToolTip="Combine two mods. Each is diffed against the shipped .bnk, so only what its author replaced is carried over; the first one you pick wins any sound both changed."/>
+              <Button x:Name="BtnRecompress" Content="Recompress .bnk…" Click="BtnRecompress_Click"
+                      ToolTip="Re-encode a .bnk's uncompressed PCM audio to Vorbis. Typically around 8x smaller. Only the audio changes — event ids, media ids and the sound hierarchy are untouched."/>
             </StackPanel>
           </TabItem>
 
@@ -244,14 +246,14 @@
                          open, so waiting for SubmenuOpened would mean it never ran. -->
                     <ContextMenu Opened="Ctx_Opened">
                         <MenuItem x:Name="MiTestSel" Click="MiTestSelection_Click"
-                                  Header="Create test bank from selection…"
+                                  Header="Create test .bnk from selection…"
                                   ToolTip="Replace only the selected sounds with clips that speak a number. Everything else keeps its normal audio, so the test is usable in a real match."/>
                         <MenuItem x:Name="MiSilentSel" Click="MiSilentSelection_Click"
-                                  Header="Create silent bank from selection…"
+                                  Header="Create silent .bnk from selection…"
                                   ToolTip="Replace only the selected sounds with silence of the same length and format."/>
                         <MenuItem x:Name="MiTestOnly" Click="MiTestOnlySelection_Click"
-                                  Header="Create test bank from selection, muting everything else"
-                                  ToolTip="Number the selected sounds and silence every other sound in the same bank(s), so only what you picked can be heard."/>
+                                  Header="Create test .bnk from selection, muting everything else"
+                                  ToolTip="Number the selected sounds and silence every other sound in the same .bnk(s), so only what you picked can be heard."/>
                         <MenuItem x:Name="MiMuteSel" Click="MiToggleMute_Click"
                                   Header="Mute / unmute in test builds"
                                   ToolTip="Silence these in the next test build, so quieter sounds firing at the same time can be heard. Their numbers are kept."/>
@@ -273,7 +275,7 @@
                                   ToolTip="Give every selected sound the same audio. Dragging a single file onto a selection does the same thing."/>
                         <MenuItem x:Name="MiExtractMod" Click="MiExtractModded_Click"
                                   Header="Extract only the modded wems…"
-                                  ToolTip="From an opened bank or pak: write out just the sounds it changed from the game's own."/>
+                                  ToolTip="From an opened .bnk or .pak: write out just the sounds it changed from the game's own."/>
                         <MenuItem x:Name="MiReplaceSel" Click="MiReplaceSelection_Click"
                                   Header="Replace with an audio file…"
                                   ToolTip="Stage a wav, mp3, ogg, flac or m4a for this sound."/>
@@ -287,8 +289,8 @@
                         <MenuItem x:Name="MiClearVol" Click="MiClearVolume_Click"
                                   Header="Clear volume on selection"/>
                         <MenuItem x:Name="MiBuildVol" Click="MiBuildVolume_Click"
-                                  Header="Build bank at these volumes…"
-                                  ToolTip="Writes the banks with every level applied, into a folder named after the bulk level."/>
+                                  Header="Build .bnk at these volumes…"
+                                  ToolTip="Writes the .bnk files with every level applied, into a folder named after the bulk level."/>
                         <Separator/>
                         <MenuItem x:Name="MiPlayFrom" Click="MiPlayFrom_Click"
                                   Header="Autoplay from here"/>
@@ -310,7 +312,7 @@
                 </DataGrid.ContextMenu>
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Mod"      Binding="{Binding Mod}"      Width="70"  IsReadOnly="True"/>
-                    <DataGridTextColumn Header="Bank"     Binding="{Binding Bank}"     Width="175" IsReadOnly="True"/>
+                    <DataGridTextColumn Header=".bnk"     Binding="{Binding Bank}"     Width="175" IsReadOnly="True"/>
                     <DataGridTextColumn Header="Event"    Binding="{Binding Display}"  Width="280" IsReadOnly="True"/>
                     <DataGridTextColumn Header="Media ID" Binding="{Binding MediaId}"  Width="95"  IsReadOnly="True"/>
                     <DataGridTextColumn Header="Len"      Binding="{Binding Length}"   Width="55"  IsReadOnly="True"/>

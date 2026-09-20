@@ -48,6 +48,27 @@ public partial class App : Application
             return;
         }
 
+        var rt = Array.FindIndex(e.Args, a => a.Equals("--roundtrip", StringComparison.OrdinalIgnoreCase));
+        if (rt >= 0 && rt + 2 < e.Args.Length)
+        {
+            Shutdown(RoundTripTest.Run(e.Args[rt + 1], e.Args[rt + 2]));
+            return;
+        }
+
+        var fc = Array.FindIndex(e.Args, a => a.Equals("--fmtcheck", StringComparison.OrdinalIgnoreCase));
+        if (fc >= 0 && fc + 1 < e.Args.Length)
+        {
+            Shutdown(FormatCheck.Run(e.Args[fc + 1]));
+            return;
+        }
+
+        var oo = Array.FindIndex(e.Args, a => a.Equals("--openorder", StringComparison.OrdinalIgnoreCase));
+        if (oo >= 0 && oo + 1 < e.Args.Length)
+        {
+            Shutdown(OpenOrderSelfTest.Run(e.Args[oo + 1]));
+            return;
+        }
+
         var ob = Array.FindIndex(e.Args, a => a.Equals("--openbank", StringComparison.OrdinalIgnoreCase));
         if (ob >= 0 && ob + 1 < e.Args.Length)
         {
