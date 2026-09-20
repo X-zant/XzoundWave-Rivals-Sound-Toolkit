@@ -33,7 +33,7 @@
     <Company>Nikolas Becic</Company>
     <Copyright>Copyright (c) 2026 Nikolas Becic</Copyright>
     <Description>Marvel Rivals sound toolkit — browse, preview, tag and re-pack Wwise soundbanks.</Description>
-    <RepositoryUrl>https://github.com/XzantGaming/XzoundWave-Rivals-Sound-Toolkit</RepositoryUrl>
+    <RepositoryUrl>https://github.com/X-zant/XzoundWave-Rivals-Sound-Toolkit</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
