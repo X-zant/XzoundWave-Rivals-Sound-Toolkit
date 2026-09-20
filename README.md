@@ -34,8 +34,15 @@ sibling checkouts and no paths into another project.
 | AES key | per patch, from the modding community | everything |
 | usmap | per patch mappings file | voice lines and categories |
 
-That is the whole list — vgmstream used to be here and no longer is, because it now
-unpacks itself out of the exe.
+That is the whole list, and the usmap half of it looks after itself: **Fetch latest** on
+the Setup tab pulls the newest mappings from the community depot
+([SpaceDepot/rivals-depot](https://github.com/SpaceDepot/rivals-depot)), picking the
+highest game build rather than the most recent commit, and the Setup tab shows which
+build is loaded. A usmap you picked yourself is never replaced without asking.
+`XzoundWave.exe --usmap [--force]` does the same from a console.
+
+vgmstream used to be on this list and no longer is: it unpacks itself out of the exe.
+Settings › Tools can still point at your own build of it.
 
 The Paks folder and a `*.usmap` sitting beside the exe are found automatically on first
 run. Settings, the unpacked tools and the optional dictionary live in
@@ -116,6 +123,7 @@ XzoundWave.exe --media <id> [<id>…] [--bank <name>]    where a media lives, an
 XzoundWave.exe --medialayout                           loose-media layout and overlap
 XzoundWave.exe --banks                                 every bank, grouped
 XzoundWave.exe --tts <outDir> <first> <last>           generate spoken numbers
+XzoundWave.exe --usmap [--force]                       newest mappings from the depot
 XzoundWave.exe --doctor                                what this machine provides
 XzoundWave.exe --licences                              every notice inside the binary
 ```

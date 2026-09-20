@@ -15,6 +15,15 @@ public sealed class Settings
     public string VgmstreamPath { get; set; } = "";
     public string Language { get; set; } = "English(US)";
 
+    /// <summary>
+    /// What the last usmap check found — see <see cref="UsmapFetch"/>. The ETag keeps a
+    /// routine check free against GitHub's unauthenticated rate limit, and the sha says
+    /// whether the file on disk is already the one the depot is offering.
+    /// </summary>
+    public string UsmapEtag { get; set; } = "";
+    public string UsmapSha { get; set; } = "";
+    public string UsmapFileName { get; set; } = "";
+
     /// <summary>Folder of numbered test clips ({n}.wem, plus an optional silent one).</summary>
     public string TestWemDir { get; set; } = "";
 

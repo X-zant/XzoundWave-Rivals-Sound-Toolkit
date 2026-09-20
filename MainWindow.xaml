@@ -104,14 +104,18 @@
                 <DockPanel Grid.Row="1" Grid.Column="1" Margin="0,0,8,4">
                     <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0"
                             Click="BrowseUsmap_Click"/>
+                    <Button x:Name="BtnFetchUsmap" DockPanel.Dock="Right" Content="Fetch latest"
+                            Margin="6,0,0,0" Click="BtnFetchUsmap_Click"
+                            ToolTip="Download the newest mappings from the community depot. Your own file, if you picked one, is kept until you confirm."/>
                     <TextBox x:Name="TbUsmap"/>
                 </DockPanel>
-                <Label Grid.Row="1" Grid.Column="3" Content="vgmstream-cli.exe"/>
-                <DockPanel Grid.Row="1" Grid.Column="4" Margin="0,0,0,4">
-                    <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0"
-                            Click="BrowseVgm_Click"/>
-                    <TextBox x:Name="TbVgm"/>
-                </DockPanel>
+                <!-- vgmstream used to be a field here. It ships inside the exe now, so
+                     asking for it would be asking for something the tool already has.
+                     Pointing at your own build is still possible, under Settings. -->
+                <Label Grid.Row="1" Grid.Column="3" Content="Mappings"/>
+                <TextBlock x:Name="UsmapInfo" Grid.Row="1" Grid.Column="4" Margin="0,0,0,4"
+                           VerticalAlignment="Center" Foreground="{StaticResource Muted}"
+                           TextTrimming="CharacterEllipsis"/>
 
                 <Label Grid.Row="2" Grid.Column="0" Content="Translate"/>
                 <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,0,8,4">

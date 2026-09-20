@@ -58,6 +58,13 @@ public partial class App : Application
             return;
         }
 
+        if (Array.FindIndex(e.Args, a => a.Equals("--usmap", StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            Shutdown(UsmapFetch.Run(
+                e.Args.Any(a => a.Equals("--force", StringComparison.OrdinalIgnoreCase))));
+            return;
+        }
+
         if (Array.FindIndex(e.Args, a => a.Equals("--doctor", StringComparison.OrdinalIgnoreCase)) >= 0)
         {
             Shutdown(EnvCheck.Run());

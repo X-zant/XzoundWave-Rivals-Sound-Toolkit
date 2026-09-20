@@ -25,7 +25,7 @@ public partial class SettingsWindow : Window
         _grid = grid;
         _changed = changed;
 
-        foreach (var name in new[] { "Rows", "Columns", "List help" })
+        foreach (var name in new[] { "Rows", "Columns", "List help", "Tools" })
             Categories.Items.Add(name);
         Categories.SelectedIndex = 0;
     }
@@ -39,6 +39,7 @@ public partial class SettingsWindow : Window
         {
             case "Rows": BuildRows(); break;
             case "Columns": BuildColumns(); break;
+            case "Tools": BuildTools(); break;
             default: BuildHelp(); break;
         }
         RefreshSummary();
@@ -113,6 +114,85 @@ public partial class SettingsWindow : Window
             PaneBody.Children.Add(box);
         }
     }
+
+    // ---- tools -----------------------------------------------------------------
+
+    /// <summary>
+    /// vgmstream has no field on the Setup tab any more: it ships inside the exe and
+    /// unpacks itself, so asking for it would be asking for something already present.
+    /// The override lives here because it is a real need for two small groups -- anyone
+    /// wanting a newer vgmstream than the one bundled, and anyone exercising the right
+    /// the LGPL gives them to substitute their own build of its libraries.
+    /// </summary>
+    private void BuildTools()
+    {
+        PaneTitle.Text = "vgmstream";
+        PaneHint.Text =
+            "Used for playback, measuring durations, and decoding Vorbis before a volume " +
+            "change. A copy ships inside XzoundWave and unpacks itself the first time it " +
+            "is needed, so there is nothing to install.";
+
+        var bundled = Bundled.HasVgmstream;
+        var custom = !string.IsNullOrWhiteSpace(_settings.VgmstreamPath)
+                     && !_settings.VgmstreamPath.StartsWith(Bundled.ToolsDir,
+                            StringComparison.OrdinalIgnoreCase);
+
+        Add(new TextBlock
+        {
+            Text = custom
+                ? "In use: your own copy" + Environment.NewLine + _settings.VgmstreamPath
+                : (bundled
+                    ? "In use: the bundled copy" + Environment.NewLine + Bundled.VgmstreamExe
+                    : "Not unpacked yet — it appears the first time it is needed."),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 12),
+        });
+
+        var pick = new Button { Content = "Use my own vgmstream-cli.exe…", HorizontalAlignment = HorizontalAlignment.Left };
+        pick.Click += (_, _) =>
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "vgmstream-cli.exe",
+                Filter = "vgmstream-cli|vgmstream-cli.exe|Programs|*.exe|All files|*.*",
+            };
+            if (dlg.ShowDialog() != true) return;
+            _settings.VgmstreamPath = dlg.FileName;
+            _settings.Save();
+            _changed();
+            Build();
+        };
+        Add(pick);
+
+        if (custom)
+        {
+            var revert = new Button
+            {
+                Content = "Go back to the bundled copy",
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 8, 0, 0),
+            };
+            revert.Click += (_, _) =>
+            {
+                _settings.VgmstreamPath = Bundled.EnsureVgmstream(out _) ?? "";
+                _settings.Save();
+                _changed();
+                Build();
+            };
+            Add(revert);
+        }
+
+        Add(new TextBlock
+        {
+            Text = "The unpacked files, including vgmstream's own licence, are in:"
+                   + Environment.NewLine + Bundled.ToolsDir,
+            Foreground = (Brush)FindResource("Muted"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 16, 0, 0),
+        });
+    }
+
+    private void Add(UIElement e) => PaneBody.Children.Add(e);
 
     // ---- help ------------------------------------------------------------------
 

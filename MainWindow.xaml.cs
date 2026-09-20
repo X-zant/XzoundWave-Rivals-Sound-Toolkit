@@ -30,9 +30,9 @@ public partial class MainWindow : Window
         TbPaks.Text = _settings.PaksDir;
         TbAes.Text = _settings.AesKey;
         TbUsmap.Text = _settings.UsmapPath;
-        TbVgm.Text = _settings.VgmstreamPath;
         ApplyColumnVisibility();
         SyncRowSwitches();
+        RefreshUsmapInfo();
         DropHelp.IsExpanded = _settings.ShowDropHelp;
         CbTransProvider.ItemsSource = LiveTranslate.Providers;
         CbTransProvider.SelectedItem =
@@ -64,7 +64,6 @@ public partial class MainWindow : Window
         _settings.PaksDir = TbPaks.Text.Trim();
         _settings.AesKey = TbAes.Text.Trim();
         _settings.UsmapPath = TbUsmap.Text.Trim();
-        _settings.VgmstreamPath = TbVgm.Text.Trim();
         _settings.TranslateProvider = CbTransProvider.SelectedItem as string ?? LiveTranslate.ProviderNone;
         _settings.DeepLKey = TbTransKey.Text.Trim();
         _settings.LocalTranslateUrl = TbTransUrl.Text.Trim();
@@ -1039,7 +1038,65 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFileDialog { Title = "Mappings file", Filter = "Mappings|*.usmap|All files|*.*" };
         if (StartIn(TbUsmap.Text, true) is { } d) dlg.InitialDirectory = d;
-        if (dlg.ShowDialog() == true) TbUsmap.Text = dlg.FileName;
+        if (dlg.ShowDialog() == true) { TbUsmap.Text = dlg.FileName; RefreshUsmapInfo(); }
+    }
+
+    /// <summary>What the loaded mappings are, shown where the vgmstream box used to be.</summary>
+    private void RefreshUsmapInfo()
+    {
+        var path = TbUsmap.Text?.Trim();
+        if (string.IsNullOrEmpty(path))
+        {
+            UsmapInfo.Text = "none set — event names will show as hashes";
+            return;
+        }
+        var name = Path.GetFileName(path);
+        var build = UsmapFetch.BuildOf(name);
+        var release = UsmapFetch.ReleaseOf(name);
+        var exists = File.Exists(path);
+        UsmapInfo.Text =
+            (build is null ? name : $"build {build}" + (release is null ? "" : $" · {release}"))
+            + (exists ? "" : "  — FILE MISSING")
+            + (UsmapFetch.IsManaged(path) ? "" : "  · your own file");
+    }
+
+    private async void BtnFetchUsmap_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.UsmapPath = TbUsmap.Text.Trim();
+        var custom = !string.IsNullOrEmpty(_settings.UsmapPath)
+                     && !UsmapFetch.IsManaged(_settings.UsmapPath);
+        if (custom)
+        {
+            var answer = MessageBox.Show(
+                "You have picked your own usmap:" + Environment.NewLine +
+                Path.GetFileName(_settings.UsmapPath) + Environment.NewLine + Environment.NewLine +
+                "Fetch the newest from the community depot and use that instead?" +
+                Environment.NewLine + Environment.NewLine +
+                "Your file is not deleted — Browse can select it again.",
+                "Replace your usmap?", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            if (answer != MessageBoxResult.OK) return;
+        }
+
+        BtnFetchUsmap.IsEnabled = false;
+        try
+        {
+            var r = await UsmapFetch.UpdateAsync(_settings, force: true,
+                progress: m => Dispatcher.BeginInvoke(new Action(() => Say(m))));
+            if (r.Path is not null) TbUsmap.Text = r.Path;
+            RefreshUsmapInfo();
+            Say("usmap: " + r.Message);
+            if (r.Changed)
+                MessageBox.Show(
+                    r.Message + Environment.NewLine + Environment.NewLine +
+                    "Load the game again to read names with the new mappings.",
+                    "Mappings updated", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Could not fetch the usmap",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally { BtnFetchUsmap.IsEnabled = true; }
     }
 
     private void BrowseVgm_Click(object sender, RoutedEventArgs e)
@@ -1049,8 +1106,13 @@ public partial class MainWindow : Window
             Title = "vgmstream-cli.exe",
             Filter = "vgmstream-cli|vgmstream-cli.exe|Programs|*.exe|All files|*.*",
         };
-        if (StartIn(TbVgm.Text, true) is { } d) dlg.InitialDirectory = d;
-        if (dlg.ShowDialog() == true) TbVgm.Text = dlg.FileName;
+        if (StartIn(_settings.VgmstreamPath, true) is { } d) dlg.InitialDirectory = d;
+        if (dlg.ShowDialog() == true)
+        {
+            _settings.VgmstreamPath = dlg.FileName;
+            _settings.Save();
+            _preview.VgmstreamPath = dlg.FileName;
+        }
     }
 
     // ---- merging two mods ------------------------------------------------------
