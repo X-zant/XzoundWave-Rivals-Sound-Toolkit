@@ -101,6 +101,10 @@ Working out which sound is which is most of the job, so:
 
 - Drop **wav, mp3, ogg, flac, m4a, aac, wma or wem** — anything that is not already a
   wem is encoded to Wwise Vorbis on the way in. No Wwise install, no ffmpeg.
+- Conversions are **remembered**, so the same file is never encoded twice. Matched on
+  the file's contents, so a copy or a rename still counts as the same audio and an
+  edited file correctly does not. Settings › Importing shows what is held and can move
+  or clear it. A second import of a 174 KB wem went 592 ms → 0 ms.
 - Name files `{MediaID}-{your note}.wem`, or drop a single file onto a selection to give
   every one of them the same audio from one encode.
 - **Volume** per sound or in bulk, always applied to the original so setting it twice
@@ -146,7 +150,8 @@ Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 
 ```
 --selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
---mediapath  --playtest  --vorbistest  --setuproundtrip
+--mediapath  --playtest  --cachetest  --openorder  --roundtrip  --fmtcheck
+--vorbistest  --setuproundtrip
 ```
 
 ## XzoundCore

@@ -49,6 +49,23 @@ public sealed class Settings
     /// </summary>
     public List<string> HiddenRowClasses { get; set; }
 
+    /// <summary>
+    /// Keep what each imported file encoded to, so restaging the same audio does not
+    /// pay for the encode again -- see <see cref="ConvertedCache"/>. On by default: it
+    /// costs disk that can be reclaimed at any time and saves the slowest step there is.
+    /// </summary>
+    public bool CacheConvertedAudio { get; set; } = true;
+
+    /// <summary>Empty means beside the settings.</summary>
+    public string ConvertedCacheDir { get; set; } = "";
+
+    /// <summary>
+    /// Write the converted .wem back over the file it came from, deleting the original.
+    /// DESTRUCTIVE, and off unless asked for: it makes every later import a plain file
+    /// read, at the cost of the source audio no longer existing.
+    /// </summary>
+    public bool ReplaceSourceWithWem { get; set; }
+
     /// <summary>The naming rule in the drop pane, once you know it, is just clutter.</summary>
     public bool ShowDropHelp { get; set; } = true;
 

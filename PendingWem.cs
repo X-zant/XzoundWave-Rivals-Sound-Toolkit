@@ -71,18 +71,65 @@ public sealed class PendingWem
         reason = null;
         try
         {
-            if (AudioDecode.IsWem(path))
-            {
-                var converted = "";
-                return VorbisIfPcm(File.ReadAllBytes(path), ref converted);
-            }
-            return XzoundCore.Encode(AudioDecode.ToPcm(path));
+            var converted = "";
+            return EncodeOrCached(path, ref converted);
         }
         catch (Exception ex)
         {
             reason = $"{Path.GetFileName(path)} — {ex.Message}";
             return null;
         }
+    }
+
+    /// <summary>
+    /// Wem bytes for a source file, reusing an earlier conversion when there is one.
+    ///
+    /// Encoding is the slow step, and nothing about a file that has not changed can
+    /// change what it encodes to, so the answer is worth keeping. A file that is
+    /// already Wwise Vorbis is passed straight through and never cached: the cache
+    /// would just be a second copy of a file we already have.
+    /// </summary>
+    private static byte[] EncodeOrCached(string path, ref string converted)
+    {
+        var options = ConvertedCache.Options;
+        var caching = options?.CacheConvertedAudio == true;
+
+        string hash = null;
+        if (caching)
+        {
+            try { hash = ConvertedCache.HashOf(path); } catch { hash = null; }
+            if (hash is not null && ConvertedCache.Get(options, hash) is { } hit)
+            {
+                // A hit can only exist for something we converted, so it was converted.
+                converted = AudioDecode.IsWem(path)
+                    ? "pcm" : Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+                ReplaceSourceIfAsked(options, path, hit);
+                return hit;
+            }
+        }
+
+        byte[] result;
+        if (AudioDecode.IsWem(path))
+        {
+            result = VorbisIfPcm(File.ReadAllBytes(path), ref converted);
+            // Already Vorbis: nothing was done, so there is nothing worth remembering.
+            if (converted.Length == 0) return result;
+        }
+        else
+        {
+            result = XzoundCore.Encode(AudioDecode.ToPcm(path));
+            converted = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+        }
+
+        if (hash is not null) ConvertedCache.Put(options, hash, result);
+        ReplaceSourceIfAsked(options, path, result);
+        return result;
+    }
+
+    private static void ReplaceSourceIfAsked(Settings options, string path, byte[] wem)
+    {
+        if (options?.ReplaceSourceWithWem == true)
+            ConvertedCache.ReplaceSource(path, wem, out _);
     }
 
     /// <summary>
@@ -152,8 +199,8 @@ public sealed class PendingWem
         {
             try
             {
-                data = VorbisIfPcm(File.ReadAllBytes(path), ref converted);
-                // Re-encoded bytes exist only in memory, so they have to be carried
+                data = EncodeOrCached(path, ref converted);
+                // Converted bytes exist only in memory, so they have to be carried
                 // rather than re-read from the file at build time.
                 if (converted.Length > 0) payload = data;
             }
@@ -161,12 +208,7 @@ public sealed class PendingWem
         }
         else
         {
-            try
-            {
-                var pcm = AudioDecode.ToPcm(path);
-                data = payload = XzoundCore.Encode(pcm);
-                converted = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
-            }
+            try { data = payload = EncodeOrCached(path, ref converted); }
             catch (Exception ex)
             {
                 reason = $"{Path.GetFileName(path)} — {ex.Message}";

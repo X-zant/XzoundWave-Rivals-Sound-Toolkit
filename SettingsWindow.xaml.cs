@@ -25,7 +25,7 @@ public partial class SettingsWindow : Window
         _grid = grid;
         _changed = changed;
 
-        foreach (var name in new[] { "Rows", "Columns", "List help", "Tools", "Diagnostics" })
+        foreach (var name in new[] { "Rows", "Columns", "Importing", "List help", "Tools", "Diagnostics" })
             Categories.Items.Add(name);
         Categories.SelectedIndex = 0;
     }
@@ -39,6 +39,7 @@ public partial class SettingsWindow : Window
         {
             case "Rows": BuildRows(); break;
             case "Columns": BuildColumns(); break;
+            case "Importing": BuildImporting(); break;
             case "Tools": BuildTools(); break;
             case "Diagnostics": BuildDiagnostics(); break;
             default: BuildHelp(); break;
@@ -115,6 +116,120 @@ public partial class SettingsWindow : Window
             PaneBody.Children.Add(box);
         }
     }
+
+    // ---- importing -------------------------------------------------------------
+
+    /// <summary>
+    /// What happens to audio on the way in. Encoding is the slow step and the only one
+    /// worth avoiding twice, so this page is about not paying for it again.
+    /// </summary>
+    private void BuildImporting()
+    {
+        PaneTitle.Text = "Importing audio";
+        PaneHint.Text =
+            "Anything that is not already Wwise Vorbis is encoded when you stage it. " +
+            "That is the slow part of a large drop, and a file that has not changed " +
+            "always encodes to the same thing.";
+
+        var keep = new CheckBox
+        {
+            Content = "Remember conversions, so the same file is never encoded twice",
+            IsChecked = _settings.CacheConvertedAudio,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        keep.Click += (_, _) =>
+        {
+            _settings.CacheConvertedAudio = keep.IsChecked == true;
+            _settings.Save();
+            Build();
+        };
+        Add(keep);
+        Add(Note("Matched on the contents of the file, not its name, so a copy or a " +
+                 "rename still counts as the same audio and an edited file correctly " +
+                 "does not."));
+
+        var stats = ConvertedCache.Stats(_settings);
+        Add(new TextBlock
+        {
+            Text = $"Holding {stats.Files:N0} conversion(s), {stats.Bytes / 1024.0 / 1024.0:0.0} MB" +
+                   Environment.NewLine + ConvertedCache.Dir(_settings),
+            Foreground = (Brush)FindResource("Muted"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(22, 8, 0, 8),
+        });
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(22, 0, 0, 0) };
+        var move = new Button { Content = "Keep them somewhere else…" };
+        move.Click += (_, _) =>
+        {
+            var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "Folder for converted audio" };
+            if (dlg.ShowDialog() != true) return;
+            _settings.ConvertedCacheDir = dlg.FolderName;
+            _settings.Save();
+            Build();
+        };
+        row.Children.Add(move);
+
+        var clear = new Button { Content = "Clear" };
+        clear.Click += (_, _) =>
+        {
+            // Nothing here cannot be recreated, so this needs no dire warning.
+            var n = ConvertedCache.Clear(_settings);
+            Summary.Text = $"cleared {n:N0} stored conversion(s).";
+            Build();
+        };
+        row.Children.Add(clear);
+        Add(row);
+
+        // ---- the destructive one -----------------------------------------------
+        Add(new TextBlock
+        {
+            Text = "Replacing your files",
+            FontWeight = FontWeights.Bold,
+            Foreground = (Brush)FindResource("Fg"),
+            Margin = new Thickness(0, 20, 0, 0),
+        });
+
+        var replace = new CheckBox
+        {
+            Content = "Replace imported files with the converted .wem",
+            IsChecked = _settings.ReplaceSourceWithWem,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        replace.Click += (_, _) =>
+        {
+            if (replace.IsChecked == true)
+            {
+                // Turning this on is the decision, not the first import that acts on
+                // it, so the warning belongs here where it can still be undone.
+                var answer = MessageBox.Show(
+                    "Every file you import will be converted to a .wem and the original " +
+                    "DELETED." + Environment.NewLine + Environment.NewLine +
+                    "An mp3 becomes a .wem beside it and the mp3 is removed. The new file " +
+                    "is read back and checked before anything is deleted, but the audio " +
+                    "you started from is gone." + Environment.NewLine + Environment.NewLine +
+                    "Keep your masters elsewhere. Turn this on?",
+                    "This deletes your source files",
+                    MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+                if (answer != MessageBoxResult.OK) { replace.IsChecked = false; return; }
+            }
+            _settings.ReplaceSourceWithWem = replace.IsChecked == true;
+            _settings.Save();
+            Build();
+        };
+        Add(replace);
+        Add(Note("Off unless you ask for it. With conversions remembered above, the " +
+                 "second import is already instant without deleting anything — this is " +
+                 "only worth it if you want the folder itself to end up as wems."));
+    }
+
+    private TextBlock Note(string text) => new()
+    {
+        Text = text,
+        Foreground = (Brush)FindResource("Muted"),
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(22, 2, 0, 0),
+    };
 
     // ---- tools -----------------------------------------------------------------
 

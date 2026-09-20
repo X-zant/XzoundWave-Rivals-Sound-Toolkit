@@ -27,6 +27,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings.AutoDetect();
+        // The import path reads these without being handed them; see ConvertedCache.
+        ConvertedCache.Options = _settings;
         TbPaks.Text = _settings.PaksDir;
         TbAes.Text = _settings.AesKey;
         TbUsmap.Text = _settings.UsmapPath;

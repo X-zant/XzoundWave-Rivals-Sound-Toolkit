@@ -48,6 +48,13 @@ public partial class App : Application
             return;
         }
 
+        var ct = Array.FindIndex(e.Args, a => a.Equals("--cachetest", StringComparison.OrdinalIgnoreCase));
+        if (ct >= 0 && ct + 1 < e.Args.Length)
+        {
+            Shutdown(CacheSelfTest.Run(e.Args[ct + 1]));
+            return;
+        }
+
         var rt = Array.FindIndex(e.Args, a => a.Equals("--roundtrip", StringComparison.OrdinalIgnoreCase));
         if (rt >= 0 && rt + 2 < e.Args.Length)
         {
