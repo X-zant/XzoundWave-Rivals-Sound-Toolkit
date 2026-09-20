@@ -24,7 +24,21 @@ public sealed class ProjectReplacement
 public sealed class Project
 {
     public const int CurrentFormatVersion = 1;
-    public const string Extension = ".mrak";
+    public const string Extension = ".xzw";
+
+    /// <summary>
+    /// What projects were called before the tool was renamed. Still opened, and still
+    /// listed in the Open dialog, because someone's work does not stop being theirs
+    /// because the extension changed. Saving writes <see cref="Extension"/>.
+    /// </summary>
+    public const string LegacyExtension = ".mrak";
+
+    /// <summary>Open-dialog filter accepting both, newest first.</summary>
+    public const string OpenFilter =
+        "XzoundWave project (*" + Extension + ";*" + LegacyExtension + ")|*"
+        + Extension + ";*" + LegacyExtension
+        + "|XzoundWave project (*" + Extension + ")|*" + Extension
+        + "|All files|*.*";
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
     public string Name { get; set; } = "Untitled";

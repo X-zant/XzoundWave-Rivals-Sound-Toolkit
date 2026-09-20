@@ -2241,7 +2241,7 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog
         {
             Title = "Open project",
-            Filter = $"XzoundWave project (*{Project.Extension})|*{Project.Extension}",
+            Filter = Project.OpenFilter,
         };
         if (dlg.ShowDialog() != true) return;
         OpenProject(dlg.FileName, announce: true);

@@ -56,7 +56,7 @@ public static class TagSelfTest
         // ---- a project keeps them -----------------------------------------
         W("");
         W("project round trip");
-        var dir = Path.Combine(Path.GetTempPath(), "mrak-tagtest-" + Guid.NewGuid().ToString("N")[..8]);
+        var dir = Path.Combine(Path.GetTempPath(), "xzw-tagtest-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         var file = Path.Combine(dir, "tags" + Project.Extension);
 
@@ -96,6 +96,36 @@ public static class TagSelfTest
         // reload loses it again.
         reloaded.Save();
         Check("relinked id is what gets written", Project.Load(file).FindNote(99999) is not null);
+
+        // The extension changed from .mrak to .xzw. A project written before that must
+        // still open, or people lose work for a rename.
+        W("");
+        W("project file extension");
+        Check("new projects are saved as .xzw", Project.Extension == ".xzw", Project.Extension);
+        Check("the old extension is still known", Project.LegacyExtension == ".mrak");
+        Check("the Open filter offers both",
+            Project.OpenFilter.Contains("*.xzw") && Project.OpenFilter.Contains("*.mrak"));
+
+        var legacy = Path.Combine(dir, "old" + Project.LegacyExtension);
+        var carry = Project.New();
+        var oldRow = Row(555, "vo_old_play", "bnk_old");
+        oldRow.Tags = ["MVP"];
+        oldRow.Notes = "written before the rename";
+        carry.SetNote(oldRow);
+        carry.Save(legacy);
+
+        var opened = Project.Load(legacy);
+        Check("a .mrak project still loads", opened.FindNote(555) is not null);
+        Check("its tags and notes are intact",
+            SoundTags.Flat(opened.FindNote(555)?.Tags) == "MVP"
+            && opened.FindNote(555)?.Notes == "written before the rename");
+
+        // Saving it somewhere new writes the current extension; the old file is left be.
+        var migrated = Path.Combine(dir, "old" + Project.Extension);
+        opened.Save(migrated);
+        Check("it can be saved on as .xzw",
+            File.Exists(migrated) && Project.Load(migrated).FindNote(555) is not null);
+        Check("the original .mrak is left alone", File.Exists(legacy));
 
         try { Directory.Delete(dir, true); } catch { }
 

@@ -1111,7 +1111,7 @@ public static class SelfTest
 
         // ---- projects: notes, staged files, surviving a media-id change ------
         {
-            var projPath = Path.Combine(Path.GetTempPath(), "XzoundWave", "selftest.mrak");
+            var projPath = Path.Combine(Path.GetTempPath(), "XzoundWave", "selftest" + Project.Extension);
             Directory.CreateDirectory(Path.GetDirectoryName(projPath)!);
             if (File.Exists(projPath)) File.Delete(projPath);
 

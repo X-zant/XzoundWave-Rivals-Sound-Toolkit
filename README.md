@@ -46,7 +46,7 @@ Settings › Tools can still point at your own build of it.
 
 The Paks folder and a `*.usmap` sitting beside the exe are found automatically on first
 run. Settings, the unpacked tools and the optional dictionary live in
-`%AppData%/XzoundWave/`; your work lives in a `.mrak` project file wherever you put it.
+`%AppData%/XzoundWave/`; your work lives in a `.xzw` project file wherever you put it.
 Upgrading from a build called MRAudioKit carries your old settings over on first start.
 
 **The AES key is never bundled.** It is yours to supply.
