@@ -83,6 +83,14 @@ public partial class App : Application
             return;
         }
 
+        var wp = Array.FindIndex(e.Args, a => a.Equals("--wwiseprobe", StringComparison.OrdinalIgnoreCase));
+        if (wp >= 0 && wp + 1 < e.Args.Length)
+        {
+            Shutdown(WwiseProbe.Run(e.Args[wp + 1],
+                wp + 2 < e.Args.Length ? e.Args[wp + 2] : null));
+            return;
+        }
+
         var pp = Array.FindIndex(e.Args, a => a.Equals("--prefetchpreview", StringComparison.OrdinalIgnoreCase));
         if (pp >= 0 && pp + 1 < e.Args.Length)
         {

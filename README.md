@@ -159,6 +159,10 @@ XzoundWave.exe --import <file> <outDir>                any supported format -> w
 XzoundWave.exe --recompress <bnk> <outDir>             PCM bank -> Vorbis
 XzoundWave.exe --volume <skinId> <wemDir> <outDir> <gain>
 XzoundWave.exe --media <id> [<id>…] [--bank <name>]    where a media lives, and how
+XzoundWave.exe --wwiseprobe <skinId> [event|?]          what a .bnk says about a sound
+                                                       beyond its audio: the event
+                                                       graph, loop counts, and the
+                                                       volume/pitch the game adds
 XzoundWave.exe --medialayout                           loose-media layout and overlap
 XzoundWave.exe --banks                                 every bank, grouped
 XzoundWave.exe --tts <outDir> <first> <last>           generate spoken numbers
