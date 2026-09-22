@@ -83,6 +83,13 @@ public partial class App : Application
             return;
         }
 
+        var pp = Array.FindIndex(e.Args, a => a.Equals("--prefetchpreview", StringComparison.OrdinalIgnoreCase));
+        if (pp >= 0 && pp + 1 < e.Args.Length)
+        {
+            Shutdown(PrefetchPreviewTest.Run(e.Args[pp + 1]));
+            return;
+        }
+
         if (Array.FindIndex(e.Args, a => a.Equals("--modset", StringComparison.OrdinalIgnoreCase)) >= 0)
         {
             Shutdown(ModSetSelfTest.Run());

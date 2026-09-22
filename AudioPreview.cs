@@ -39,12 +39,46 @@ public sealed class AudioPreview : IDisposable
     /// Getting this order wrong makes every voice line a 0.03 s click, because the
     /// bank embeds only a prefetch stub of streamed voice.
     /// </summary>
+    /// <summary>
+    /// The full streamed file when <paramref name="held"/> is only its opening
+    /// fragment, or null when the bytes in hand are the whole sound.
+    /// </summary>
+    private static (string Path, byte[] Full)? Prefetch(GameSession session, uint mediaId, byte[] held)
+    {
+        var loose = session?.LooseMedia(mediaId);
+        // A stub is shorter than what it is a stub OF, so a file no larger than the
+        // bytes in hand cannot be one and is not worth reading.
+        if (loose is null || loose.Size <= held.Length) return null;
+        try
+        {
+            var full = loose.Read();
+            if (full is not { Length: > 0 } || full.Length <= held.Length) return null;
+            return full.AsSpan(0, held.Length).SequenceEqual(held) ? (loose.Path, full) : null;
+        }
+        catch { return null; }
+    }
+
     public byte[] Bytes(GameSession session, SkinSounds sounds, SoundRow row)
     {
         // Bytes we were handed win: a bank opened from a mod reuses the shipped media
         // ids, so asking the game first would play the vanilla sound instead.
         if (sounds.Raw.TryGetValue(row.MediaId, out var held) && held is { Length: > 0 })
         {
+            // Unless they are a PREFETCH STUB. Most voice lines stream from Media/ and
+            // the bank embeds only the opening fragment, so a mod that left a line
+            // alone hands us a few hundred bytes -- a fraction of a second and a hard
+            // cut, which is what the vanilla path avoids by reading loose first.
+            //
+            // A stub is a byte-prefix of the loose file, and audio a mod actually
+            // replaced is not, so the bytes themselves say which this is. No flag to
+            // set, and it stays right for a .bnk with no shipped copy to diff against.
+            if (Prefetch(session, row.MediaId, held) is { } streamed)
+            {
+                row.Origin = streamed.Path + "  (bank holds a prefetch stub)";
+                row.Bytes = streamed.Full.Length;
+                return streamed.Full;
+            }
+
             row.Origin = "opened .bnk";
             row.Bytes = held.Length;
             return held;

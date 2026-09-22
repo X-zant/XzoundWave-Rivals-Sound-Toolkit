@@ -172,6 +172,7 @@ Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 ```
 --selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
 --mediapath  --playtest  --cachetest  --mutetest  --noskinbuild  --openorder  --modset
+--prefetchpreview
 --roundtrip  --fmtcheck  --vorbistest  --setuproundtrip
 ```
 

@@ -176,6 +176,21 @@ public static class ModBank
             var info = BnkBuilder.Inspect(wem);
             var seconds = Seconds(wem, info);
 
+            // What this bank changed. Sounds it left alone are not interesting; these
+            // are the reason someone opened it.
+            var tag = vanilla is null ? null
+                : !vanilla.TryGetValue(e.Id, out var stock) ? "NEW"
+                : !stock.AsSpan().SequenceEqual(wem) ? "MODDED"
+                : "";
+
+            // A sound the mod left alone is the game's own PREFETCH STUB when the real
+            // audio streams from Media/ -- a few hundred bytes of the opening moment.
+            // Its length is not the sound's length (0.24 s where the line runs ten),
+            // and its size is not the sound's size. Say nothing rather than something
+            // wrong: Measure durations reads the streamed file and fills it in.
+            var streamed = tag == "" ? session?.LooseMedia(e.Id) : null;
+            var isStub = streamed is not null && streamed.Size > e.Size;
+
             // The vanilla bank of the same name is the best source of names: a mod
             // keeps the media ids, so whatever the game calls this sound still applies.
             var known = Vanilla(session, stem, e.Id);
@@ -188,17 +203,12 @@ public static class ModBank
                 EventName = known?.EventName,
                 MediaId = e.Id,
                 Codec = info.Codec,
-                Bytes = e.Size,
-                Seconds = seconds,
+                Bytes = isStub ? (uint)streamed.Size : e.Size,
+                Seconds = isStub ? null : seconds,
                 Category = known?.Category ?? "",
                 Subtitle = known?.Subtitle ?? "",
-                Origin = bank.Name,
-                // What this bank changed. Sounds it left alone are not interesting;
-                // these are the reason someone opened it.
-                ModTag = vanilla is null ? null
-                    : !vanilla.TryGetValue(e.Id, out var stock) ? "NEW"
-                    : !stock.AsSpan().SequenceEqual(wem) ? "MODDED"
-                    : "",
+                Origin = isStub ? streamed.Path : bank.Name,
+                ModTag = tag,
             });
             result.Raw[e.Id] = wem;
             result.BankOfMedia[e.Id] = stem;
