@@ -55,6 +55,16 @@ public static class ModSetSelfTest
         Check("sources are listed once each", mods.Sources.Count() == 2,
               string.Join(", ", mods.Sources));
 
+        // The .bnk a media lives in is read back by the tree's media count and by the
+        // "lands in" column for a staged file, and both compare against a FILE NAME.
+        var sounds = ModBank.ToSounds(null, new ModBank.Bank($"{StemA}.bnk", "x.pak", modC));
+        Check("a media says which .bnk it is in by file name",
+              sounds.BankOfMedia.Values.All(v => v == $"{StemA}.bnk"),
+              string.Join(", ", sounds.BankOfMedia.Values.Distinct()));
+        Check("and the row names its .bnk by stem, the way the game's own rows do",
+              sounds.Rows.All(r => r.Bank == StemA),
+              string.Join(", ", sounds.Rows.Select(r => r.Bank).Distinct()));
+
         W("");
         W("where a builder reads its bytes from");
         Check("no overlay, no session: nothing to read",

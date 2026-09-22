@@ -161,12 +161,15 @@
             <Button x:Name="BtnSettings" Content="Settings…" Margin="6,0,0,0" Click="BtnSettings_Click"
                     ToolTip="Which rows and columns the list shows. Remembered between sessions."/>
             <StackPanel x:Name="StatsPanel" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,2,0">
-              <TextBlock x:Name="StatTotal"   Foreground="{StaticResource Muted}"/>
-              <TextBlock x:Name="StatDefault" Foreground="{StaticResource Muted}" Margin="10,0,0,0"/>
-              <TextBlock x:Name="StatStaged"  Foreground="{StaticResource TagGreen}"  Margin="10,0,0,0"/>
-              <TextBlock x:Name="StatModded"  Foreground="{StaticResource TagPurple}" Margin="10,0,0,0"/>
-              <TextBlock x:Name="StatMuted"   Foreground="{StaticResource TagRed}"    Margin="10,0,0,0"/>
-              <TextBlock x:Name="StatVolume"  Foreground="{StaticResource Accent}"   Margin="10,0,0,0"/>
+              <!-- Transparent rather than no background: a TextBlock with a null one
+                   only hit-tests on the glyphs themselves, and the * beside a count
+                   is there to be hovered for the reason behind it. -->
+              <TextBlock x:Name="StatTotal"   Foreground="{StaticResource Muted}"      Background="Transparent"/>
+              <TextBlock x:Name="StatDefault" Foreground="{StaticResource Muted}"      Background="Transparent" Margin="10,0,0,0"/>
+              <TextBlock x:Name="StatStaged"  Foreground="{StaticResource TagGreen}"   Background="Transparent" Margin="10,0,0,0"/>
+              <TextBlock x:Name="StatModded"  Foreground="{StaticResource TagPurple}"  Background="Transparent" Margin="10,0,0,0"/>
+              <TextBlock x:Name="StatMuted"   Foreground="{StaticResource TagRed}"     Background="Transparent" Margin="10,0,0,0"/>
+              <TextBlock x:Name="StatVolume"  Foreground="{StaticResource Accent}"     Background="Transparent" Margin="10,0,0,0"/>
             </StackPanel>
           </StackPanel>
           <StackPanel Orientation="Horizontal">

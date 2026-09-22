@@ -211,7 +211,10 @@ public static class ModBank
                 ModTag = tag,
             });
             result.Raw[e.Id] = wem;
-            result.BankOfMedia[e.Id] = stem;
+            // The FILE NAME, which is what SoundIndex stores and what every reader
+            // compares against -- the node's media count, and the .bnk a staged file
+            // says it lands in. A stem here matched none of them.
+            result.BankOfMedia[e.Id] = bank.Name;
         }
         return result;
     }

@@ -80,6 +80,24 @@ public static class RowClasses
     /// off both "tagged" and "untagged" leaves nothing -- which is honest, and visible
     /// immediately in the counts.
     /// </summary>
+    /// <summary>
+    /// Which hidden kinds are keeping this row off screen, in the order they are
+    /// listed above. Empty when the row is shown.
+    ///
+    /// The same table that removes a row explains it, so a count of what is being
+    /// withheld can never drift from what Apply actually does.
+    /// </summary>
+    public static IReadOnlyList<RowClass> HidingKinds(SoundRow row, IEnumerable<string> hidden)
+    {
+        if (hidden is null) return [];
+        var keys = hidden as ICollection<string> ?? hidden.ToList();
+        return All.Where(c => keys.Contains(c.Key, StringComparer.OrdinalIgnoreCase) && c.Matches(row))
+                  .ToList();
+    }
+
+    public static bool IsHidden(SoundRow row, IEnumerable<string> hidden) =>
+        HidingKinds(row, hidden).Count > 0;
+
     public static IEnumerable<SoundRow> Apply(IEnumerable<SoundRow> rows, IEnumerable<string> hidden)
     {
         if (hidden is null) return rows;

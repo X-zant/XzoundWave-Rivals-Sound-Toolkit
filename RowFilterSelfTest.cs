@@ -33,6 +33,10 @@ public static class RowFilterSelfTest
             Row(9, "sfx_pcm_play",   sub: "x", tags: ["ULT"], codec: "PCM"),       // non-Vorbis
             Row(10, "vo_nosub_play", sub: "",  tags: ["ULT"]),                     // no subtitle
             Row(11, "vo_untag_play", sub: "x", tags: []),                          // untagged
+            // Both at once, which is the case that went wrong in the window: a mod
+            // replaced sounds the game never named, and hiding unnamed events -- on
+            // by default -- took every one of its changes with them.
+            Row(12, null,            sub: "x", tags: ["ULT"], modTag: "MODDED"),   // unnamed AND modded
         };
         W($"{rows.Count} rows, one of each kind");
 
@@ -45,6 +49,41 @@ public static class RowFilterSelfTest
             var ok = left.Count == rows.Count - expected && !left.Any(r => cls.Matches(r));
             Check($"{cls.Key,-10} hides {expected}", ok, $"{left.Count} left");
         }
+
+        W("");
+        W("a hidden row can say what is hiding it");
+
+        // The counts beside the filter box are worked out from this, and a row that
+        // vanished without being counted is the failure it is there to prevent: a mod
+        // that replaced sounds the game never named has every change dropped by the
+        // unnamed filter, which is on by default.
+        var changed = rows.Where(r => r.ModTag is "MODDED" or "NEW").ToList();
+        var firstRun = RowClasses.HiddenByDefault;
+
+        var gone = rows.Where(r => RowClasses.IsHidden(r, firstRun)).ToList();
+        var shown = RowClasses.Apply(rows, firstRun).ToList();
+        Check("hidden and shown account for every row, with no overlap",
+              gone.Count + shown.Count == rows.Count && !gone.Any(shown.Contains),
+              $"{gone.Count} hidden + {shown.Count} shown of {rows.Count}");
+
+        var lostChanges = changed.Where(r => RowClasses.IsHidden(r, firstRun)).ToList();
+        Check("a changed entry with no event name is reported as hidden, not lost",
+              lostChanges.Count == 1, $"{lostChanges.Count} of {changed.Count} changed rows");
+        Check("...and names the filter responsible",
+              lostChanges.Count == 1 &&
+              RowClasses.HidingKinds(lostChanges[0], firstRun).Single().Key == "unnamed",
+              lostChanges.Count == 1
+                  ? string.Join(", ", RowClasses.HidingKinds(lostChanges[0], firstRun).Select(c => c.Key))
+                  : "");
+
+        Check("a row nothing hides reports nothing",
+              RowClasses.HidingKinds(plain, firstRun).Count == 0);
+        Check("a row several hidden kinds match names all of them",
+              RowClasses.HidingKinds(rows[1], ["unnamed", "tagged"]).Count == 2,
+              string.Join(", ", RowClasses.HidingKinds(rows[1], ["unnamed", "tagged"]).Select(c => c.Key)));
+        Check("nothing hidden, nothing to explain",
+              RowClasses.HidingKinds(rows[1], []).Count == 0 &&
+              RowClasses.HidingKinds(rows[1], null).Count == 0);
 
         W("");
         W("combinations and edge cases");
@@ -68,6 +107,8 @@ public static class RowFilterSelfTest
             RowClasses.Apply(rows, ["not-a-kind"]).Count() == rows.Count);
         Check("tagged + untagged together leave nothing",
             !RowClasses.Apply(rows, ["tagged", "untagged"]).Any());
+        Check("...and every one of them says so",
+            rows.All(r => RowClasses.IsHidden(r, ["tagged", "untagged"])));
 
         // This is the distinction that decides whether normal browsing works at all.
         Check("hiding untouched mod entries spares the game's own rows",

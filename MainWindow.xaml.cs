@@ -528,27 +528,65 @@ public partial class MainWindow : Window
     private void RefreshStats()
     {
         var rows = (Grid_.ItemsSource as List<SoundRow>) ?? [];
-        if (rows.Count == 0)
-        {
-            foreach (var t in new[] { StatTotal, StatDefault, StatStaged, StatModded, StatMuted, StatVolume })
-                t.Text = "";
-            return;
-        }
+        var stats = new[] { StatTotal, StatDefault, StatStaged, StatModded, StatMuted, StatVolume };
+        foreach (var t in stats) { t.Text = ""; t.ToolTip = null; }
+        if (rows.Count == 0) return;
+
+        // Rows the row-class setting is keeping off screen. Counting them is the whole
+        // point: a filter that silently removes the sounds you came to look at reads
+        // as a broken tool. Hiding unnamed events is on by default, and a mod that
+        // replaced sounds the game never named has every one of its changes dropped by
+        // it -- the tree saying 14 changed while the list shows none.
+        //
+        // The text box is deliberately not counted. Typing a filter is an act you can
+        // see and undo; a setting from three sessions ago is not.
+        var hiddenKeys = _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault];
+        var withheld = _sounds is null
+            ? []
+            : _sounds.Rows.Where(r => RowClasses.IsHidden(r, hiddenKeys)).ToList();
 
         var staged = rows.Count(r => r.ReplacementPath is not null);
         var muted = rows.Count(r => r.Muted);
         var modded = rows.Count(r => r.ModTag is "MODDED" or "NEW");
         var plain = rows.Count(r => r.ReplacementPath is null && !r.Muted &&
                                     r.ModTag is not ("MODDED" or "NEW"));
-
-        StatTotal.Text = $"{rows.Count:N0} shown";
-        StatDefault.Text = $"{plain:N0} default";
-        StatStaged.Text = staged > 0 ? $"{staged:N0} replaced" : "";
-        StatModded.Text = modded > 0 ? $"{modded:N0} modded" : "";
-        StatMuted.Text = muted > 0 ? $"{muted:N0} muted" : "";
-
         var scaled = rows.Count(r => Math.Abs(r.EffectiveVolume(_project.BulkVolume) - 1.0) > 0.001);
-        StatVolume.Text = scaled > 0 ? $"{scaled:N0} scaled" : "";
+
+        Set(StatTotal, rows.Count, "shown", withheld, _ => true, always: true);
+        Set(StatDefault, plain, "default", withheld,
+            r => r.ReplacementPath is null && !r.Muted && r.ModTag is not ("MODDED" or "NEW"),
+            always: true);
+        Set(StatStaged, staged, "replaced", withheld, r => r.ReplacementPath is not null);
+        Set(StatModded, modded, "modded", withheld, r => r.ModTag is "MODDED" or "NEW");
+        Set(StatMuted, muted, "muted", withheld, r => r.Muted);
+        Set(StatVolume, scaled, "scaled", withheld,
+            r => Math.Abs(r.EffectiveVolume(_project.BulkVolume) - 1.0) > 0.001);
+
+        // A * means "and some of these are not on screen". Shown even when the count
+        // is zero, because zero-of-something-that-exists is exactly the case worth
+        // flagging: "0 modded *" is the sentence that stops someone concluding their
+        // mod failed to load.
+        void Set(TextBlock box, int shown, string label, List<SoundRow> off,
+                 Func<SoundRow, bool> belongs, bool always = false)
+        {
+            var hiddenHere = off.Where(belongs).ToList();
+            if (shown == 0 && hiddenHere.Count == 0 && !always) return;
+
+            box.Text = $"{shown:N0} {label}" + (hiddenHere.Count > 0 ? " *" : "");
+            if (hiddenHere.Count == 0) return;
+
+            var by = hiddenHere
+                .SelectMany(r => RowClasses.HidingKinds(r, hiddenKeys))
+                .Select(c => c.Label)
+                .Distinct()
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+
+            box.ToolTip =
+                $"{hiddenHere.Count:N0} more are hidden by the row filter, so they are not " +
+                $"counted here." + Environment.NewLine + Environment.NewLine +
+                "Hidden by: " + string.Join(", ", by) + Environment.NewLine +
+                "Settings › Rows turns them back on.";
+        }
     }
 
     private static bool IsNoteColumn(DataGridColumn c) =>
