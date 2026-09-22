@@ -26,7 +26,8 @@ public static class VolumeBankBuilder
     public static Result Build(GameSession session, IEnumerable<string> bankPaths,
                                Func<uint, double> gainOf, string outRoot, SkinSounds context,
                                string vgmstreamPath, Action<string> progress = null,
-                               IReadOnlySet<uint> muted = null)
+                               IReadOnlySet<uint> muted = null,
+                               BankBase baseBanks = null)
     {
         var log = new StringBuilder();
         var legend = new List<Row>();
@@ -34,9 +35,8 @@ public static class VolumeBankBuilder
 
         foreach (var bankPath in bankPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
-            if (!session.Provider.Files.TryGetValue(bankPath, out var file)) continue;
-            byte[] orig;
-            try { orig = file.Read(); } catch { continue; }
+            var orig = (baseBanks ?? BankBase.None).Read(session, bankPath);
+            if (orig is null) continue;
 
             var sections = BnkBuilder.ReadSections(orig);
             var didx = sections.FirstOrDefault(s => s.Tag == "DIDX");

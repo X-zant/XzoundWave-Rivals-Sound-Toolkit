@@ -83,6 +83,12 @@ public partial class App : Application
             return;
         }
 
+        if (Array.FindIndex(e.Args, a => a.Equals("--modset", StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            Shutdown(ModSetSelfTest.Run());
+            return;
+        }
+
         var oo = Array.FindIndex(e.Args, a => a.Equals("--openorder", StringComparison.OrdinalIgnoreCase));
         if (oo >= 0 && oo + 1 < e.Args.Length)
         {

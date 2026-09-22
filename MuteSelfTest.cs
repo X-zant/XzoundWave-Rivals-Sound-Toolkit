@@ -44,7 +44,14 @@ public static class MuteSelfTest
         var bankPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var id in muted) foreach (var b in session.BanksForMedia(id)) bankPaths.Add(b);
 
-        W($"{skin.Label}: muting {muted.Count} sound(s) across {bankPaths.Count} .bnk(s)");
+        // A media id can be embedded in several .bnk files -- one shared SFX sits in 93
+        // of them -- and every copy has to be silenced or the sound still plays for some
+        // characters. So the build's count is entries silenced, not ids muted, and the
+        // expectation here has to be worked out the same way.
+        var expected = muted.Sum(id => session.BanksForMedia(id).Count);
+
+        W($"{skin.Label}: muting {muted.Count} sound(s) across {bankPaths.Count} .bnk(s)" +
+          (expected == muted.Count ? "" : $" -- {expected} entries, some are embedded more than once"));
         foreach (var r in targets) W($"    {r.MediaId,-12} {r.Display}");
         W("");
 
@@ -53,8 +60,8 @@ public static class MuteSelfTest
         {
             // ---- a plain build, nothing staged, only mutes ------------------
             var built = ModBuilder.Build(session, skin, [], outDir, bankPaths, false, muted);
-            Check("the build reports them muted", built.Muted == muted.Count,
-                  $"{built.Muted} of {muted.Count}");
+            Check("the build reports them muted", built.Muted == expected,
+                  $"{built.Muted} of {expected} entries ({muted.Count} id(s))");
             Check("it wrote a .bnk", built.Banks > 0, $"{built.Banks} written");
 
             var written = Directory.GetFiles(outDir, "*.bnk", SearchOption.AllDirectories);
@@ -118,8 +125,9 @@ public static class MuteSelfTest
                         }
                 }
                 Check("the staged id was found", found);
-                Check("the others are still muted", b2.Muted == muted.Count - 1,
-                      $"{b2.Muted} muted, expected {muted.Count - 1}");
+                var expected2 = expected - session.BanksForMedia(donor.MediaId).Count;
+                Check("the others are still muted", b2.Muted == expected2,
+                      $"{b2.Muted} muted, expected {expected2}");
                 try { Directory.Delete(outDir2, true); } catch { }
             }
         }

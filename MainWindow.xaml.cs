@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -103,11 +103,33 @@ public partial class MainWindow : Window
     /// <summary>What a tree node points at. A null <see cref="Bank"/> means "the whole skin".</summary>
     private sealed record Pick(string CharId, SkinEntry Skin, string Bank);
 
-    private string _bankFilter;
+    /// <summary>
+    /// What the grid is showing: one skin node, or any number of .bnk nodes picked with
+    /// Ctrl+click. A list rather than a single value because a selection can span
+    /// characters, which is the whole point of picking more than one.
+    /// </summary>
+    private readonly List<Pick> _selected = [];
+
+    /// <summary>The .bnk nodes drawn as selected, so they can be un-drawn.</summary>
+    private readonly HashSet<TreeViewItem> _selectedNodes = [];
+
+    /// <summary>Loaded mods, overlaying the game's own .bnk files.</summary>
+    private readonly ModSet _mods = new();
+
+    /// <summary>One index per skin, kept so switching between them is not a re-read.</summary>
+    private readonly Dictionary<string, SkinSounds> _skinCache = new(StringComparer.OrdinalIgnoreCase);
 
     private void PopulateTree()
     {
+        // A remount is a different game: everything derived from the old one has to go
+        // with it, or the tree would be new and the indexes behind it stale.
         Tree.Items.Clear();
+        _selected.Clear();
+        _selectedNodes.Clear();
+        _skinCache.Clear();
+        _mods.Clear();
+        _bankPathByStem = null;
+        BtnCloseBank.IsEnabled = false;
         foreach (var c in _session.Characters)
         {
             var node = new TreeViewItem { Header = c.Name, Tag = c };
@@ -152,43 +174,184 @@ public partial class MainWindow : Window
         Tree.Items.Add(others);
     }
 
+    /// <summary>
+    /// A plain click replaces the selection. Ctrl+click on a .bnk adds or removes it,
+    /// which is handled in <see cref="Tree_PreviewMouseLeftButtonDown"/> before the
+    /// TreeView gets a chance to collapse everything down to one item.
+    /// </summary>
     private async void Tree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
         if (e.NewValue is not TreeViewItem { Tag: Pick pick }) return;
 
-        var sameSkin = _skin is not null && _skin.SkinId == pick.Skin.SkinId;
+        _selectedNodes.Clear();
+        _selected.Clear();
+        _selected.Add(pick);
         _charId = pick.CharId;
         _skin = pick.Skin;
-        _bankFilter = pick.Bank;
+
+        await RebuildViewAsync();
+    }
+
+    /// <summary>
+    /// Ctrl+click builds a multi-.bnk selection. WPF's TreeView is single-select by
+    /// design, so this intercepts the click rather than fighting the control: the
+    /// event is marked handled and the selection is kept here instead.
+    /// </summary>
+    private async void Tree_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (System.Windows.Input.Keyboard.Modifiers != System.Windows.Input.ModifierKeys.Control) return;
+
+        var node = NodeUnder(e.OriginalSource as DependencyObject);
+        // Only .bnk files multi-select. Adding a whole skin to a set of files would
+        // mean two different kinds of thing in one selection.
+        if (node?.Tag is not Pick pick || pick.Bank is null) return;
+        e.Handled = true;
+
+        // A Ctrl+click after a plain skin selection starts a fresh set of files. The
+        // control's own highlight has to go with it, or the skin node stays lit while
+        // the grid shows something else entirely.
+        if (_selected.Count == 1 && _selected[0].Bank is null)
+        {
+            _selected.Clear();
+            if (Tree.SelectedItem is TreeViewItem old) old.IsSelected = false;
+        }
+
+        var already = _selected.FirstOrDefault(p => Same(p, pick));
+        if (already is not null)
+        {
+            _selected.Remove(already);
+            _selectedNodes.Remove(node);
+        }
+        else
+        {
+            _selected.Add(pick);
+            _selectedNodes.Add(node);
+            _charId = pick.CharId;
+            _skin = pick.Skin;
+        }
+
+        if (_selected.Count == 0) { _skin = null; _sounds = null; Grid_.ItemsSource = null; }
+        await RebuildViewAsync();
+    }
+
+    private static bool Same(Pick a, Pick b) =>
+        a.Skin.SkinId == b.Skin.SkinId &&
+        string.Equals(a.Bank, b.Bank, StringComparison.OrdinalIgnoreCase);
+
+    private static TreeViewItem NodeUnder(DependencyObject source)
+    {
+        while (source is not null and not TreeViewItem)
+            source = System.Windows.Media.VisualTreeHelper.GetParent(source);
+        return source as TreeViewItem;
+    }
+
+    /// <summary>
+    /// Rebuild the grid for whatever is selected, reading each skin once and keeping it.
+    /// </summary>
+    private async Task RebuildViewAsync()
+    {
+        if (_selected.Count == 0) { MarkTreeState(); return; }
 
         try
         {
-            // Switching banks within a skin is a filter, not a re-read.
-            if (!sameSkin || _sounds is null)
+            // A stand-in for a .bnk the game does not ship has no files to read; its
+            // rows come from the mod itself.
+            foreach (var skin in _selected.Select(p => p.Skin).Where(s => s.Banks.Count > 0)
+                                          .GroupBy(s => s.SkinId).Select(g => g.First()))
             {
+                if (_skinCache.ContainsKey(skin.SkinId)) continue;
                 Grid_.ItemsSource = null;
-                _sounds = await Task.Run(() => SoundIndex.Build(_session, _skin, _charId, Say));
-                var relinked = _project.ApplyNotes(_sounds.Rows);
-                if (relinked > 0)
-                    Say($"{relinked} note(s) moved onto new media ids after a game update.");
-                MarkStagedRows();
-                LabelBankNodes();
+                var charId = _selected.First(p => p.Skin.SkinId == skin.SkinId).CharId;
+                _skinCache[skin.SkinId] = await Task.Run(() => SoundIndex.Build(_session, skin, charId, Say));
             }
+
+            _sounds = MergeSelection();
+            var relinked = _project.ApplyNotes(_sounds.Rows);
+            if (relinked > 0)
+                Say($"{relinked} note(s) moved onto new media ids after a game update.");
+            MarkStagedRows();
+            LabelBankNodes();
+            MarkTreeState();
             ApplyFilter();
             RefreshPendingStatus();
-
-            if (_bankFilter is null)
-                Say($"{_skin.Label} — {_sounds.Rows.Count} sounds across {_skin.Banks.Count} .bnk(s). " +
-                    "Pick a .bnk to work on just that file.");
-            else
-            {
-                var n = _sounds.Rows.Count(r => r.Bank.Equals(BankStem(_bankFilter), StringComparison.OrdinalIgnoreCase));
-                var embedded = _sounds.BankOfMedia.Count(kv => kv.Value.Equals(_bankFilter, StringComparison.OrdinalIgnoreCase));
-                Say($"{_bankFilter} — {n} sounds, {embedded} embedded media. " +
-                    "Only this file needs rebuilding for swaps made here.");
-            }
+            SaySelection();
         }
         catch (Exception ex) { Say("Failed to read .bnk files: " + ex.Message); }
+    }
+
+    /// <summary>
+    /// One view over everything selected. A .bnk a mod has loaded comes from the MOD,
+    /// not the game: that is the whole point of having opened it, and the mod keeps the
+    /// shipped media ids, so reading the game would quietly show the vanilla sound.
+    /// </summary>
+    private SkinSounds MergeSelection()
+    {
+        var merged = new SkinSounds();
+        var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var pick in _selected)
+        {
+            var stems = pick.Bank is not null
+                ? [BankStem(pick.Bank)]
+                : pick.Skin.Banks.Select(b => BankStem(Path.GetFileName(b.Path))).ToList();
+
+            foreach (var stem in stems)
+            {
+                if (!done.Add(stem)) continue;
+                if (_mods.Get(stem) is { } mod) Absorb(merged, mod.Sounds, stem);
+                else if (_skinCache.TryGetValue(pick.Skin.SkinId, out var vanilla))
+                    Absorb(merged, vanilla, stem);
+            }
+        }
+        return merged;
+    }
+
+    private static void Absorb(SkinSounds into, SkinSounds from, string stem)
+    {
+        foreach (var row in from.Rows)
+        {
+            if (!row.Bank.Equals(stem, StringComparison.OrdinalIgnoreCase)) continue;
+            into.Rows.Add(row);
+            if (from.Raw.TryGetValue(row.MediaId, out var raw)) into.Raw[row.MediaId] = raw;
+            if (from.Embedded.TryGetValue(row.MediaId, out var emb)) into.Embedded[row.MediaId] = emb;
+            if (from.BankOfMedia.TryGetValue(row.MediaId, out var b)) into.BankOfMedia[row.MediaId] = b;
+        }
+    }
+
+    private void SaySelection()
+    {
+        var modded = _sounds.Rows.Count(r => r.ModTag is "MODDED" or "NEW");
+        var fromMods = _selected.Select(p => p.Bank).Where(b => b is not null)
+                                .Count(b => _mods.Has(BankStem(b)));
+
+        if (_selected.Count == 1 && _selected[0].Bank is null)
+        {
+            Say($"{_skin.Label} — {_sounds.Rows.Count} sounds across {_skin.Banks.Count} .bnk(s). " +
+                "Pick a .bnk to work on just that file, or Ctrl+click several.");
+            return;
+        }
+        Say($"{_selected.Count} .bnk selected — {_sounds.Rows.Count:N0} sounds" +
+            (modded > 0 ? $", {modded:N0} changed by a mod" : "") +
+            (fromMods > 0 ? $" ({fromMods} loaded from mods)" : "") +
+            ".  Ctrl+click to add or remove one.");
+    }
+
+    /// <summary>Which .bnk files the current selection covers, by file name.</summary>
+    private List<string> SelectedBankFiles() =>
+        _selected.Count == 0 ? []
+        : _selected.SelectMany(p => p.Bank is not null
+                ? [p.Bank]
+                : p.Skin.Banks.Select(b => Path.GetFileName(b.Path)))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>The game files behind the selection, for the builders that read paths.</summary>
+    private List<string> SelectedBankPaths()
+    {
+        var want = SelectedBankFiles().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return _selected.Select(p => p.Skin).DistinctBy(s => s.SkinId)
+            .SelectMany(s => s.Banks.Select(b => b.Path))
+            .Where(path => want.Contains(Path.GetFileName(path)))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static string BankStem(string fileName) => Path.GetFileNameWithoutExtension(fileName);
@@ -196,12 +359,15 @@ public partial class MainWindow : Window
     /// <summary>Put real counts on the bank nodes once the skin has been read.</summary>
     private void LabelBankNodes()
     {
+        if (_skin is null || _sounds is null) return;
         foreach (TreeViewItem charNode in Tree.Items)
-        foreach (TreeViewItem skinNode in charNode.Items)
+        foreach (var obj in charNode.Items)
         {
+            if (obj is not TreeViewItem skinNode) continue;
             if (skinNode.Tag is not Pick p || p.Skin.SkinId != _skin.SkinId) continue;
-            foreach (TreeViewItem bankNode in skinNode.Items)
+            foreach (var o2 in skinNode.Items)
             {
+                if (o2 is not TreeViewItem bankNode) continue;
                 if (bankNode.Tag is not Pick bp || bp.Bank is null) continue;
                 var file = _skin.Banks.FirstOrDefault(b => Path.GetFileName(b.Path) == bp.Bank);
                 var sounds = _sounds.Rows.Count(r => r.Bank.Equals(BankStem(bp.Bank), StringComparison.OrdinalIgnoreCase));
@@ -209,6 +375,87 @@ public partial class MainWindow : Window
                 bankNode.Header = $"{bp.Bank}   {sounds} sounds · {media} media · " +
                                   $"{(file?.Size ?? 0) / 1024.0 / 1024.0:0.0} MB";
             }
+        }
+    }
+
+    /// <summary>
+    /// Paint the tree: a .bnk a mod has loaded, and every node above it, gets the same
+    /// fill the grid uses for a changed row, so "a mod touched this" reads the same
+    /// wherever it appears. A collapsed hero still shows how much was changed inside it.
+    /// Selection wins over the mod tint while it lasts — it is the transient state.
+    /// </summary>
+    private void MarkTreeState()
+    {
+        var modded = (System.Windows.Media.Brush)FindResource("RowModded");
+        var moddedBank = (System.Windows.Media.Brush)FindResource("RowNew");
+        var selected = (System.Windows.Media.Brush)FindResource("Selected");
+        var purple = (System.Windows.Media.Brush)FindResource("TagPurple");
+        var fg = (System.Windows.Media.Brush)FindResource("Fg");
+
+        foreach (var top in Tree.Items)
+        {
+            if (top is not TreeViewItem charNode) continue;
+            var charChanged = 0;
+
+            foreach (var obj in charNode.Items)
+            {
+                if (obj is not TreeViewItem skinNode) continue;
+
+                // The "Other .bnk files" branch nests one level deeper.
+                if (skinNode.Tag is not Pick && skinNode.Items.Count > 0)
+                {
+                    var groupChanged = 0;
+                    foreach (var o2 in skinNode.Items)
+                    {
+                        if (o2 is not TreeViewItem leaf || leaf.Tag is not Pick lp) continue;
+                        groupChanged += PaintBank(leaf, lp);
+                    }
+                    Paint(skinNode, groupChanged > 0 ? modded : null, groupChanged);
+                    charChanged += groupChanged;
+                    continue;
+                }
+
+                var skinChanged = 0;
+                foreach (var o2 in skinNode.Items)
+                {
+                    if (o2 is not TreeViewItem bankNode || bankNode.Tag is not Pick bp) continue;
+                    skinChanged += PaintBank(bankNode, bp);
+                }
+                // A collapsed skin still has to say it: count from the mod set directly
+                // rather than from nodes that may never have been realised.
+                if (skinNode.Tag is Pick sp) skinChanged = Math.Max(skinChanged, _mods.ChangedIn(sp.Skin));
+                Paint(skinNode, skinChanged > 0 ? modded : null, skinChanged);
+                charChanged += skinChanged;
+            }
+            Paint(charNode, charChanged > 0 ? modded : null, charChanged);
+        }
+
+        int PaintBank(TreeViewItem node, Pick pick)
+        {
+            if (pick.Bank is null) return 0;
+            var entry = _mods.Get(BankStem(pick.Bank));
+            Paint(node, entry is not null ? moddedBank : null, entry?.Changed ?? 0);
+            return entry?.Changed ?? 0;
+        }
+
+        // Setting Background here is a LOCAL value, which beats the selection trigger
+        // in the control's own style -- so a tinted node would stay tinted while
+        // selected unless selection is drawn here too.
+        void Paint(TreeViewItem node, System.Windows.Media.Brush fill, int changed)
+        {
+            var isSelected = node.IsSelected || _selectedNodes.Contains(node);
+            node.Background = isSelected ? selected : fill;
+            node.Foreground = fill is not null && !isSelected ? purple : fg;
+            Suffix(node, changed);
+        }
+
+        // The count lives in the header, so it survives a collapse and needs no columns.
+        void Suffix(TreeViewItem node, int changed)
+        {
+            if (node.Header is not string header) return;
+            var mark = header.IndexOf("   ● ", StringComparison.Ordinal);
+            if (mark >= 0) header = header[..mark];
+            node.Header = changed > 0 ? $"{header}   ● {changed:N0}" : header;
         }
     }
 
@@ -253,9 +500,9 @@ public partial class MainWindow : Window
     {
         if (_sounds is null) return;
         var q = TbFilter.Text?.Trim() ?? "";
+        // No bank filter here any more: the selection decides what _sounds holds, so
+        // filtering it again would hide .bnk files the author deliberately added.
         IEnumerable<SoundRow> rows = _sounds.Rows;
-        if (_bankFilter is not null)
-            rows = rows.Where(r => r.Bank.Equals(BankStem(_bankFilter), StringComparison.OrdinalIgnoreCase));
         rows = RowClasses.Apply(rows, _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault]);
         if (q.Length > 0)
             rows = rows.Where(r =>
@@ -701,7 +948,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void BtnTestBank_Click(object sender, RoutedEventArgs e)
     {
-        if (BlockedByOpenedBank()) return;
+        if (BuildBaseRefused()) return;
         if (_skin is null) { Say("pick a skin or .bnk first."); return; }
 
         if (string.IsNullOrWhiteSpace(_settings.TestWemDir) || !Directory.Exists(_settings.TestWemDir))
@@ -717,16 +964,14 @@ public partial class MainWindow : Window
 
         var wems = TestBankBuilder.ScanFolder(_settings.TestWemDir);
 
-        // Scope: the selected bank, or every bank of the skin.
-        var scope = _bankFilter is not null
-            ? _skin.Banks.Where(b => Path.GetFileName(b.Path)
-                    .Equals(_bankFilter, StringComparison.OrdinalIgnoreCase)).Select(b => b.Path).ToList()
-            : _skin.Banks.Select(b => b.Path).ToList();
+        // Scope: whatever is selected -- one .bnk, several, or a whole skin.
+        var scope = SelectedBankPaths();
+        if (scope.Count == 0) scope = _skin.Banks.Select(b => b.Path).ToList();
 
         var perBank = CbPerBank.IsChecked == true;
-        var entries = TestBankBuilder.CountEntries(_session, scope);
+        var entries = TestBankBuilder.CountEntries(_session, scope, ModBase());
         var required = perBank
-            ? scope.Max(p => TestBankBuilder.CountEntries(_session, [p]))
+            ? scope.Max(p => TestBankBuilder.CountEntries(_session, [p], ModBase()))
             : entries;
 
         // Not enough clips (or none at all)? Offer to speak them, rather than sending
@@ -773,7 +1018,13 @@ public partial class MainWindow : Window
         var short_ = Math.Max(0, need - have);
 
         var msg = new StringBuilder();
-        msg.AppendLine($"Scope: {(_bankFilter ?? _skin.Label)}   —   {scope.Count} .bnk(s), {entries} media entries.");
+        var scopeLabel = _selected.Count(p => p.Bank is not null) switch
+        {
+            0 => _skin.Label,
+            1 => _selected.First(p => p.Bank is not null).Bank,
+            var n => $"{n} selected .bnk files",
+        };
+        msg.AppendLine($"Scope: {scopeLabel}   —   {scope.Count} .bnk(s), {entries} media entries.");
         msg.AppendLine($"Numbered clips available: {have}  (lowest {lowest}, highest {wems.Max}).");
         msg.AppendLine(perBank
             ? $"Numbering restarts at {lowest} for each .bnk; the largest .bnk needs {need}."
@@ -800,7 +1051,8 @@ public partial class MainWindow : Window
         try
         {
             var r = TestBankBuilder.Build(_session, scope, wems, outDlg.FolderName,
-                                          lowest, true, _sounds, perBank);
+                                          lowest, true, _sounds, perBank,
+                                          baseBanks: ModBase());
 
             // Write each assigned number back onto its sound, so hearing "42" in game
             // leads straight to the row it came from. Persisted with the project.
@@ -823,24 +1075,24 @@ public partial class MainWindow : Window
 
     // ---- opening somebody else's bank ---------------------------------------
 
-    /// <summary>The bank currently open from a file or mod pak, or null for the game's own.</summary>
-    private ModBank.Bank _openedBank;
-
     private void BtnOpenBank_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Open a .bnk, or a mod .pak to pick one from",
+            Title = "Open .bnk files, or a mod .pak to pick them from",
             Filter = ".bnk or mod .pak|*.bnk;*.pak;*.utoc|.bnk|*.bnk|Mod .pak|*.pak;*.utoc|All files|*.*",
+            Multiselect = true,
         };
-        if (dlg.ShowDialog() == true) OpenModPath(dlg.FileName);
+        if (dlg.ShowDialog() != true) return;
+        foreach (var file in dlg.FileNames) OpenModPath(file);
     }
 
     /// <summary>
-    /// Open a .bnk directly, or mount a .pak and let the author pick which bank inside
-    /// it to look at.
+    /// Open a .bnk directly, or mount a .pak and let the author pick which of the banks
+    /// inside it to load. More than one can be loaded at a time; each overlays the
+    /// game's copy of that .bnk and nothing else.
     /// </summary>
-    private void OpenModPath(string path)
+    private async void OpenModPath(string path)
     {
         ModBank.Opened opened;
         try { opened = ModBank.Open(path, _settings); }
@@ -850,39 +1102,68 @@ public partial class MainWindow : Window
             return;
         }
 
-        var banks = opened.Banks;
-        var bank = banks.Count == 1 ? banks[0] : PickBank(banks, Path.GetFileName(path));
-        if (bank is null) return;
-        ShowBank(bank, banks.Count, opened.Skipped);
+        var banks = opened.Banks.Count == 1 ? opened.Banks : PickBanks(opened.Banks, Path.GetFileName(path));
+        if (banks is null || banks.Count == 0) return;
+        await LoadMods(banks, path, opened.Skipped, opened.Banks.Count);
     }
 
-    private void ShowBank(ModBank.Bank bank, int siblings, List<string> skipped)
+    /// <summary>
+    /// Take the chosen banks into the mod set, warn about any .bnk this displaces, and
+    /// show them.
+    /// </summary>
+    private async Task LoadMods(List<ModBank.Bank> banks, string source,
+                                List<string> skipped, int siblings)
     {
-        var sounds = ModBank.ToSounds(_session, bank);
-        if (sounds.Rows.Count == 0)
+        var empty = new List<string>();
+        var usable = new List<ModBank.Bank>();
+        foreach (var b in banks)
         {
-            MessageBox.Show($"{bank.Name} has no embedded media — nothing to show.\n\n" +
-                            ".bnk files that only carry events keep their audio in loose Media/ files.",
-                            "Nothing to show", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (ModBank.ToSounds(_session, b).Rows.Count == 0) empty.Add(b.Name);
+            else usable.Add(b);
+        }
+
+        // A .bnk two mods both claim can only be shown once. Say whose is being
+        // dropped rather than letting the newer one quietly win.
+        var collisions = usable
+            .Select(b => _mods.Get(Path.GetFileNameWithoutExtension(b.Name)))
+            .Where(e => e is not null).ToList();
+        if (collisions.Count > 0)
+        {
+            var ok = Notice.Show(this, _settings, Notice.ModReplaced, "Already loaded",
+                string.Join(Environment.NewLine, collisions.Select(c => $"{c.BankName}  —  from {c.SourceName}")) +
+                Environment.NewLine + Environment.NewLine +
+                $"{(collisions.Count == 1 ? "This .bnk is" : "These .bnk files are")} already loaded from " +
+                "another mod. Loading again replaces the older one: only one mod can own a " +
+                ".bnk, the same way only one wins in game.");
+            if (!ok) return;
+        }
+
+        var loaded = new List<ModSet.Entry>();
+        foreach (var b in usable) loaded.Add(_mods.Add(_session, b, source, out _));
+
+        if (loaded.Count == 0)
+        {
+            MessageBox.Show(
+                string.Join(Environment.NewLine, empty) + Environment.NewLine + Environment.NewLine +
+                "No embedded media — nothing to show. A .bnk that only carries events keeps " +
+                "its audio in loose Media/ files.",
+                "Nothing to show", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        _openedBank = bank;
-        _sounds = sounds;
-        _bankFilter = null;
-        _project.ApplyNotes(_sounds.Rows);
-        MarkStagedRows();
-        ApplyFilter();
-        BtnCloseBank.IsEnabled = true;
+        SelectBanks(loaded.Select(l => l.BankName).ToList());
+        BtnCloseBank.IsEnabled = _mods.Any;
+        await RebuildViewAsync();
 
-        var named = _sounds.Rows.Count(r => r.EventName is not null);
-        var changed = _sounds.Rows.Count(r => r.ModTag is "MODDED" or "NEW");
-        var compared = _sounds.Rows.Any(r => r.ModTag is not null);
-        Say($"opened {bank.Label} — {_sounds.Rows.Count} media, {named} matched to shipped events" +
-            (compared ? $", {changed} changed from the shipped .bnk" : ", no shipped .bnk to compare against") +
-            (siblings > 1 ? $"  ({siblings} .bnk files in that .pak)" : "") +
+        var changed = loaded.Sum(l => l.Changed);
+        var compared = _sounds is not null && _sounds.Rows.Any(r => r.ModTag is not null);
+        Say($"loaded {loaded.Count} .bnk from {Path.GetFileName(source)} — " +
+            (compared ? $"{changed:N0} sound(s) changed from the shipped .bnk files"
+                      : "no shipped .bnk to compare against") +
+            (siblings > loaded.Count ? $"  ({siblings} .bnk files in that .pak)" : "") +
+            (empty.Count > 0 ? $"  —  {empty.Count} with no embedded media skipped" : "") +
             (skipped is { Count: > 0 } ? $"  —  {skipped.Count} container(s) skipped" : "") +
-            ".  Building is disabled until you close it.");
+            ".  Builds now use these as their base.");
 
         // Silently dropping a container the author expected to see would be worse
         // than an extra dialog: they would think the mod simply had no audio.
@@ -894,30 +1175,85 @@ public partial class MainWindow : Window
                 "Some containers skipped", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
-    /// <summary>A pak usually holds several banks; ask which one rather than guessing.</summary>
-    private ModBank.Bank PickBank(List<ModBank.Bank> banks, string source)
+    /// <summary>
+    /// Point the selection at these .bnk files. They are found in the tree where the
+    /// game has them; one the game does not ship still gets a place in the selection so
+    /// a brand-new .bnk is not invisible.
+    /// </summary>
+    private void SelectBanks(IReadOnlyList<string> bankNames)
+    {
+        _selected.Clear();
+        _selectedNodes.Clear();
+
+        var wanted = new HashSet<string>(bankNames, StringComparer.OrdinalIgnoreCase);
+        var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var node in AllNodes())
+        {
+            if (node.Tag is not Pick pick || pick.Bank is null) continue;
+            if (!wanted.Contains(pick.Bank)) continue;
+            _selected.Add(pick);
+            _selectedNodes.Add(node);
+            found.Add(pick.Bank);
+            for (var p = ItemsControl.ItemsControlFromItemContainer(node) as TreeViewItem;
+                 p is not null;
+                 p = ItemsControl.ItemsControlFromItemContainer(p) as TreeViewItem)
+                p.IsExpanded = true;
+        }
+
+        // A .bnk the game does not have cannot be a tree node, so it gets a stand-in
+        // entry. Everything downstream works off the mod's own rows anyway.
+        foreach (var name in bankNames.Where(n => !found.Contains(n)))
+            _selected.Add(new Pick("", new SkinEntry($"mod:{BankStem(name)}", name, []), name));
+
+        if (_selected.Count > 0)
+        {
+            _charId = _selected[0].CharId;
+            _skin = _selected[0].Skin;
+        }
+    }
+
+    /// <summary>Every node in the tree, however deeply nested.</summary>
+    private IEnumerable<TreeViewItem> AllNodes()
+    {
+        var stack = new Stack<TreeViewItem>(Tree.Items.OfType<TreeViewItem>());
+        while (stack.Count > 0)
+        {
+            var node = stack.Pop();
+            yield return node;
+            foreach (var child in node.Items.OfType<TreeViewItem>()) stack.Push(child);
+        }
+    }
+
+    /// <summary>A pak usually holds several banks; ask which ones rather than guessing.</summary>
+    private List<ModBank.Bank> PickBanks(List<ModBank.Bank> banks, string source)
     {
         var list = new ListBox
         {
             ItemsSource = banks,
             DisplayMemberPath = nameof(ModBank.Bank.Name),
-            SelectedIndex = 0,
+            SelectionMode = SelectionMode.Extended,
             Margin = new Thickness(0, 0, 0, 10),
             Background = (System.Windows.Media.Brush)FindResource("Bg2"),
             Foreground = (System.Windows.Media.Brush)FindResource("Fg"),
             BorderBrush = (System.Windows.Media.Brush)FindResource("Line"),
         };
-        var ok = new Button { Content = "Open", Width = 90, IsDefault = true };
+        list.SelectedIndex = 0;
+
+        var all = new Button { Content = "Select all", Width = 90 };
+        var ok = new Button { Content = "Open", Width = 90, Margin = new Thickness(8, 0, 0, 0), IsDefault = true };
         var cancel = new Button { Content = "Cancel", Width = 90, Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(all);
         buttons.Children.Add(ok);
         buttons.Children.Add(cancel);
 
         var body = new DockPanel { Margin = new Thickness(14) };
         var head = new TextBlock
         {
-            Text = $"{banks.Count} .bnk files in {source}",
+            Text = $"{banks.Count} .bnk files in {source} — Ctrl+click or Shift+click to take several",
+            TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
             Foreground = (System.Windows.Media.Brush)FindResource("Fg"),
         };
@@ -929,45 +1265,64 @@ public partial class MainWindow : Window
 
         var win = new Window
         {
-            Title = "Pick a .bnk",
+            Title = "Pick .bnk files",
             Content = body,
-            Width = 460,
-            Height = 380,
+            Width = 520,
+            Height = 420,
             Owner = this,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = (System.Windows.Media.Brush)FindResource("Bg"),
         };
+        all.Click += (_, _) => list.SelectAll();
         ok.Click += (_, _) => { win.DialogResult = true; };
         list.MouseDoubleClick += (_, _) => { if (list.SelectedItem is not null) win.DialogResult = true; };
 
-        return win.ShowDialog() == true ? list.SelectedItem as ModBank.Bank : null;
+        return win.ShowDialog() == true ? list.SelectedItems.Cast<ModBank.Bank>().ToList() : null;
     }
 
     private async void BtnCloseBank_Click(object sender, RoutedEventArgs e)
     {
-        if (_openedBank is null) return;
-        _openedBank = null;
+        if (!_mods.Any) return;
+        _mods.Clear();
         BtnCloseBank.IsEnabled = false;
 
-        if (_skin is null) { _sounds = null; Grid_.ItemsSource = null; Say("closed."); return; }
+        // A stand-in entry for a .bnk the game does not ship has nothing left to show
+        // once its mod is gone.
+        _selected.RemoveAll(p => p.Skin.SkinId.StartsWith("mod:", StringComparison.Ordinal));
+        _skin = _selected.FirstOrDefault()?.Skin;
+        _charId = _selected.FirstOrDefault()?.CharId;
 
         Grid_.ItemsSource = null;
-        _sounds = await Task.Run(() => SoundIndex.Build(_session, _skin, _charId, Say));
-        _project.ApplyNotes(_sounds.Rows);
-        MarkStagedRows();
-        ApplyFilter();
-        Say($"back to {_skin.Label} — {_sounds.Rows.Count} sounds.");
+        if (_selected.Count == 0) { _sounds = null; MarkTreeState(); Say("closed."); return; }
+
+        await RebuildViewAsync();
+        Say("closed — back to the game's own .bnk files.");
     }
 
     /// <summary>
-    /// True when an action that writes banks was asked for while looking at somebody
-    /// else's. Those actions rebuild the GAME's banks, which is not what is on screen.
+    /// The mods standing in front of the .bnk files a build is about to write. Every
+    /// builder reads through this, so a build layers onto a loaded mod instead of
+    /// throwing its work away.
     /// </summary>
-    private bool BlockedByOpenedBank()
+    private BankBase ModBase() =>
+        !_mods.Any ? BankBase.None
+        : new BankBase(_mods.All.Select(e => new KeyValuePair<string, byte[]>(e.Stem, e.Bank.Bytes)));
+
+    /// <summary>
+    /// True when the author backed out of building on top of a loaded mod. Worth saying
+    /// once: the surprising reading is the other one, where a build quietly ignores the
+    /// mod on screen and writes the game's audio instead.
+    /// </summary>
+    private bool BuildBaseRefused()
     {
-        if (_openedBank is null) return false;
-        Say($"viewing {_openedBank.Name} — close it first to build against the game's .bnk files.");
-        return true;
+        if (!_mods.Any) return false;
+        var names = _mods.All.Select(e => e.BankName).OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+        return !Notice.Show(this, _settings, Notice.BuildOnMod, "Building on a loaded mod",
+            "These .bnk files come from a mod and will be the base for this build:" +
+            Environment.NewLine + Environment.NewLine +
+            string.Join(Environment.NewLine, names) + Environment.NewLine + Environment.NewLine +
+            "Whatever that mod changed stays in and your work goes on top. Close the mod " +
+            "first to build against the game's original audio instead.");
     }
 
     private void CbTransProvider_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -1346,15 +1701,16 @@ public partial class MainWindow : Window
     // ---- extracting what a mod changed -----------------------------------------
 
     /// <summary>
-    /// Write out only the sounds an opened bank actually replaced. Everything it left
-    /// alone is the game's own audio and is not worth extracting.
+    /// Write out only the sounds a loaded mod actually replaced. Everything it left
+    /// alone is the game's own audio and is not worth extracting. With several mods
+    /// loaded this covers every one of them that the selection is showing.
     /// </summary>
     private void MiExtractModded_Click(object sender, RoutedEventArgs e)
     {
-        if (_openedBank is null || _sounds is null)
+        if (!_mods.Any || _sounds is null)
         {
             MessageBox.Show(
-                "Open a .bnk or a mod .pak first — this writes out the sounds that .bnk " +
+                "Open a .bnk or a mod .pak first — this writes out the sounds a mod " +
                 "changed, which is only known once it has been compared with the game's own.",
                 "Nothing opened", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
@@ -1367,7 +1723,7 @@ public partial class MainWindow : Window
             .ToList();
         if (changed.Count == 0)
         {
-            MessageBox.Show($"{_openedBank.Name} changes nothing from the shipped .bnk.",
+            MessageBox.Show("Nothing on screen differs from the shipped .bnk files.",
                             "Nothing changed", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -1375,8 +1731,11 @@ public partial class MainWindow : Window
         var dlg = new OpenFolderDialog { Title = $"Where to put {changed.Count} changed sound(s)" };
         if (dlg.ShowDialog() != true) return;
 
+        // One folder named after the .bnk when there is only one, so the old single-mod
+        // output is unchanged; a name covering the set when there are several.
+        var stems = changed.Select(r => r.Bank).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var dir = Path.Combine(dlg.FolderName,
-                               Safe(Path.GetFileNameWithoutExtension(_openedBank.Name)));
+                               stems.Count == 1 ? Safe(stems[0]) : $"{stems.Count}-bnk-modded");
         Directory.CreateDirectory(dir);
 
         int written = 0, failed = 0;
@@ -1758,7 +2117,7 @@ public partial class MainWindow : Window
     /// </summary>
     private async void MiBuildVolume_Click(object sender, RoutedEventArgs e)
     {
-        if (BlockedByOpenedBank()) return;
+        if (BuildBaseRefused()) return;
         if (_sounds is null || _skin is null) { Say("pick a skin first."); return; }
 
         var levels = _sounds.Rows.Where(r => r.EffectiveVolume(_project.BulkVolume) is var g &&
@@ -1786,7 +2145,8 @@ public partial class MainWindow : Window
             var volumeMuted = _sounds?.Rows.Where(r2 => r2.Muted).Select(r2 => r2.MediaId).ToHashSet() ?? [];
             var r = await Task.Run(() => VolumeBankBuilder.Build(
                 _session, banks, id => levels.GetValueOrDefault(id, 1.0), outRoot,
-                _sounds, vgm, m => Dispatcher.BeginInvoke(new Action(() => Say(m))), volumeMuted));
+                _sounds, vgm, m => Dispatcher.BeginInvoke(new Action(() => Say(m))), volumeMuted,
+                ModBase()));
 
             Say($"volume build: {r.Scaled} scaled, {r.Failed} failed, {r.Banks} .bnk(s) -> {outRoot}");
             MessageBox.Show(r.Log + Environment.NewLine +
@@ -1896,7 +2256,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void MiTestOnlySelection_Click(object sender, RoutedEventArgs e)
     {
-        if (BlockedByOpenedBank()) return;
+        if (BuildBaseRefused()) return;
         var rows = SelectedRows;
         if (_sounds is null || rows.Count == 0) { Say("select one or more sounds first."); return; }
 
@@ -1942,7 +2302,7 @@ public partial class MainWindow : Window
 
             var r = TestBankBuilder.Build(_session, banks, wems, outDlg.FolderName,
                                           wems.ByNumber.Keys.Min(), false, _sounds,
-                                          false, 0, null, others, keep);
+                                          false, 0, null, others, keep, ModBase());
             var tagged = _project.RecordTestNumbers(
                 r.Legend.Select(x => (x.Number, x.MediaId)), _sounds.Rows);
             Grid_.Items.Refresh();
@@ -1969,10 +2329,53 @@ public partial class MainWindow : Window
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var id in ids)
             foreach (var b in _session.BanksForMedia(id)) paths.Add(b);
+        foreach (var b in ModBankPathsFor(ids)) paths.Add(b);
         // Without the global index, fall back to the open skin's own banks.
         if (paths.Count == 0 && _skin is not null)
             foreach (var b in _skin.Banks) paths.Add(b.Path);
         return paths.ToList();
+    }
+
+    /// <summary>
+    /// The .bnk files a loaded mod embeds these ids in. A mod can add a media id the
+    /// game has never shipped, and the game's index cannot know about it -- without
+    /// this the build would put that audio in a loose file and leave the .bnk that
+    /// actually plays it untouched.
+    /// </summary>
+    private IEnumerable<string> ModBankPathsFor(IEnumerable<uint> ids)
+    {
+        if (!_mods.Any) yield break;
+        var want = ids.ToHashSet();
+        foreach (var entry in _mods.All)
+        {
+            if (!entry.Sounds.Rows.Any(r => want.Contains(r.MediaId))) continue;
+            if (GamePathForStem(entry.Stem) is { } path) yield return path;
+        }
+    }
+
+    // stem -> the game's own path for that .bnk. Built once; a mod names a .bnk but
+    // not where the game keeps it, and the output has to mirror the game's layout.
+    private Dictionary<string, string> _bankPathByStem;
+
+    private string GamePathForStem(string stem)
+    {
+        if (_bankPathByStem is null)
+        {
+            _bankPathByStem = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var path in _session.Provider.Files.Keys)
+            {
+                if (!path.EndsWith(".bnk", StringComparison.OrdinalIgnoreCase)) continue;
+                var key = Path.GetFileNameWithoutExtension(path);
+                // A vo bank exists once per language; keep the active one, the same
+                // rule BanksForMedia applies.
+                var lang = GameSession.Languages.FirstOrDefault(l =>
+                    path.Contains($"/{l}/", StringComparison.OrdinalIgnoreCase));
+                if (_bankPathByStem.ContainsKey(key) && lang is not null &&
+                    !lang.Equals(_session.Language, StringComparison.OrdinalIgnoreCase)) continue;
+                _bankPathByStem[key] = path;
+            }
+        }
+        return _bankPathByStem.GetValueOrDefault(stem);
     }
 
     /// <summary>
@@ -2030,7 +2433,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void MiTestSelection_Click(object sender, RoutedEventArgs e)
     {
-        if (BlockedByOpenedBank()) return;
+        if (BuildBaseRefused()) return;
         var rows = SelectedRows;
         if (_sounds is null || rows.Count == 0) { Say("select one or more sounds first."); return; }
 
@@ -2054,7 +2457,8 @@ public partial class MainWindow : Window
         {
             var lowest = wems.ByNumber.Keys.Min();
             var r = TestBankBuilder.Build(_session, BanksFor(ids), wems, outDlg.FolderName,
-                                          lowest, false, _sounds, false, 0, ids, muted, keep);
+                                          lowest, false, _sounds, false, 0, ids, muted, keep,
+                                          ModBase());
             var tagged = _project.RecordTestNumbers(
                 r.Legend.Select(x => (x.Number, x.MediaId)), _sounds.Rows);
             Grid_.Items.Refresh();
@@ -2082,7 +2486,7 @@ public partial class MainWindow : Window
     /// <summary>Replaces the selected sounds with silence of the same length and format.</summary>
     private void MiSilentSelection_Click(object sender, RoutedEventArgs e)
     {
-        if (BlockedByOpenedBank()) return;
+        if (BuildBaseRefused()) return;
         var rows = SelectedRows;
         if (_sounds is null || rows.Count == 0) { Say("select one or more sounds first."); return; }
 
@@ -2100,7 +2504,8 @@ public partial class MainWindow : Window
 
         try
         {
-            var r = SilentBankBuilder.Build(_session, BanksFor(ids), ids, outDlg.FolderName, _sounds);
+            var r = SilentBankBuilder.Build(_session, BanksFor(ids), ids, outDlg.FolderName,
+                                            _sounds, ModBase());
 
             // Marked the way soundKit marks them, so the note says what happened to it.
             var marked = 0;
@@ -2171,7 +2576,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void BtnBuild_Click(object sender, RoutedEventArgs e)
     {
-        if (BlockedByOpenedBank()) return;
+        if (BuildBaseRefused()) return;
         if (_session is null) { Say("load the game first."); return; }
 
         // A mute is a build instruction, not a test-build one.
@@ -2207,6 +2612,9 @@ public partial class MainWindow : Window
         // Muted sounds need their .bnk rebuilt too, even with nothing staged.
         foreach (var id in mutedIds)
             foreach (var bp in _session.BanksForMedia(id)) bankPaths.Add(bp);
+        // A loaded mod can hold ids the shipped game does not.
+        foreach (var bp in ModBankPathsFor(_pending.Select(x => x.MediaId).Concat(mutedIds)))
+            bankPaths.Add(bp);
         if (!_session.BankIndexReady && _skin is not null)
             foreach (var b in _skin.Banks) bankPaths.Add(b.Path);
 
@@ -2254,7 +2662,7 @@ public partial class MainWindow : Window
         try
         {
             built = ModBuilder.Build(_session, _skin, _pending.ToList(), outRoot, bankPaths,
-                                     CbPrefetch.IsChecked == true, mutedIds);
+                                     CbPrefetch.IsChecked == true, mutedIds, ModBase());
         }
         catch (Exception ex) { Say("build failed: " + ex.Message); return; }
 
@@ -2279,7 +2687,7 @@ public partial class MainWindow : Window
     {
         _project.Character = _charId ?? "";
         _project.Skin = _skin?.SkinId ?? "";
-        _project.Bank = _bankFilter ?? "";
+        _project.Bank = string.Join(";", SelectedBankFiles());
         _project.Language = _settings.Language;
         _project.Replacements = _pending
             .Select(p => new ProjectReplacement

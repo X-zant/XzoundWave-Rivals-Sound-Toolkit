@@ -26,7 +26,8 @@ public static class SilentBankBuilder
     private const double MaxSeconds = 60;
 
     public static Result Build(GameSession session, IEnumerable<string> bankPaths,
-                               IReadOnlySet<uint> only, string outRoot, SkinSounds context)
+                               IReadOnlySet<uint> only, string outRoot, SkinSounds context,
+                               BankBase baseBanks = null)
     {
         var log = new StringBuilder();
         var legend = new List<Row>();
@@ -35,9 +36,8 @@ public static class SilentBankBuilder
 
         foreach (var bankPath in bankPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
-            if (!session.Provider.Files.TryGetValue(bankPath, out var file)) continue;
-            byte[] orig;
-            try { orig = file.Read(); } catch { continue; }
+            var orig = (baseBanks ?? BankBase.None).Read(session, bankPath);
+            if (orig is null) continue;
 
             var sections = BnkBuilder.ReadSections(orig);
             var didx = sections.FirstOrDefault(s => s.Tag == "DIDX");

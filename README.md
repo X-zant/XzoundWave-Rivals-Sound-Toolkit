@@ -73,6 +73,8 @@ mods, and the screen shows that job's tools.
 
 - Character → skin → bank, plus **205 non-character banks** (announcers, bosses, NPCs,
   UI, music, maps) grouped by kind.
+- **Ctrl+click** several `.bnk` files to look at them together — across characters if you
+  want. One list, with a `.bnk` column saying where each sound lives.
 - Event name, media id, codec, category and the shipped **subtitle** for every sound.
 - Categories are authored in Chinese and the game ships no English for them. A built-in
   translator handles 98–100% offline, deriving hero and ability names from the game's
@@ -125,8 +127,17 @@ mute; nothing is deleted, and unmuting brings the original back.
 
 ### Mods
 
-- **Open** someone else's `.bnk`, or a bank inside a mod `.pak`, and see it diffed
-  against the shipped one — every entry marked `MODDED`, `NEW` or untouched.
+- **Open** someone else's `.bnk` files, or pick them out of a mod `.pak`, and see them
+  diffed against the shipped ones — every entry marked `MODDED`, `NEW` or untouched.
+  Several can be loaded at once; each overlays the game's copy of that one `.bnk`.
+- The tree says which is which: a loaded `.bnk` and the hero and skin above it go
+  **purple**, with a count of what the mod changed, so a collapsed character still shows
+  that something inside it is modded.
+- A `.bnk` two mods both claim belongs to the **newest one loaded**, the same way the
+  last pak read wins in game. The one it displaced is named rather than dropped quietly.
+- **Building with a mod loaded** uses that mod as the base, so its work stays in and
+  yours goes on top. Close the mod to build against the game's original audio instead.
+  Both of those warnings can be switched off with the checkbox on the warning itself.
 - **Extract only the modded wems**, named so they drop straight back in.
 - **Merge** two mods: each is diffed against the shipped bank so only what its author
   replaced carries over, and the first one you pick wins any collision.
@@ -160,7 +171,7 @@ Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 
 ```
 --selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
---mediapath  --playtest  --cachetest  --mutetest  --noskinbuild  --openorder
+--mediapath  --playtest  --cachetest  --mutetest  --noskinbuild  --openorder  --modset
 --roundtrip  --fmtcheck  --vorbistest  --setuproundtrip
 ```
 

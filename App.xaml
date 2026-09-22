@@ -23,6 +23,15 @@
         <SolidColorBrush x:Key="TagRed"    Color="#E88C97"/>
         <SolidColorBrush x:Key="TagPurple" Color="#B79BE8"/>
 
+        <!-- Row state tints. Named rather than inline so the tree can mark a modded
+             .bnk with the same colour the grid uses for a modded row: one language
+             for "a mod changed this", wherever it appears. -->
+        <SolidColorBrush x:Key="RowModded" Color="#3B2A5C"/>
+        <SolidColorBrush x:Key="RowNew"    Color="#4A3570"/>
+        <SolidColorBrush x:Key="RowStaged" Color="#204A2F"/>
+        <SolidColorBrush x:Key="RowMuted"  Color="#5A2A33"/>
+        <SolidColorBrush x:Key="RowStripe" Color="#26282B"/>
+
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource Fg}"/>
         </Style>

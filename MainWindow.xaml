@@ -68,9 +68,9 @@
           <TabItem Header="Mods">
             <StackPanel Orientation="Horizontal" Margin="4,8,4,8">
               <Button x:Name="BtnOpenBank" Content="Open .bnk / .pak…" Click="BtnOpenBank_Click"
-                      ToolTip="Look inside a .bnk someone else built, or pick a .bnk out of a mod .pak."/>
-              <Button x:Name="BtnCloseBank" Content="Close opened" Click="BtnCloseBank_Click" IsEnabled="False"
-                      ToolTip="Go back to the game's own .bnk files."/>
+                      ToolTip="Look inside .bnk files someone else built, or pick them out of a mod .pak.&#10;Several can be loaded at once; each overlays the game's copy of that .bnk, and a build uses it as its base."/>
+              <Button x:Name="BtnCloseBank" Content="Close mods" Click="BtnCloseBank_Click" IsEnabled="False"
+                      ToolTip="Unload every mod and go back to the game's own .bnk files."/>
               <Button x:Name="BtnMerge" Content="Merge mods…" Click="BtnMerge_Click"
                       ToolTip="Combine two mods. Each is diffed against the shipped .bnk, so only what its author replaced is carried over; the first one you pick wins any sound both changed."/>
               <Button x:Name="BtnRecompress" Content="Recompress .bnk…" Click="BtnRecompress_Click"
@@ -197,7 +197,9 @@
             <TreeView x:Name="Tree" Grid.Column="0"
                       Background="{StaticResource Bg2}" Foreground="{StaticResource Fg}"
                       BorderBrush="{StaticResource Line}"
-                      SelectedItemChanged="Tree_SelectedItemChanged"/>
+                      SelectedItemChanged="Tree_SelectedItemChanged"
+                      PreviewMouseLeftButtonDown="Tree_PreviewMouseLeftButtonDown"
+                      ToolTip="Ctrl+click .bnk files to look at several at once."/>
 
             <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
                           Background="{StaticResource Line}"/>
@@ -224,19 +226,19 @@
                                  local value, which beats any style trigger, so the state
                                  colours below would never appear. -->
                             <Trigger Property="AlternationIndex" Value="1">
-                                <Setter Property="Background" Value="#26282B"/>
+                                <Setter Property="Background" Value="{StaticResource RowStripe}"/>
                             </Trigger>
                             <DataTrigger Binding="{Binding ModTag}" Value="MODDED">
-                                <Setter Property="Background" Value="#3B2A5C"/>
+                                <Setter Property="Background" Value="{StaticResource RowModded}"/>
                             </DataTrigger>
                             <DataTrigger Binding="{Binding ModTag}" Value="NEW">
-                                <Setter Property="Background" Value="#4A3570"/>
+                                <Setter Property="Background" Value="{StaticResource RowNew}"/>
                             </DataTrigger>
                             <DataTrigger Binding="{Binding Mod}" Value="REPLACED">
-                                <Setter Property="Background" Value="#204A2F"/>
+                                <Setter Property="Background" Value="{StaticResource RowStaged}"/>
                             </DataTrigger>
                             <DataTrigger Binding="{Binding Muted}" Value="True">
-                                <Setter Property="Background" Value="#5A2A33"/>
+                                <Setter Property="Background" Value="{StaticResource RowMuted}"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>

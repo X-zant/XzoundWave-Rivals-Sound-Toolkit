@@ -35,7 +35,8 @@ public static class ModBuilder
     public static Result Build(GameSession session, SkinEntry skin,
                                IReadOnlyList<PendingWem> pending, string outRoot,
                                ISet<string> bankPaths, bool prefetchMode = false,
-                               IReadOnlySet<uint> muted = null)
+                               IReadOnlySet<uint> muted = null,
+                               BankBase baseBanks = null)
     {
         var log = new StringBuilder();
         var outputs = new List<string>();
@@ -50,9 +51,8 @@ public static class ModBuilder
 
         foreach (var bankPath in bankPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
-            if (!session.Provider.Files.TryGetValue(bankPath, out var bank)) continue;
-            byte[] orig;
-            try { orig = bank.Read(); } catch { continue; }
+            var orig = (baseBanks ?? BankBase.None).Read(session, bankPath);
+            if (orig is null) continue;
 
             var didxSection = BnkBuilder.ReadSections(orig).FirstOrDefault(s => s.Tag == "DIDX");
             if (didxSection is null) continue;

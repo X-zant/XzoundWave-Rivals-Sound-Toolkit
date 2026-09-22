@@ -25,7 +25,7 @@ public partial class SettingsWindow : Window
         _grid = grid;
         _changed = changed;
 
-        foreach (var name in new[] { "Rows", "Columns", "Importing", "List help", "Tools", "Diagnostics" })
+        foreach (var name in new[] { "Rows", "Columns", "Importing", "Warnings", "List help", "Tools", "Diagnostics" })
             Categories.Items.Add(name);
         Categories.SelectedIndex = 0;
     }
@@ -40,6 +40,7 @@ public partial class SettingsWindow : Window
             case "Rows": BuildRows(); break;
             case "Columns": BuildColumns(); break;
             case "Importing": BuildImporting(); break;
+            case "Warnings": BuildWarnings(); break;
             case "Tools": BuildTools(); break;
             case "Diagnostics": BuildDiagnostics(); break;
             default: BuildHelp(); break;
@@ -309,6 +310,69 @@ public partial class SettingsWindow : Window
     }
 
     private void Add(UIElement e) => PaneBody.Children.Add(e);
+
+    // ---- warnings --------------------------------------------------------------
+
+    /// <summary>
+    /// The way back from "Don't show this again". Without it a checkbox ticked once by
+    /// accident is permanent, and the warning it silenced is one about a build quietly
+    /// doing something other than what you would assume.
+    /// </summary>
+    private void BuildWarnings()
+    {
+        PaneTitle.Text = "Warnings you have switched off";
+        PaneHint.Text =
+            "Some warnings carry a “Don't show this again” box. Anything you have " +
+            "silenced is listed here and can be brought back.";
+
+        var off = _settings.SuppressedWarnings ?? [];
+        if (off.Count == 0)
+        {
+            Add(new TextBlock
+            {
+                Text = "None — every warning is still shown.",
+                Foreground = (Brush)FindResource("Muted"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            return;
+        }
+
+        foreach (var key in off.ToList())
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var back = new Button { Content = "Show again", Width = 100 };
+            back.Click += (_, _) =>
+            {
+                _settings.SuppressedWarnings.Remove(key);
+                _settings.Save();
+                Build();
+            };
+            DockPanel.SetDock(back, Dock.Right);
+            row.Children.Add(back);
+            row.Children.Add(new TextBlock
+            {
+                Text = Notice.Describe(key),
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 10, 0),
+            });
+            Add(row);
+        }
+
+        var all = new Button
+        {
+            Content = "Show all of them again",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 10, 0, 0),
+        };
+        all.Click += (_, _) =>
+        {
+            _settings.SuppressedWarnings.Clear();
+            _settings.Save();
+            Build();
+        };
+        Add(all);
+    }
 
     // ---- diagnostics -----------------------------------------------------------
 

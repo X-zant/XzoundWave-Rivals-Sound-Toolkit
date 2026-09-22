@@ -49,15 +49,17 @@ public static class TestBankBuilder
     /// across banks so a number is unique within the whole test build.
     /// </summary>
     /// <summary>Media entries across the given banks — what the numbering has to cover.</summary>
-    public static int CountEntries(GameSession session, IEnumerable<string> bankPaths)
+    public static int CountEntries(GameSession session, IEnumerable<string> bankPaths,
+                                   BankBase baseBanks = null)
     {
         var total = 0;
         foreach (var p in bankPaths)
         {
-            if (!session.Provider.Files.TryGetValue(p, out var f)) continue;
+            var bytes = (baseBanks ?? BankBase.None).Read(session, p);
+            if (bytes is null) continue;
             try
             {
-                var didx = BnkBuilder.ReadSections(f.Read()).FirstOrDefault(s => s.Tag == "DIDX");
+                var didx = BnkBuilder.ReadSections(bytes).FirstOrDefault(s => s.Tag == "DIDX");
                 if (didx is not null) total += BnkBuilder.ReadDidx(didx.Body).Count;
             }
             catch { }
@@ -96,7 +98,8 @@ public static class TestBankBuilder
                                bool restartPerBank = false, int skipEntries = 0,
                                IReadOnlySet<uint> only = null,
                                IReadOnlySet<uint> muted = null,
-                               IReadOnlyDictionary<uint, int> keepNumbers = null)
+                               IReadOnlyDictionary<uint, int> keepNumbers = null,
+                               BankBase baseBanks = null)
     {
         var log = new StringBuilder();
         var legend = new List<Row>();
@@ -121,9 +124,8 @@ public static class TestBankBuilder
 
         foreach (var bankPath in bankPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
-            if (!session.Provider.Files.TryGetValue(bankPath, out var file)) continue;
-            byte[] orig;
-            try { orig = file.Read(); } catch { continue; }
+            var orig = (baseBanks ?? BankBase.None).Read(session, bankPath);
+            if (orig is null) continue;
 
             var sections = BnkBuilder.ReadSections(orig);
             var didx = sections.FirstOrDefault(s => s.Tag == "DIDX");

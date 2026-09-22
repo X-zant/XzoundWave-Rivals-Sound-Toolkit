@@ -66,6 +66,13 @@ public sealed class Settings
     /// </summary>
     public bool ReplaceSourceWithWem { get; set; }
 
+    /// <summary>
+    /// Warnings the author has ticked "don't show this again" on — see
+    /// <see cref="Notice"/>. Kept by key rather than as a single "quiet" flag, so
+    /// silencing one thing never silences a different one.
+    /// </summary>
+    public List<string> SuppressedWarnings { get; set; } = [];
+
     /// <summary>The naming rule in the drop pane, once you know it, is just clutter.</summary>
     public bool ShowDropHelp { get; set; } = true;
 
