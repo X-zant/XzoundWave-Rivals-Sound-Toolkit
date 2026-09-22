@@ -111,7 +111,12 @@ mute; nothing is deleted, and unmuting brings the original back.
   edited file correctly does not. Settings › Importing shows what is held and can move
   or clear it. A second import of a 174 KB wem went 592 ms → 0 ms.
 - Name files `{MediaID}-{your note}.wem`, or drop a single file onto a selection to give
-  every one of them the same audio from one encode.
+  every one of them the same audio from one encode. **Set replacement…** takes any of
+  those formats too, not only wem.
+- **No skin selection needed** when audio is staged. A named file already says which
+  sound it replaces, and the media id says which `.bnk` — so a folder that spans several
+  characters builds in one go, which no single skin selection could express. Picking a
+  skin is only required when there is nothing staged and you are building mutes alone.
 - **Volume** per sound or in bulk, always applied to the original so setting it twice
   does not compound two lossy round trips. Hand-set levels survive a bulk change.
 - Output mirrors the game's own paths. A sound that lives in a bank goes into the bank;
@@ -155,8 +160,8 @@ Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 
 ```
 --selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
---mediapath  --playtest  --cachetest  --mutetest  --openorder  --roundtrip
---fmtcheck  --vorbistest  --setuproundtrip
+--mediapath  --playtest  --cachetest  --mutetest  --noskinbuild  --openorder
+--roundtrip  --fmtcheck  --vorbistest  --setuproundtrip
 ```
 
 ## XzoundCore

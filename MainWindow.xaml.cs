@@ -649,22 +649,32 @@ public partial class MainWindow : Window
         var row = Selected;
         if (row is null) { Say("select a sound first."); return; }
 
-        var dlg = new OpenFileDialog { Filter = "Wwise media|*.wem", Title = $"Replacement for {row.Display}" };
+        // Any format the drop pane accepts, not just a wem: this button was the one
+        // place left that still made the author convert their own audio first.
+        var dlg = new OpenFileDialog
+        {
+            Filter = AudioDecode.DialogFilter,
+            Title = $"Replacement for {row.Display}",
+        };
         if (dlg.ShowDialog() != true) return;
 
-        var data = File.ReadAllBytes(dlg.FileName);
-        var info = BnkBuilder.Inspect(data);
-        if (!info.IsRiff)
+        var data = PendingWem.ToWemBytes(dlg.FileName, out var why, out var converted);
+        if (data is null)
         {
-            MessageBox.Show($"{Path.GetFileName(dlg.FileName)} is {info.Codec}.", "Not a wem",
+            MessageBox.Show(why, "Could not read that file",
                             MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+
+        // After conversion this is Vorbis in almost every case. It can still fail to be
+        // one -- a 24-bit PCM wem is left alone rather than guessed at -- and a codec
+        // this game's banks do not declare is worth stopping for.
+        var info = BnkBuilder.Inspect(data);
         if (info.FormatTag != 0xFFFF)
         {
             var go = MessageBox.Show(
                 $"This slot declares {row.Codec}.\nYour file is {info.Codec} " +
-                $"({info.SampleRate} Hz, {info.Channels}ch).\n\n" +
+                $"({info.SampleRate} Hz, {info.Channels}ch), and could not be converted.\n\n" +
                 "Mismatched codecs usually play as silence or noise. Use it anyway?",
                 "Codec mismatch", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (go != MessageBoxResult.Yes) return;
@@ -672,22 +682,15 @@ public partial class MainWindow : Window
 
         var existing = _pending.FirstOrDefault(x => x.MediaId == row.MediaId);
         if (existing is not null) _pending.Remove(existing);
-        _pending.Add(new PendingWem
-        {
-            MediaId = row.MediaId,
-            Note = row.Display,
-            FileName = Path.GetFileName(dlg.FileName),
-            FullPath = dlg.FileName,
-            Bytes = data.Length,
-            Codec = info.Codec,
-            FormatTag = info.FormatTag,
-        });
+        _pending.Add(PendingWem.ForMedia(row.MediaId, dlg.FileName, data, row.Display, converted));
+
         Reorder();
         RefreshPendingStatus();
         MarkStagedRows();
         Grid_.Items.Refresh();
         RefreshStats();
-        Say($"{_pending.Count} staged — {row.MediaId} <- {Path.GetFileName(dlg.FileName)}");
+        Say($"{_pending.Count} staged — {row.MediaId} <- {Path.GetFileName(dlg.FileName)}" +
+            (converted.Length > 0 ? $" ({converted} -> Vorbis, {data.Length:N0} B)" : ""));
     }
 
     // ---- numbered test bank ------------------------------------------------
@@ -2169,8 +2172,27 @@ public partial class MainWindow : Window
     private void BtnBuild_Click(object sender, RoutedEventArgs e)
     {
         if (BlockedByOpenedBank()) return;
-        if (_sounds is null || _skin is null) { Say("pick a skin first."); return; }
-        if (_pending.Count == 0) { Say("nothing staged — drop some .wem files on the right."); return; }
+        if (_session is null) { Say("load the game first."); return; }
+
+        // A mute is a build instruction, not a test-build one.
+        var mutedIds = _sounds?.Rows.Where(r => r.Muted).Select(r => r.MediaId).ToHashSet() ?? [];
+
+        // Picking a skin is only needed when there is nothing staged to build FROM.
+        // A staged file carries its own media id, and the id says which .bnk it belongs
+        // in, so a folder of named wems is a complete instruction on its own -- it may
+        // even span characters, which no single skin selection could express.
+        if (_pending.Count == 0 && mutedIds.Count == 0)
+        {
+            Say(_skin is null
+                ? "nothing to build — stage audio on the right, or pick a skin and mute something."
+                : "nothing to build — stage audio on the right, or mute a sound.");
+            return;
+        }
+        if (_pending.Count > 0 && _skin is null && !_session.BankIndexReady)
+        {
+            Say("still reading .bnk files — give it a moment, or pick a skin.");
+            return;
+        }
 
         var dlg = new OpenFolderDialog { Title = "Output folder for the mod" };
         if (dlg.ShowDialog() != true) return;
@@ -2182,16 +2204,30 @@ public partial class MainWindow : Window
         var bankPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var p in _pending)
             foreach (var bp in _session.BanksForMedia(p.MediaId)) bankPaths.Add(bp);
-        if (!_session.BankIndexReady)
+        // Muted sounds need their .bnk rebuilt too, even with nothing staged.
+        foreach (var id in mutedIds)
+            foreach (var bp in _session.BanksForMedia(id)) bankPaths.Add(bp);
+        if (!_session.BankIndexReady && _skin is not null)
             foreach (var b in _skin.Banks) bankPaths.Add(b.Path);
+
+        if (bankPaths.Count == 0)
+        {
+            Say("none of those media ids appear in any .bnk — check the filenames.");
+            return;
+        }
 
         // 14% of this game's media are embedded in more than one bank -- one shared SFX
         // sits in 93 of them. Rebuilding all of them is CORRECT (otherwise the sound only
         // changes for some characters) but can turn a one-line edit into a huge mod, so
         // it is the author's call rather than a silent decision.
-        var skinBanks = _skin.Banks.Select(b => b.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var outside = bankPaths.Where(p => !skinBanks.Contains(p)).ToList();
-        var scopeNote = "";
+        // Without a skin there is no "inside" to be outside of: the staged ids define the
+        // scope by themselves, so the question does not arise.
+        var skinBanks = _skin?.Banks.Select(b => b.Path).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                        ?? [];
+        var outside = _skin is null ? [] : bankPaths.Where(p => !skinBanks.Contains(p)).ToList();
+        var scopeNote = _skin is null
+            ? $"scope: {bankPaths.Count} .bnk(s), from the staged media ids."
+            : "";
         if (outside.Count > 0)
         {
             var shared = _pending.Select(p => p.MediaId)
@@ -2213,10 +2249,6 @@ public partial class MainWindow : Window
                 ? $"scope: every .bnk containing a staged media ({bankPaths.Count})."
                 : $"scope: this skin only ({bankPaths.Count}); {outside.Count} other .bnk(s) left stale.";
         }
-
-        // A mute is a build instruction, not a test-build one: silencing a line you do
-        // not want is a mod in its own right.
-        var mutedIds = _sounds?.Rows.Where(r => r.Muted).Select(r => r.MediaId).ToHashSet() ?? [];
 
         ModBuilder.Result built;
         try

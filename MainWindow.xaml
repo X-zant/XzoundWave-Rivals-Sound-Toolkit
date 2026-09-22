@@ -53,7 +53,8 @@
             <StackPanel Orientation="Horizontal" Margin="4,8,4,8">
               <Button x:Name="BtnBuild" Content="Build modded .bnk" Click="BtnBuild_Click"
                       FontWeight="Bold" Foreground="{StaticResource Accent}"/>
-              <Button x:Name="BtnReplace" Content="Set replacement…" Click="BtnReplace_Click"/>
+              <Button x:Name="BtnReplace" Content="Set replacement…" Click="BtnReplace_Click"
+                      ToolTip="Pick an audio file for the selected sound. wav, mp3, ogg, flac, m4a, aac, wma and wem all work — anything that is not already Wwise Vorbis is encoded on the way in."/>
               <Button x:Name="BtnClear" Content="Clear" Click="BtnClear_Click"/>
               <Border Width="1" Margin="8,2" Background="{StaticResource Line}"/>
               <Button Content="Set volume…" Click="MiSetVolume_Click"/>

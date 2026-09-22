@@ -48,6 +48,13 @@ public partial class App : Application
             return;
         }
 
+        var nb = Array.FindIndex(e.Args, a => a.Equals("--noskinbuild", StringComparison.OrdinalIgnoreCase));
+        if (nb >= 0 && nb + 2 < e.Args.Length)
+        {
+            Shutdown(NoSkinBuildTest.Run(e.Args[nb + 1], e.Args[nb + 2]));
+            return;
+        }
+
         var mt = Array.FindIndex(e.Args, a => a.Equals("--mutetest", StringComparison.OrdinalIgnoreCase));
         if (mt >= 0 && mt + 1 < e.Args.Length)
         {

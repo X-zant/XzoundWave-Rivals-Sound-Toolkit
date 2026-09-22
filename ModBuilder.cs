@@ -141,7 +141,9 @@ public static class ModBuilder
         }
 
         var header = new StringBuilder();
-        header.AppendLine($"{skin.Label}   ({pending.Count} custom file(s)" +
+        // The skin is only a label here. A build driven purely by staged files does not
+        // need one: the media ids say which .bnk each sound belongs to.
+        header.AppendLine($"{skin?.Label ?? "staged files"}   ({pending.Count} custom file(s)" +
                           (silenced > 0 ? $", {silenced} muted" : "") + ")");
         header.AppendLine();
         if (trimmed > 0)

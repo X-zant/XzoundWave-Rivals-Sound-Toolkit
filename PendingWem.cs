@@ -66,12 +66,19 @@ public sealed class PendingWem
     /// without being decoded and re-encoded once per sound -- fifty ids would
     /// otherwise mean fifty identical encodes.
     /// </summary>
-    public static byte[] ToWemBytes(string path, out string reason)
+    public static byte[] ToWemBytes(string path, out string reason) =>
+        ToWemBytes(path, out reason, out _);
+
+    /// <param name="converted">
+    /// The source extension when a conversion happened ("mp3", "pcm"), empty when the
+    /// file was already Wwise Vorbis and went through untouched.
+    /// </param>
+    public static byte[] ToWemBytes(string path, out string reason, out string converted)
     {
         reason = null;
+        converted = "";
         try
         {
-            var converted = "";
             return EncodeOrCached(path, ref converted);
         }
         catch (Exception ex)
@@ -161,7 +168,8 @@ public sealed class PendingWem
     /// filename. Used when the author picks the targets in the grid instead of naming
     /// them in the file.
     /// </summary>
-    public static PendingWem ForMedia(uint mediaId, string path, byte[] bytes, string note)
+    public static PendingWem ForMedia(uint mediaId, string path, byte[] bytes, string note,
+                                      string converted = null)
     {
         var info = BnkBuilder.Inspect(bytes);
         return new PendingWem
@@ -174,8 +182,8 @@ public sealed class PendingWem
             Codec = info.Codec,
             FormatTag = info.FormatTag,
             Payload = bytes,
-            Converted = AudioDecode.IsWem(path)
-                ? "" : Path.GetExtension(path).TrimStart('.').ToLowerInvariant(),
+            Converted = converted ?? (AudioDecode.IsWem(path)
+                ? "" : Path.GetExtension(path).TrimStart('.').ToLowerInvariant()),
         };
     }
 
