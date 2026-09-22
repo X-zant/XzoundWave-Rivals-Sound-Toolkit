@@ -81,6 +81,11 @@ mods, and the screen shows that job's tools.
   own English text; an optional CC-CEDICT download covers the remainder.
 - Preview anything, or **autoplay** down the list to scan a character's lines.
 - **Colour coding** at a glance: green staged, red muted, purple changed by a mod.
+- **What the game does to each sound**, in its own column: the volume trim, pitch
+  shift, delay, loop or runtime curve the `.bnk` applies on top of the audio. None of
+  it is in the file, and a swap inherits all of it — which is why a replacement can
+  come out quieter, late or looping when the file plainly is not. Hover for the
+  breakdown, including what it inherits from the containers above it.
 - **Tags** from a shared vocabulary (`[ULT]`, `[MVP]`, `[LOOP]`, `[3D]` …) picked from a
   menu and never typed, so two people's notes mean the same thing. Free-text notes sit
   alongside. Both survive a patch: they re-link by event name when media ids change.
@@ -176,7 +181,7 @@ Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 ```
 --selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
 --mediapath  --playtest  --cachetest  --mutetest  --noskinbuild  --openorder  --modset
---prefetchpreview
+--prefetchpreview  --applied
 --roundtrip  --fmtcheck  --vorbistest  --setuproundtrip
 ```
 

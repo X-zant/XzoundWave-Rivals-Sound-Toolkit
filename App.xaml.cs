@@ -83,6 +83,12 @@ public partial class App : Application
             return;
         }
 
+        if (Array.FindIndex(e.Args, a => a.Equals("--applied", StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            Shutdown(AppliedPropsTest.Run());
+            return;
+        }
+
         var wp = Array.FindIndex(e.Args, a => a.Equals("--wwiseprobe", StringComparison.OrdinalIgnoreCase));
         if (wp >= 0 && wp + 1 < e.Args.Length)
         {

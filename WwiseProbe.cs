@@ -2,6 +2,7 @@ using System.Collections;
 using System.IO;
 using System.Reflection;
 using CUE4Parse.UE4.Wwise;
+using CUE4Parse.UE4.Wwise.Objects;
 using CUE4Parse.UE4.Wwise.Enums;
 using CUE4Parse.UE4.Wwise.Objects.HIRC;
 using CUE4Parse.UE4.Wwise.Objects.HIRC.Containers;
@@ -49,7 +50,22 @@ public static class WwiseProbe
             W($"  {t.Name,-36} {string.Join(", ", Members(t))}");
 
         W("");
-        W($"  EAkPropID: {string.Join(", ", Enum.GetNames(typeof(EAkPropID)).Take(40))}");
+        W("  EAkPropID, by the number stored in the bank:");
+        foreach (var v in Enum.GetValues(typeof(EAkPropID)).Cast<object>().Take(48))
+            W($"    {Convert.ToInt32(v),3} {v}");
+
+        // A prop's value is a union. Which member is the real one has to be read off
+        // the type rather than guessed at, or a float comes back as its own bit
+        // pattern read as an int.
+        var propType = Type.GetType("CUE4Parse.UE4.Wwise.Objects.AkProp, CUE4Parse")
+                    ?? typeof(AkPropBundle).Assembly.GetTypes()
+                           .FirstOrDefault(t => t.Name is "AkProp");
+        var unionType = typeof(AkPropBundle).Assembly.GetTypes()
+                           .FirstOrDefault(t => t.Name is "AkUnionValue");
+        W("");
+        W($"  AkProp        {(propType is null ? "not found" : string.Join(", ", Members(propType)))}");
+        W($"  AkUnionValue  {(unionType is null ? "not found" : string.Join(", ", Members(unionType)))}");
+        W($"  AkPropBundle  {string.Join(", ", Members(typeof(AkPropBundle)))}");
 
         // ---- 2. the same thing, on the game's own data -------------------------
         foreach (var file in skin.Banks)
@@ -90,6 +106,12 @@ public static class WwiseProbe
 
             W("");
             W($"=== {bankName} ===");
+            // Which Wwise wrote this. The property-id table is version-specific, so a
+            // name that does not fit its value is a table question, not a parse error.
+            var hdr = Readable(w.GetType()).FirstOrDefault(m =>
+                m.Name.Contains("Header", StringComparison.OrdinalIgnoreCase));
+            if (hdr.Get is not null)
+                W($"  bank header: {Dump(hdr.Get(w) ?? new object())}");
             foreach (var (ev, name) in events)
             {
                 W("");
@@ -205,24 +227,27 @@ public static class WwiseProbe
                     ? ((EAkPropID)(byte)n).ToString()
                     : $"prop{n}";
 
-            bits.Add($"{name}={Scalar(val.Get?.Invoke(prop))}");
+            // The raw id travels with the name. The table is the parser's, not the
+            // game's, so a name that looks wrong beside its value can be checked
+            // against the number the bank actually stored.
+            bits.Add($"{name}#{n}={Scalar(val.Get?.Invoke(prop))}");
         }
         return bits;
     }
 
-    /// <summary>The number inside a union, whichever of its fields is carrying it.</summary>
+    /// <summary>
+    /// The number inside a union. AkUnionValue carries the same four bytes as both a
+    /// float and a uint and resolves which one it is into Value -- reading f32 because
+    /// it happens to come first gives an integer prop back as its own bit pattern
+    /// read as a float, which is where 1.9E-19 came from.
+    /// </summary>
     private static string Scalar(object v)
     {
         if (v is null) return "null";
         if (v.GetType().IsPrimitive || v.GetType().IsEnum || v is string) return v.ToString();
 
-        foreach (var m in Readable(v.GetType()))
-        {
-            object inner;
-            try { inner = m.Get(v); } catch { continue; }
-            if (inner is null) continue;
-            if (inner.GetType().IsPrimitive || inner.GetType().IsEnum) return inner.ToString();
-        }
+        if (Get(v, "Value") is { } resolved) return resolved.ToString();
+        if (Get(v, "f32") is { } f) return f.ToString();
         return v.ToString();
     }
 

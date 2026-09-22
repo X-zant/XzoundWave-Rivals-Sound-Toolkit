@@ -205,6 +205,10 @@ public static class ModBank
                 Codec = info.Codec,
                 Bytes = isStub ? (uint)streamed.Size : e.Size,
                 Seconds = isStub ? null : seconds,
+                // What the game applies belongs to the .bnk's structure, which a mod
+                // that only swapped audio has not touched -- so it still applies, and
+                // is exactly what the author needs to see before swapping.
+                Applied = known?.Applied,
                 Category = known?.Category ?? "",
                 Subtitle = known?.Subtitle ?? "",
                 Origin = isStub ? streamed.Path : bank.Name,

@@ -34,6 +34,16 @@ public sealed class SoundRow
     public string Subtitle { get; set; } = "";
     public double? Seconds { get; set; }
 
+    /// <summary>
+    /// What the .bnk does to this sound on top of the audio -- a volume trim, a pitch
+    /// shift, a delay, a loop. Replacing the file does not replace any of it, which is
+    /// the single most useful thing to know before swapping a sound and wondering why
+    /// the result is quieter or late.
+    /// </summary>
+    public WwiseProps.Applied Applied { get; set; }
+    public string AppliedLabel => Applied?.Summary ?? "";
+    public string AppliedDetail => Applied?.Detail ?? "Not read for this .bnk.";
+
     /// <summary>User-kept notes, persisted in notes.json. Editable in the grid.</summary>
     public string Notes { get; set; } = "";
     public string ExtraNotes { get; set; } = "";
@@ -149,6 +159,10 @@ public static class SoundIndex
             foreach (var h in w.Hierarchies)
                 if (h.Data is not null) nodes[h.Data.Id] = h.Data;
 
+            // The property-id table is version specific, so the version travels with
+            // the walk rather than being assumed.
+            var version = w.Header.Version;
+
             var bankName = Path.GetFileNameWithoutExtension(bank.Path);
             var kind = bankName.Contains("_vo_", StringComparison.OrdinalIgnoreCase) ? "VO"
                      : bankName.Contains("_sfx_", StringComparison.OrdinalIgnoreCase) ? "SFX"
@@ -170,7 +184,8 @@ public static class SoundIndex
                         var id = snd.Source.SourceId != 0 ? snd.Source.SourceId : snd.Source.FileId;
                         if (id == 0) continue;
                         claimed.Add(id);
-                        result.Rows.Add(MakeRow(session, kind, bankName, ev.Id, name, snd, id, subs));
+                        result.Rows.Add(MakeRow(session, kind, bankName, ev.Id, name, snd, id, subs,
+                                               nodes, version, ActionDelay(act)));
                     }
                 }
             }
@@ -183,7 +198,8 @@ public static class SoundIndex
                 var id = snd.Source.SourceId != 0 ? snd.Source.SourceId : snd.Source.FileId;
                 if (id == 0 || claimed.Contains(id)) continue;
                 claimed.Add(id);
-                result.Rows.Add(MakeRow(session, kind, bankName, 0, null, snd, id, subs));
+                result.Rows.Add(MakeRow(session, kind, bankName, 0, null, snd, id, subs,
+                                       nodes, version, 0));
             }
         }
 
@@ -199,9 +215,24 @@ public static class SoundIndex
         return result;
     }
 
+    /// <summary>
+    /// Seconds the action itself waits before starting the sound. Separate from the
+    /// sound's own delay: the same sound reached by two events can be late in one and
+    /// immediate in the other.
+    /// </summary>
+    private static float ActionDelay(HierarchyEventAction act)
+    {
+        if (act?.PropBundle is not { } bundle || bundle.Props is null) return 0;
+        foreach (var prop in bundle.Props)
+            if (prop.Id == 0x0F) return prop.Value.f32;   // DelayTime
+        return 0;
+    }
+
     private static SoundRow MakeRow(GameSession session, string kind, string bank,
                                     uint evHash, string evName, HierarchySoundSfxVoice snd,
-                                    uint mediaId, Dictionary<string, (string Cat, string Line)> subs)
+                                    uint mediaId, Dictionary<string, (string Cat, string Line)> subs,
+                                    IReadOnlyDictionary<uint, AbstractHierarchy> nodes,
+                                    uint version, float actionDelay)
     {
         var loose = session.LooseMedia(mediaId);
         var row = new SoundRow
@@ -217,6 +248,7 @@ public static class SoundIndex
             // hundred bytes of the opening moment. Reading it first gives a 0.03 s click.
             Origin = loose is not null ? loose.Path : "bank (embedded)",
             Bytes = loose?.Size ?? 0,
+            Applied = WwiseProps.Read(snd, nodes, version, actionDelay),
         };
         if (evName is not null && subs.TryGetValue(evName, out var s))
         {

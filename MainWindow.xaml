@@ -331,6 +331,16 @@
                     <DataGridTextColumn Header="Media ID" Binding="{Binding MediaId}"  Width="95"  IsReadOnly="True"/>
                     <DataGridTextColumn Header="Len"      Binding="{Binding Length}"   Width="55"  IsReadOnly="True"/>
                     <DataGridTextColumn Header="Codec"    Binding="{Binding Codec}"    Width="75"  IsReadOnly="True"/>
+                    <!-- What the .bnk does to the sound on top of the audio. Hover for
+                         the breakdown: a swap inherits every one of these. -->
+                    <DataGridTextColumn Header="Game does" Binding="{Binding AppliedLabel}" Width="130" IsReadOnly="True">
+                      <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                          <Setter Property="ToolTip" Value="{Binding AppliedDetail}"/>
+                          <Setter Property="ToolTipService.ShowDuration" Value="60000"/>
+                        </Style>
+                      </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
                     <DataGridTextColumn Header="Category" Binding="{Binding CategoryShown}" Width="150" IsReadOnly="True"/>
                     <DataGridTextColumn Header="Subtitle / line" Binding="{Binding Subtitle}" Width="*" IsReadOnly="True"/>
                     <DataGridTextColumn Header="Test #" Binding="{Binding TestLabel}" Width="60" IsReadOnly="True"/>
