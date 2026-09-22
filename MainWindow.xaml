@@ -241,23 +241,23 @@
                     </Style>
                 </DataGrid.RowStyle>
                 <DataGrid.ContextMenu>
-                    <!-- The tag list is rebuilt when the menu opens, not when the Tag
-                         row is hovered: a MenuItem with no children has no submenu to
-                         open, so waiting for SubmenuOpened would mean it never ran. -->
+                    <!-- Ordered by what people actually do: change a sound, mark it,
+                         build something from it, listen to it, copy it out. The tag
+                         list is rebuilt when the menu opens rather than when the Tag
+                         row is hovered: a MenuItem with no children has no submenu
+                         to open, so waiting for SubmenuOpened would mean it never ran. -->
                     <ContextMenu Opened="Ctx_Opened">
-                        <MenuItem x:Name="MiTestSel" Click="MiTestSelection_Click"
-                                  Header="Create test .bnk from selection…"
-                                  ToolTip="Replace only the selected sounds with clips that speak a number. Everything else keeps its normal audio, so the test is usable in a real match."/>
-                        <MenuItem x:Name="MiSilentSel" Click="MiSilentSelection_Click"
-                                  Header="Create silent .bnk from selection…"
-                                  ToolTip="Replace only the selected sounds with silence of the same length and format."/>
-                        <MenuItem x:Name="MiTestOnly" Click="MiTestOnlySelection_Click"
-                                  Header="Create test .bnk from selection, muting everything else"
-                                  ToolTip="Number the selected sounds and silence every other sound in the same .bnk(s), so only what you picked can be heard."/>
+                        <MenuItem x:Name="MiReplaceSel" Click="MiReplaceSelection_Click"
+                                  Header="Replace with an audio file…"
+                                  ToolTip="Stage a wav, mp3, ogg, flac, m4a, aac, wma or wem for this sound. Anything that is not already Wwise Vorbis is encoded on the way in."/>
+                        <MenuItem x:Name="MiReplaceMany" Click="MiReplaceMany_Click"
+                                  Header="Replace ALL selected with one file…"
+                                  ToolTip="Give every selected sound the same audio, encoded once. Dragging a single file onto a selection does the same thing."/>
                         <MenuItem x:Name="MiMuteSel" Click="MiToggleMute_Click"
-                                  Header="Mute / unmute in test builds"
-                                  ToolTip="Silence these in the next test build, so quieter sounds firing at the same time can be heard. Their numbers are kept."/>
+                                  Header="Mute / unmute  (silence in every build)"
+                                  ToolTip="Replace these with silence of the same length and format, in EVERY .bnk this tool writes — a normal build, a volume build and a test build alike.&#10;&#10;Nothing is deleted: unmuting brings the original audio back, and muted sounds keep their test numbers."/>
                         <Separator/>
+
                         <!-- Items built in code from the SoundTags vocabulary, so the
                              menu and the stored codes can never drift apart. -->
                         <MenuItem x:Name="MiTags" Header="Tag"
@@ -270,16 +270,18 @@
                         <MenuItem x:Name="MiClearTags" Click="MiClearTags_Click"
                                   Header="Clear tags on selection"/>
                         <Separator/>
-                        <MenuItem x:Name="MiReplaceMany" Click="MiReplaceMany_Click"
-                                  Header="Replace ALL selected with one file…"
-                                  ToolTip="Give every selected sound the same audio. Dragging a single file onto a selection does the same thing."/>
-                        <MenuItem x:Name="MiExtractMod" Click="MiExtractModded_Click"
-                                  Header="Extract only the modded wems…"
-                                  ToolTip="From an opened .bnk or .pak: write out just the sounds it changed from the game's own."/>
-                        <MenuItem x:Name="MiReplaceSel" Click="MiReplaceSelection_Click"
-                                  Header="Replace with an audio file…"
-                                  ToolTip="Stage a wav, mp3, ogg, flac or m4a for this sound."/>
+
+                        <MenuItem x:Name="MiTestSel" Click="MiTestSelection_Click"
+                                  Header="Create test .bnk from selection…"
+                                  ToolTip="Replace only the selected sounds with clips that speak a number. Everything else keeps its normal audio, so the test is usable in a real match."/>
+                        <MenuItem x:Name="MiTestOnly" Click="MiTestOnlySelection_Click"
+                                  Header="Create test .bnk from selection, silencing the rest"
+                                  ToolTip="Number the selected sounds and silence every other sound in the same .bnk(s), so only what you picked can be heard."/>
+                        <MenuItem x:Name="MiSilentSel" Click="MiSilentSelection_Click"
+                                  Header="Create silent .bnk from selection…"
+                                  ToolTip="Replace only the selected sounds with silence of the same length and format, without touching anything else."/>
                         <Separator/>
+
                         <MenuItem x:Name="MiSetVol" Click="MiSetVolume_Click"
                                   Header="Set volume…"
                                   ToolTip="Multiplier for the selected sounds. Marked as hand-set, so a bulk change leaves them alone."/>
@@ -290,24 +292,30 @@
                                   Header="Clear volume on selection"/>
                         <MenuItem x:Name="MiBuildVol" Click="MiBuildVolume_Click"
                                   Header="Build .bnk at these volumes…"
-                                  ToolTip="Writes the .bnk files with every level applied, into a folder named after the bulk level."/>
+                                  ToolTip="Writes the .bnk files with every level applied, into a folder named after the bulk level. Muted sounds are silenced rather than scaled."/>
                         <Separator/>
+
                         <MenuItem x:Name="MiPlayFrom" Click="MiPlayFrom_Click"
-                                  Header="Autoplay from here"/>
+                                  Header="Autoplay from here"
+                                  ToolTip="Play the selection in order, or everything listed from this row down."/>
                         <MenuItem x:Name="MiExportWav" Click="BtnWav_Click"
                                   Header="Export WAV…"/>
                         <MenuItem x:Name="MiExportWem" Click="BtnWem_Click"
                                   Header="Export WEM…"/>
+                        <MenuItem x:Name="MiExtractMod" Click="MiExtractModded_Click"
+                                  Header="Extract only the modded wems…"
+                                  ToolTip="From an opened .bnk or .pak: write out just the sounds it changed from the game's own, named so they drop straight back in."/>
                         <Separator/>
+
                         <MenuItem x:Name="MiCopyIds" Click="MiCopyIds_Click"
                                   Header="Copy media id(s)"/>
                         <MenuItem x:Name="MiCopyCell" Click="BtnCell_Click"
                                   Header="Copy sheet cell(s)"/>
+                        <MenuItem x:Name="MiCsv" Click="BtnCsv_Click"
+                                  Header="Export the list to CSV…"/>
                         <MenuItem x:Name="MiFetchTrans" Click="MiFetchTranslations_Click"
                                   Header="Fetch missing category translations online…"
                                   ToolTip="Sends only the untranslated Chinese label text, and caches the result."/>
-                        <MenuItem x:Name="MiCsv" Click="BtnCsv_Click"
-                                  Header="Export the list to CSV…"/>
                     </ContextMenu>
                 </DataGrid.ContextMenu>
                 <DataGrid.Columns>

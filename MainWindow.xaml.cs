@@ -1780,9 +1780,10 @@ public partial class MainWindow : Window
 
         try
         {
+            var volumeMuted = _sounds?.Rows.Where(r2 => r2.Muted).Select(r2 => r2.MediaId).ToHashSet() ?? [];
             var r = await Task.Run(() => VolumeBankBuilder.Build(
                 _session, banks, id => levels.GetValueOrDefault(id, 1.0), outRoot,
-                _sounds, vgm, m => Dispatcher.BeginInvoke(new Action(() => Say(m)))));
+                _sounds, vgm, m => Dispatcher.BeginInvoke(new Action(() => Say(m))), volumeMuted));
 
             Say($"volume build: {r.Scaled} scaled, {r.Failed} failed, {r.Banks} .bnk(s) -> {outRoot}");
             MessageBox.Show(r.Log + Environment.NewLine +
@@ -2213,11 +2214,20 @@ public partial class MainWindow : Window
                 : $"scope: this skin only ({bankPaths.Count}); {outside.Count} other .bnk(s) left stale.";
         }
 
+        // A mute is a build instruction, not a test-build one: silencing a line you do
+        // not want is a mod in its own right.
+        var mutedIds = _sounds?.Rows.Where(r => r.Muted).Select(r => r.MediaId).ToHashSet() ?? [];
+
         ModBuilder.Result built;
-        try { built = ModBuilder.Build(_session, _skin, _pending.ToList(), outRoot, bankPaths, CbPrefetch.IsChecked == true); }
+        try
+        {
+            built = ModBuilder.Build(_session, _skin, _pending.ToList(), outRoot, bankPaths,
+                                     CbPrefetch.IsChecked == true, mutedIds);
+        }
         catch (Exception ex) { Say("build failed: " + ex.Message); return; }
 
         Say($"built {built.Banks} .bnk(s) and {built.Loose} audio file(s) into {outRoot} - " +
+            (built.Muted > 0 ? $"{built.Muted} muted. " : "") +
             (built.Loose == 0 ? "the .bnk is the whole mod." : "ship the whole folder to repak."));
         MessageBox.Show((scopeNote.Length > 0 ? scopeNote + Environment.NewLine + Environment.NewLine : "") + built.Log,
                         "Build complete", MessageBoxButton.OK, MessageBoxImage.Information);

@@ -48,6 +48,13 @@ public partial class App : Application
             return;
         }
 
+        var mt = Array.FindIndex(e.Args, a => a.Equals("--mutetest", StringComparison.OrdinalIgnoreCase));
+        if (mt >= 0 && mt + 1 < e.Args.Length)
+        {
+            Shutdown(MuteSelfTest.Run(e.Args[mt + 1]));
+            return;
+        }
+
         var ct = Array.FindIndex(e.Args, a => a.Equals("--cachetest", StringComparison.OrdinalIgnoreCase));
         if (ct >= 0 && ct + 1 < e.Args.Length)
         {

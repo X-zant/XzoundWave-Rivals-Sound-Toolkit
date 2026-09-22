@@ -95,6 +95,11 @@ Working out which sound is which is most of the job, so:
   sounds fire at once.
 - **Mute** the numbers you have already identified so the quieter ones underneath become
   audible, then rebuild. Numbering stays stable across rounds.
+
+A mute is not only a test-build idea — a muted sound is silenced in **every** `.bnk` the
+tool writes, including a normal build and a volume build, because silencing a line you
+do not want is a mod in its own right. Staging a file over a muted sound overrides the
+mute; nothing is deleted, and unmuting brings the original back.
 - **Silent banks**, for identifying a sound by its absence.
 
 ### Build
@@ -150,8 +155,8 @@ Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 
 ```
 --selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
---mediapath  --playtest  --cachetest  --openorder  --roundtrip  --fmtcheck
---vorbistest  --setuproundtrip
+--mediapath  --playtest  --cachetest  --mutetest  --openorder  --roundtrip
+--fmtcheck  --vorbistest  --setuproundtrip
 ```
 
 ## XzoundCore

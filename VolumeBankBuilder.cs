@@ -19,9 +19,14 @@ public static class VolumeBankBuilder
                                 List<Row> Legend, string Log);
 
     /// <param name="gainOf">The level for a media id; 1.0 means leave it alone.</param>
+    /// <param name="muted">
+    /// Silenced outright rather than scaled. A mute means the same thing in every build,
+    /// and scaling silence to 80% would be a slower way of producing the same silence.
+    /// </param>
     public static Result Build(GameSession session, IEnumerable<string> bankPaths,
                                Func<uint, double> gainOf, string outRoot, SkinSounds context,
-                               string vgmstreamPath, Action<string> progress = null)
+                               string vgmstreamPath, Action<string> progress = null,
+                               IReadOnlySet<uint> muted = null)
     {
         var log = new StringBuilder();
         var legend = new List<Row>();
@@ -42,9 +47,19 @@ public static class VolumeBankBuilder
             var stem = Path.GetFileNameWithoutExtension(bankName);
             var entries = BnkBuilder.ReadDidx(didx.Body);
 
-            var todo = entries.Where(e => Math.Abs(gainOf(e.Id) - 1.0) > 0.001).ToList();
-            skipped += entries.Count - todo.Count;
-            if (todo.Count == 0)
+            // Muting wins over any level: there is no useful gain to apply to silence.
+            var quiet = new Dictionary<uint, byte[]>();
+            if (muted is { Count: > 0 })
+                foreach (var e in entries.Where(e => muted.Contains(e.Id)))
+                {
+                    var wem = data.Body.AsSpan((int)e.Offset, (int)e.Size).ToArray();
+                    if (SilentBankBuilder.Like(wem) is { } s2) quiet[e.Id] = s2;
+                }
+
+            var todo = entries.Where(e => !quiet.ContainsKey(e.Id)
+                                          && Math.Abs(gainOf(e.Id) - 1.0) > 0.001).ToList();
+            skipped += entries.Count - todo.Count - quiet.Count;
+            if (todo.Count == 0 && quiet.Count == 0)
             {
                 log.AppendLine($"{bankName}: nothing to scale.");
                 continue;
@@ -79,7 +94,10 @@ public static class VolumeBankBuilder
             foreach (var err in errors.Take(5)) log.AppendLine($"{bankName}: {err}");
 
             if (done.Count == 0) continue;
-            var built = BnkBuilder.Build(orig, done.ToDictionary(k => k.Key, v => v.Value.Bytes));
+            var payload = done.ToDictionary(k => k.Key, v => v.Value.Bytes);
+            foreach (var (id, bytes) in quiet) payload[id] = bytes;
+            if (quiet.Count > 0) log.AppendLine($"{bankName}: {quiet.Count} muted.");
+            var built = BnkBuilder.Build(orig, payload);
             var dest = Path.Combine(outRoot, bankPath.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             File.WriteAllBytes(dest, built.Bytes);

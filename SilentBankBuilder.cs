@@ -145,11 +145,20 @@ public static class SilentBankBuilder
         return (rate, Math.Min(ch, 2), Math.Clamp(seconds, 0.05, MaxSeconds));
     }
 
-    /// <summary>Silence shaped like an existing sound: same rate, channels, length.</summary>
+    /// <summary>
+    /// Silence shaped like an existing sound: same rate, channels, length. Shared with
+    /// the normal build, so muting a sound means the same thing wherever a .bnk is
+    /// written and not only in a test build. Null when the header cannot be read --
+    /// callers treat that as "leave this entry alone" rather than writing junk.
+    /// </summary>
     public static byte[] Like(byte[] existingWem)
     {
-        var (rate, channels, seconds) = Describe(existingWem);
-        return Silence(rate, channels, seconds);
+        try
+        {
+            var (rate, channels, seconds) = Describe(existingWem);
+            return Silence(rate, channels, seconds);
+        }
+        catch { return null; }
     }
 
     private static byte[] Silence(int rate, int channels, double seconds)

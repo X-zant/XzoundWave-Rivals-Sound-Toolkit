@@ -10,7 +10,7 @@ namespace MRAudioKit;
 public static class ModBuilder
 {
     public sealed record Result(int Banks, int Loose, int PrefetchTrimmed, string Log,
-                                List<string> Outputs);
+                                List<string> Outputs, int Muted = 0);
 
     /// <param name="prefetchMode">
     /// OFF (default): the full custom clip goes INTO the bank, replacing the original
@@ -24,9 +24,18 @@ public static class ModBuilder
     /// (SourceType=PrefetchStreaming, stub == file[0..n]), but it makes a bigger mod
     /// and is not the community's route. Kept as an option, not the default.
     /// </param>
+    /// <param name="muted">
+    /// Media ids to replace with silence. Muting began as a test-build idea -- quiet
+    /// the sound you have already identified so the ones underneath can be heard -- but
+    /// it is just as much a mod: silencing a line you do not want is a thing people
+    /// ship. A mute means the same thing in every build now, not only in a test one.
+    /// A staged replacement wins, because staging a file over a muted sound is plainly
+    /// a change of mind.
+    /// </param>
     public static Result Build(GameSession session, SkinEntry skin,
                                IReadOnlyList<PendingWem> pending, string outRoot,
-                               ISet<string> bankPaths, bool prefetchMode = false)
+                               ISet<string> bankPaths, bool prefetchMode = false,
+                               IReadOnlySet<uint> muted = null)
     {
         var log = new StringBuilder();
         var outputs = new List<string>();
@@ -36,6 +45,7 @@ public static class ModBuilder
 
         var banksWritten = 0;
         var trimmed = 0;
+        var silenced = 0;
         var placed = new HashSet<uint>();
 
         foreach (var bankPath in bankPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
@@ -48,8 +58,27 @@ public static class ModBuilder
             if (didxSection is null) continue;
 
             var perBank = new Dictionary<uint, byte[]>();
+            var dataSection = BnkBuilder.ReadSections(orig).FirstOrDefault(s => s.Tag == "DATA");
             foreach (var entry in BnkBuilder.ReadDidx(didxSection.Body))
             {
+                // Silence first, so a staged file can still override it below.
+                if (muted is not null && muted.Contains(entry.Id) &&
+                    !payload.ContainsKey(entry.Id) && dataSection is not null)
+                {
+                    var original = dataSection.Body.AsSpan((int)entry.Offset, (int)entry.Size).ToArray();
+                    var quiet = SilentBankBuilder.Like(original);
+                    if (quiet is not null)
+                    {
+                        perBank[entry.Id] = quiet;
+                        placed.Add(entry.Id);
+                        silenced++;
+                        log.AppendLine($"  media {entry.Id}: muted — {entry.Size:N0} B of audio " +
+                                       $"replaced with {quiet.Length:N0} B of silence.");
+                    }
+                    else log.AppendLine($"  media {entry.Id}: muted, but its header could not be read.");
+                    continue;
+                }
+
                 if (!payload.TryGetValue(entry.Id, out var custom)) continue;
                 if (prefetchMode && session.LooseMedia(entry.Id) is not null)
                 {
@@ -112,7 +141,8 @@ public static class ModBuilder
         }
 
         var header = new StringBuilder();
-        header.AppendLine($"{skin.Label}   ({pending.Count} custom file(s))");
+        header.AppendLine($"{skin.Label}   ({pending.Count} custom file(s)" +
+                          (silenced > 0 ? $", {silenced} muted" : "") + ")");
         header.AppendLine();
         if (trimmed > 0)
         {
@@ -130,6 +160,6 @@ public static class ModBuilder
         header.Append(log);
 
         File.WriteAllText(Path.Combine(outRoot, "build-log.txt"), header.ToString(), new UTF8Encoding(true));
-        return new Result(banksWritten, loose, trimmed, header.ToString(), outputs);
+        return new Result(banksWritten, loose, trimmed, header.ToString(), outputs, silenced);
     }
 }
