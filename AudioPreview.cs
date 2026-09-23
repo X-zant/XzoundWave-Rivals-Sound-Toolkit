@@ -58,8 +58,26 @@ public sealed class AudioPreview : IDisposable
         catch { return null; }
     }
 
-    public byte[] Bytes(GameSession session, SkinSounds sounds, SoundRow row)
+    public byte[] Bytes(GameSession session, SkinSounds sounds, SoundRow row,
+                        bool ignoreStaged = false)
     {
+        // A file staged for this sound is what will ship, so it is what "play this row"
+        // means. The game's own audio is still reachable -- Play the original, on the
+        // right-click menu -- because comparing the two is most of the job.
+        if (!ignoreStaged && row.ReplacementPath is not null && File.Exists(row.ReplacementPath))
+        {
+            try
+            {
+                var staged = File.ReadAllBytes(row.ReplacementPath);
+                if (staged.Length > 0)
+                {
+                    row.Origin = row.ReplacementPath + "  (staged)";
+                    return staged;
+                }
+            }
+            catch { /* fall through to the game's copy rather than failing the preview */ }
+        }
+
         // Bytes we were handed win: a bank opened from a mod reuses the shipped media
         // ids, so asking the game first would play the vanilla sound instead.
         if (sounds.Raw.TryGetValue(row.MediaId, out var held) && held is { Length: > 0 })
@@ -246,8 +264,17 @@ public sealed class AudioPreview : IDisposable
         _ => $"it started but said nothing recognisable (exit {exitCode}, 0x{(uint)exitCode:X8})."
     };
 
-    public void Play(string wavPath)
+    public void Play(string wavPath) => Play(wavPath, null, out _);
+
+    /// <param name="applied">
+    /// What the .bnk does to this sound. Passed in, the preview is what the game
+    /// plays; left out, it is what the file contains. Both are worth hearing, which is
+    /// why it is a switch rather than a decision made here.
+    /// </param>
+    /// <param name="described">What was applied, for the status line.</param>
+    public void Play(string wavPath, WwiseProps.Applied applied, out string described)
     {
+        described = "";
         Release();
         try
         {
@@ -260,7 +287,7 @@ public sealed class AudioPreview : IDisposable
                 // an autoplay run to the next one.
                 if (!_stoppedOnPurpose) Finished?.Invoke();
             };
-            _out.Init(_reader);
+            _out.Init(InGameChain.Build(_reader, applied, out described));
             _stoppedOnPurpose = false;
             _out.Play();
         }

@@ -73,6 +73,13 @@ public sealed class Settings
     /// </summary>
     public List<string> SuppressedWarnings { get; set; } = [];
 
+    /// <summary>
+    /// Preview a sound the way the .bnk plays it rather than the way the file sits on
+    /// disk. Off by default: the raw file is what you are editing, and hearing it
+    /// unchanged is the thing you cannot get any other way.
+    /// </summary>
+    public bool PreviewAsInGame { get; set; }
+
     /// <summary>The naming rule in the drop pane, once you know it, is just clutter.</summary>
     public bool ShowDropHelp { get; set; } = true;
 

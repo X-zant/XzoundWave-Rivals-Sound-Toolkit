@@ -481,6 +481,7 @@ public partial class MainWindow : Window
     {
         var hidden = _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault];
         CbUnnamed.IsChecked = !hidden.Contains("unnamed", StringComparer.OrdinalIgnoreCase);
+        CbInGame.IsChecked = _settings.PreviewAsInGame;
     }
 
     private void BtnSettings_Click(object sender, RoutedEventArgs e)
@@ -616,17 +617,49 @@ public partial class MainWindow : Window
         }), System.Windows.Threading.DispatcherPriority.Background);
     }
 
-    private void BtnPlay_Click(object sender, RoutedEventArgs e)
+    private void BtnPlay_Click(object sender, RoutedEventArgs e) => PlayRow(Selected, false);
+
+    /// <summary>Hear what the game shipped, whatever is staged or loaded over it.</summary>
+    private void MiPlayOriginal_Click(object sender, RoutedEventArgs e) => PlayRow(Selected, true);
+
+    private void PlayRow(SoundRow row, bool original)
     {
-        var row = Selected;
         if (row is null || _sounds is null) return;
-        var data = _preview.Bytes(_session, _sounds, row);
+        var data = _preview.Bytes(_session, _sounds, row, ignoreStaged: original);
         if (data is null) { Say($"media {row.MediaId}: no bytes found."); return; }
 
         var wav = _preview.Decode(data, row.MediaId, out var err);
         if (wav is null) { Say(err); return; }
-        _preview.Play(wav);
-        Say($"{row.Display}  —  {row.Bytes:N0} B from {row.Origin}");
+
+        // The switch decides whether this is the file or the sound. Both are worth
+        // hearing: one is what you are shipping, the other is what will be heard.
+        var applied = _settings.PreviewAsInGame ? row.Applied : null;
+        _preview.Play(wav, applied, out var did);
+
+        var note = _settings.PreviewAsInGame
+            ? $"  —  as in game: {did}" + Missing(row)
+            : "";
+        Say($"{row.Display}  —  {row.Bytes:N0} B from {row.Origin}{note}");
+    }
+
+    /// <summary>
+    /// Name what the preview could not reproduce. Without it, a sound that is quiet in
+    /// game and loud here reads as a bug in the tool rather than a filter it never
+    /// claimed to apply.
+    /// </summary>
+    private static string Missing(SoundRow row)
+    {
+        var missing = InGameChain.Unapplied(row.Applied);
+        return missing.Length == 0 ? "" : $"   (not reproduced: {missing})";
+    }
+
+    private void CbInGame_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.PreviewAsInGame = CbInGame.IsChecked == true;
+        _settings.Save();
+        Say(_settings.PreviewAsInGame
+            ? "previews now include what the .bnk applies — volume, pitch, delay and loop."
+            : "previews now play the file as it is.");
     }
 
     private void BtnStop_Click(object sender, RoutedEventArgs e)
@@ -647,7 +680,7 @@ public partial class MainWindow : Window
             {
                 if (r.Seconds is null)
                 {
-                    var d = _preview.Bytes(_session, _sounds, r);
+                    var d = _preview.Bytes(_session, _sounds, r, ignoreStaged: true);
                     if (d is not null) r.Seconds = _preview.Probe(d, r.MediaId);
                 }
                 if (++n % 25 == 0) Say($"measuring... {n}/{rows.Count}");
@@ -705,7 +738,10 @@ public partial class MainWindow : Window
 
     private bool WriteOne(SoundRow row, bool asWav, string target)
     {
-        var data = _preview.Bytes(_session, _sounds, row);
+        // Exporting is for getting audio OUT of the game. A staged file is already a
+        // file the author has, so writing a copy of it back out would be a no-op
+        // dressed up as an extraction; a loaded mod's audio is not, and still wins.
+        var data = _preview.Bytes(_session, _sounds, row, ignoreStaged: true);
         if (data is null) return false;
         if (!asWav) { File.WriteAllBytes(target, data); return true; }
         var wav = _preview.Decode(data, row.MediaId, out _);
@@ -2278,7 +2314,7 @@ public partial class MainWindow : Window
             // Follow along in the grid, so what you hear is what is highlighted.
             Grid_.SelectedItem = row;
             Grid_.ScrollIntoView(row);
-            _preview.Play(wav);
+            _preview.Play(wav, _settings.PreviewAsInGame ? row.Applied : null, out _);
             Say($"autoplay {_queueAt + 1}/{_queue.Count}  —  {row.TestLabel} {row.Display}".Replace("  ", " ").Trim() +
                 (string.IsNullOrEmpty(row.Subtitle) ? "" : $"   \"{row.Subtitle}\""));
             return;

@@ -24,6 +24,10 @@
               <Button x:Name="BtnStop" Content="■  Stop" Click="BtnStop_Click"/>
               <Button x:Name="BtnDur" Content="Measure durations" Click="BtnDur_Click"/>
               <Border Width="1" Margin="8,2" Background="{StaticResource Line}"/>
+              <CheckBox x:Name="CbInGame" Content="as in game" Margin="4,0,0,0"
+                        Click="CbInGame_Click"
+                        ToolTip="Play it the way the .bnk plays it rather than the way the file sits on disk: the volume trim, pitch shift, start delay and loop the game applies on top.&#10;&#10;Filters, distance attenuation, HDR ducking and anything driven at runtime are NOT reproduced — the Game does column names them when a sound has them.&#10;&#10;A sound authored to repeat for ever is previewed as a few passes."/>
+              <Border Width="1" Margin="8,2" Background="{StaticResource Line}"/>
               <CheckBox x:Name="CbUnnamed" Content="show unnamed" Margin="4,0,0,0"
                         Click="CbUnnamed_Click"
                         ToolTip="The same switch as Settings › Rows › unnamed events."/>
@@ -304,6 +308,9 @@
                         <MenuItem x:Name="MiPlayFrom" Click="MiPlayFrom_Click"
                                   Header="Autoplay from here"
                                   ToolTip="Play the selection in order, or everything listed from this row down."/>
+                        <MenuItem x:Name="MiPlayOriginal" Click="MiPlayOriginal_Click"
+                                  Header="Play the game's original"
+                                  ToolTip="Ignores a staged replacement and a loaded mod, so you can hear what the game shipped and compare."/>
                         <MenuItem x:Name="MiExportWav" Click="BtnWav_Click"
                                   Header="Export WAV…"/>
                         <MenuItem x:Name="MiExportWem" Click="BtnWem_Click"

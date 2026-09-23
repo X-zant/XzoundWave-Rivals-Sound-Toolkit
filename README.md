@@ -79,7 +79,14 @@ mods, and the screen shows that job's tools.
 - Categories are authored in Chinese and the game ships no English for them. A built-in
   translator handles 98–100% offline, deriving hero and ability names from the game's
   own English text; an optional CC-CEDICT download covers the remainder.
-- Preview anything, or **autoplay** down the list to scan a character's lines.
+- Preview anything, or **autoplay** down the list to scan a character's lines. A sound
+  with a file staged over it plays the staged file — that is what will ship — and
+  **Play the game's original** on the right-click menu is there to compare against.
+- **As in game** plays it the way the `.bnk` plays it rather than the way the file sits
+  on disk: the volume trim, pitch shift, start delay and loop, applied. Filters,
+  distance attenuation, HDR ducking and anything driven at runtime are not reproduced,
+  and the status line names them when a sound has them rather than leaving you to
+  wonder. An endless loop is previewed as four passes.
 - **Colour coding** at a glance: green staged, red muted, purple changed by a mod.
 - **What the game does to each sound**, in its own column: the volume trim, pitch
   shift, delay, loop or runtime curve the `.bnk` applies on top of the audio. None of
@@ -181,7 +188,7 @@ Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 ```
 --selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
 --mediapath  --playtest  --cachetest  --mutetest  --noskinbuild  --openorder  --modset
---prefetchpreview  --applied
+--prefetchpreview  --applied  --ingame
 --roundtrip  --fmtcheck  --vorbistest  --setuproundtrip
 ```
 

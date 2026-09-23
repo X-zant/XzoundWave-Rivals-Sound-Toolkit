@@ -83,6 +83,12 @@ public partial class App : Application
             return;
         }
 
+        if (Array.FindIndex(e.Args, a => a.Equals("--ingame", StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            Shutdown(InGameChainTest.Run());
+            return;
+        }
+
         if (Array.FindIndex(e.Args, a => a.Equals("--applied", StringComparison.OrdinalIgnoreCase)) >= 0)
         {
             Shutdown(AppliedPropsTest.Run());
