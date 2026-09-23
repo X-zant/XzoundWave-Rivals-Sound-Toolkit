@@ -18,7 +18,9 @@ public static class Bundled
     /// which may sit somewhere the user cannot write.</summary>
     public static string ToolsDir => Path.Combine(Settings.AppDataDir, "vgmstream");
 
-    public static string VgmstreamExe => Path.Combine(ToolsDir, "vgmstream-cli.exe");
+    /// <summary>The unpacked tool. Only Windows spells an executable with a suffix.</summary>
+    public static string VgmstreamExe =>
+        Path.Combine(ToolsDir, AppPaths.Exe("vgmstream-cli"));
 
     private const string ZipResource = "XzoundWave.vgmstream.zip";
     private const string LicenceResource = "XzoundWave.LICENSE";
@@ -60,6 +62,12 @@ public static class Bundled
                     // worth failing over when the file we would write is identical.
                     try { entry.ExtractToFile(dest, overwrite: true); }
                     catch (IOException) when (File.Exists(dest)) { }
+
+                    // A zip carries no permission bits that anything but Windows
+                    // respects, so a program extracted from one is not runnable until
+                    // it is said to be -- and the failure reads as "the tool is
+                    // missing" rather than "the tool cannot be started".
+                    AppPaths.MakeExecutable(dest);
                 }
 
             WriteText(Path.Combine(ToolsDir, "XzoundWave-LICENSE.txt"), LicenceResource);

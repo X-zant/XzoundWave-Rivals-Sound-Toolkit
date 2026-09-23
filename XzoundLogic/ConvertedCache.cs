@@ -133,7 +133,10 @@ public static class ConvertedCache
             }
 
             var dest = Path.ChangeExtension(sourcePath, ".wem");
-            if (File.Exists(dest) && !string.Equals(dest, sourcePath, StringComparison.OrdinalIgnoreCase))
+            // Same-file test on real paths, so it follows the filesystem's own rule.
+            // Where case matters, A.wem and a.wem are two files, and treating them as
+            // one would skip a write the author asked for.
+            if (File.Exists(dest) && !AppPaths.SamePath(dest, sourcePath))
             {
                 error = Path.GetFileName(dest) + " already exists";
                 return null;

@@ -67,8 +67,19 @@ public static class UsmapFetch
     public static bool IsManaged(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
-        static string N(string s) => s.Replace('/', '\\').TrimEnd('\\').ToLowerInvariant();
-        return N(path).StartsWith(N(ManagedDir) + "\\", StringComparison.Ordinal);
+
+        // Both separators, because a path can arrive with either, and the comparison
+        // is the platform's own: two names differing only in case are one file on
+        // Windows and two files everywhere else, and getting that backwards here would
+        // either adopt a file the author picked or refuse to replace one we wrote.
+        static string N(string s) =>
+            s.Replace('\\', Path.DirectorySeparatorChar)
+             .Replace('/', Path.DirectorySeparatorChar)
+             .TrimEnd(Path.DirectorySeparatorChar);
+
+        var how = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return N(path).StartsWith(N(ManagedDir) + Path.DirectorySeparatorChar, how);
     }
 
     /// <summary>

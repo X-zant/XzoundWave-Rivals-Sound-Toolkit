@@ -144,11 +144,30 @@ public static class ModBank
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CreateHardLinkW(string to, string from, IntPtr reserved);
 
-    /// <summary>Hard-link when we can — a mod pak can be hundreds of megabytes and
-    /// copying it just to read a bank is a needless wait.</summary>
+    /// <summary>
+    /// Hard-link when we can — a mod pak can be hundreds of megabytes and copying it
+    /// just to read a bank is a needless wait.
+    ///
+    /// The call is Windows' own, and off Windows it throws rather than returning false,
+    /// so the copy underneath it would never have run. A symbolic link buys the same
+    /// thing everywhere else; if neither works, copying always does.
+    /// </summary>
     private static void Link(string from, string to)
     {
-        if (CreateHardLinkW(to, from, IntPtr.Zero)) return;
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                if (CreateHardLinkW(to, from, IntPtr.Zero)) return;
+            }
+            else
+            {
+                File.CreateSymbolicLink(to, Path.GetFullPath(from));
+                return;
+            }
+        }
+        catch { /* a link we cannot make is not a failure, only a slower path */ }
+
         File.Copy(from, to, true);
     }
 

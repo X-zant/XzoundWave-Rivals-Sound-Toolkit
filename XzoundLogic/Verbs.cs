@@ -120,6 +120,8 @@ public static class Verbs
             (a, i) => ModSetSelfTest.Run()),
         new("--openorder", 1, "<bnk>", "opening a mod before the game is loaded",
             (a, i) => OpenOrderSelfTest.Run(a[i + 1])),
+        new("--platform", 0, "", "the filesystem rules this host actually follows",
+            (a, i) => PlatformSelfTest.Run()),
         new("--rowfilters", 0, "", "hiding a kind of row removes only those rows",
             (a, i) => RowFilterSelfTest.Run()),
         new("--tags", 0, "", "the tag vocabulary", (a, i) => TagSelfTest.Run()),

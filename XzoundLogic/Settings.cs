@@ -95,7 +95,7 @@ public sealed class Settings
     public void NoteRecentProject(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        RecentProjects.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        RecentProjects.RemoveAll(p => AppPaths.SamePath(p, path));
         RecentProjects.Insert(0, path);
         while (RecentProjects.Count > 10) RecentProjects.RemoveAt(RecentProjects.Count - 1);
         LastProject = path;
@@ -153,16 +153,15 @@ public sealed class Settings
     {
         if (string.IsNullOrWhiteSpace(PaksDir))
         {
-            foreach (var drive in DriveInfo.GetDrives())
+            // Where a Steam library lives is the platform's business, not this
+            // method's -- drive letters on Windows, the home directory everywhere
+            // else. The rest of the path is the game's own and is the same either way,
+            // including under Proton, which lays the files out natively.
+            foreach (var lib in AppPaths.SteamLibraries())
             {
-                if (!drive.IsReady) continue;
-                foreach (var lib in new[] { "SteamLibrary", "Steam", "Games" })
-                {
-                    var p = Path.Combine(drive.RootDirectory.FullName, lib,
-                        "steamapps", "common", "MarvelRivals", "MarvelGame", "Marvel", "Content", "Paks");
-                    if (Directory.Exists(p)) { PaksDir = p; break; }
-                }
-                if (PaksDir.Length > 0) break;
+                var p = Path.Combine(lib, "steamapps", "common",
+                    "MarvelRivals", "MarvelGame", "Marvel", "Content", "Paks");
+                if (Directory.Exists(p)) { PaksDir = p; break; }
             }
         }
 
@@ -172,7 +171,7 @@ public sealed class Settings
             VgmstreamPath = "";
         if (string.IsNullOrWhiteSpace(VgmstreamPath))
         {
-            var beside = Path.Combine(AppContext.BaseDirectory, "vgmstream-cli.exe");
+            var beside = Path.Combine(AppContext.BaseDirectory, AppPaths.Exe("vgmstream-cli"));
             VgmstreamPath = File.Exists(beside) ? beside : Bundled.EnsureVgmstream(out _) ?? "";
         }
 
