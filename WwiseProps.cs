@@ -264,6 +264,18 @@ public static class WwiseProps
         /// <summary>Which alternative this is, when the container picks between several.</summary>
         public Variation Alternative { get; set; }
 
+        /// <summary>
+        /// The nearest actor-mixer above this sound, and how many things it holds.
+        ///
+        /// A mixer is how a designer keeps a set of related sounds together -- one
+        /// ability's four shots, a footstep set -- so two sounds under the same one
+        /// belong together whatever their events happen to be called. It is a MIXING
+        /// group and not a playback order: Wwise attaches no sequence to it, and the
+        /// child list is sorted by id rather than by anything an author chose.
+        /// </summary>
+        public uint FamilyId { get; set; }
+        public int FamilySize { get; set; }
+
         /// <summary>The rate the bank says the source was encoded at.</summary>
         public uint SampleRate { get; set; }
 
@@ -454,6 +466,11 @@ public static class WwiseProps
             // alternative among several. A grandparent picking between containers is a
             // different question and would read as a false reassurance here.
             applied.Alternative ??= AlternativeIn(parent, child);
+            if (applied.FamilyId == 0 && parent is HierarchyActorMixer mixer)
+            {
+                applied.FamilyId = mixer.Id;
+                applied.FamilySize = mixer.ChildIds?.Length ?? 0;
+            }
             child = parent.Id;
             node = parent;
             owner = parent switch

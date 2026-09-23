@@ -126,6 +126,7 @@ public static class WwiseProbe
 
                     W($"  ACTION {act.EventActionType}  scope={act.EventActionScope}" +
                       $"  -> {act.ReferencedId}  {ActionDetail(act)}");
+                    W($"    ANCESTRY  {Ancestry(act.ReferencedId, nodes)}");
                     Walk(act.ReferencedId, nodes, "    ", 0);
                 }
             }
@@ -258,6 +259,36 @@ public static class WwiseProbe
         if (Get(v, "Value") is { } resolved) return resolved.ToString();
         if (Get(v, "f32") is { } f) return f.ToString();
         return v.ToString();
+    }
+
+    /// <summary>
+    /// What sits above an object, by type. Two sounds under one parent are related
+    /// whatever their events are called, and a SEQUENCE up there is the bank stating
+    /// an order rather than a name implying one.
+    /// </summary>
+    private static string Ancestry(uint id, Dictionary<uint, AbstractHierarchy> nodes)
+    {
+        var parts = new List<string>();
+        var seen = new HashSet<uint>();
+        var current = id;
+        while (seen.Add(current) && nodes.TryGetValue(current, out var node) && parts.Count < 8)
+        {
+            var extra = node switch
+            {
+                HierarchyRandomSequenceContainer c => $"[{c.Mode} of {c.ChildIds?.Length ?? 0}]",
+                // A mixer's child order is the order they were added, which carries no
+                // playback meaning -- printed so that can be checked rather than assumed.
+                HierarchyActorMixer m => $"[holds {m.ChildIds?.Length ?? 0}: " +
+                                         string.Join(",", (m.ChildIds ?? []).Take(6)) + "]",
+                _ => "",
+            };
+            parts.Add($"{node.GetType().Name.Replace("Hierarchy", "")}({current}){extra}");
+
+            var bp = Get(node, "BaseParams");
+            if (Get(bp, "DirectParentId") is not uint p2 || p2 == 0) break;
+            current = p2;
+        }
+        return string.Join(" <- ", parts);
     }
 
     private static IEnumerable<string> Members(Type t) =>

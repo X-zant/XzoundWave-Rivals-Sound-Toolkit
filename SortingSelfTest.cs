@@ -61,8 +61,87 @@ public static class SortingSelfTest
                        .SequenceEqual(g.Select(r => r.Applied.Alternative.Index).OrderBy(i => i)));
         Check("and a group's own members stay in order", inOrder);
 
-        Check("a row in no group sorts after every group",
-              sounds.Rows.Where(r => r.VariantGroup.Length == 0).All(r => r.GroupSort == long.MaxValue));
+        // Three bands, in this order: alternatives inside a container, then sets that
+        // only share a mixer, then rows that belong to neither. Sorting has to gather
+        // each band rather than interleaving them.
+        var alternatives = sounds.Rows.Where(r => r.VariantGroup.Length > 0).ToList();
+        var families = sounds.Rows.Where(r => r.VariantGroup.Length == 0 &&
+                                              r.FamilyMembers.Count > 1).ToList();
+        var loners = sounds.Rows.Where(r => r.VariantGroup.Length == 0 &&
+                                            r.FamilyMembers.Count <= 1).ToList();
+        W($"    {alternatives.Count} in a container of alternatives, " +
+          $"{families.Count} in a family only, {loners.Count} in neither");
+
+        Check("alternatives sort before families",
+              families.Count == 0 || alternatives.Count == 0 ||
+              alternatives.Max(r => r.GroupSort) < families.Min(r => r.GroupSort));
+        Check("families sort before rows in neither",
+              loners.Count == 0 || families.Count == 0 ||
+              families.Max(r => r.GroupSort) < loners.Min(r => r.GroupSort));
+        Check("a row in neither sorts last of all",
+              loners.All(r => r.GroupSort == long.MaxValue));
+
+        // ---- sounds that belong together without sharing an event -----------
+        W("");
+        W("families");
+
+        // True of every skin: a family is a set of rows sharing one mixer, and the
+        // member list each row carries is that set.
+        var inFamily = sounds.Rows.Where(r => r.FamilyMembers.Count > 1).ToList();
+        Check("rows in a family share one mixer id",
+              inFamily.GroupBy(r => r.Family)
+                      .All(g => g.Select(r => r.Applied.FamilyId).Distinct().Count() == 1));
+        Check("and one mixer never answers to two names",
+              inFamily.GroupBy(r => r.Applied.FamilyId)
+                      .All(g => g.Select(r => r.Family).Distinct().Count() == 1));
+        Check("a row's member list is its family, no more and no less",
+              inFamily.GroupBy(r => r.Applied.FamilyId)
+                      .All(g => g.All(r => r.FamilyMembers.Count == g.Count())));
+
+        var sizes = inFamily.GroupBy(r => r.Applied.FamilyId).Select(g => g.Count()).ToList();
+        W($"    {sizes.Count} famil(y/ies), median size " +
+          $"{(sizes.Count == 0 ? 0 : sizes.OrderBy(n => n).ElementAt(sizes.Count / 2))}, " +
+          $"largest {(sizes.Count == 0 ? 0 : sizes.Max())}");
+
+        // The worked example, which only this skin has in this shape: four events
+        // called release1..release4, one sound each, held together by a mixer.
+        if (skinId == "1029304")
+        {
+            var release = sounds.Rows
+                .Where(r => r.EventName is not null &&
+                            r.EventName.StartsWith("sfx_1029304_left_release",
+                                                   StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            Check("the four release events are found", release.Count == 4, $"{release.Count}");
+            Check("they are one family in the data",
+                  release.Select(r => r.Applied.FamilyId).Distinct().Count() == 1,
+                  string.Join(", ", release.Select(r => r.Family).Distinct()));
+            Check("...and that family holds only them",
+                  release.All(r => r.FamilyMembers.Count == release.Count),
+                  $"{release.FirstOrDefault()?.FamilyMembers.Count} members");
+            Check("the column names the set", release.All(r => r.GroupLabel.StartsWith('F')),
+                  release.FirstOrDefault()?.GroupLabel);
+            foreach (var m in release[0].FamilyMembers) W("      " + m);
+
+            // If neighbouring sets fell into the same family the grouping would be
+            // worthless, because everything would be one family.
+            var neighbours = sounds.Rows.Where(r =>
+                r.EventName is not null &&
+                r.EventName.Contains("_left_release", StringComparison.OrdinalIgnoreCase) &&
+                !release.Contains(r)).ToList();
+            Check("neighbouring sets are different families",
+                  neighbours.Count > 0 &&
+                  neighbours.All(r => r.Applied.FamilyId != release[0].Applied.FamilyId),
+                  $"{neighbours.Select(r => r.Family).Distinct().Count()} other famil(y/ies)");
+        }
+
+        // The order really is absent from the bank: Wwise states one with a sequence
+        // container, and this game uses none.
+        var sequences = sounds.Rows.Count(r => r.Applied?.Alternative?.Mode == "sequence");
+        W($"    {sequences} sound(s) sit in a sequence container (which WOULD state an order)");
+        Check("nothing claims an order the .bnk does not state",
+              sounds.Rows.All(r => !r.GroupDetail.Contains("plays first") ||
+                                    r.GroupDetail.Contains("says nothing about")));
 
         // ---- test numbers ---------------------------------------------------
         W("");

@@ -98,6 +98,11 @@ mods, and the screen shows that job's tools.
     82 sounds across two characters are in that state, mostly foley; −96 dB is Wwise's
     floor and pulling a level to it is how a layer is switched off without being
     deleted. Replacing the audio there changes nothing anybody will hear.
+  - **Group**, second form — `F27 of 4`: sounds with no alternatives of their own but
+    mixed together under one actor-mixer, which is how a set like `left_release1` …
+    `left_release4` is knowable as a set without reading the names. It is a mixing
+    group and **not** an order: Wwise states an order with a sequence container, and
+    this game uses none, so which one plays first is the game's own logic.
   - **Group** (its own column) — `V85 6/6 29%`: which set of alternatives the sound
     belongs to, which one it is, and how often it is picked. Sort by it and a group
     gathers; hover to see every member and its share. The shares are the container's

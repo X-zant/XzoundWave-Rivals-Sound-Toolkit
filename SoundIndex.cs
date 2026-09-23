@@ -71,31 +71,67 @@ public sealed class SoundRow
     /// </summary>
     public int VariantGroupNumber { get; set; }
 
-    public long GroupSort => VariantGroupNumber == 0
-        ? long.MaxValue
-        : (long)VariantGroupNumber * 100_000 + (Applied?.Alternative?.Index ?? 0);
+    /// <summary>
+    /// Variation groups first, then families, then everything else -- each in its own
+    /// number order, so sorting gathers a set rather than scattering it alphabetically.
+    /// </summary>
+    public long GroupSort =>
+        VariantGroupNumber > 0 ? (long)VariantGroupNumber * 100_000 + (Applied?.Alternative?.Index ?? 0)
+        : FamilyMembers.Count > 1 ? 1_000_000_000L + (long)FamilyNumber * 100_000
+        : long.MaxValue;
 
     /// <summary>The other alternatives, so the group can be read off one row.</summary>
     public List<string> Siblings { get; set; } = [];
 
-    public string GroupLabel => Applied?.Alternative is not { Count: > 1 } v ? ""
-        : $"{VariantGroup}  {v.Index + 1}/{v.Count}" +
-          (v.Share.Length == 0 ? "" : $"  {v.Share}");
+    /// <summary>
+    /// A short name for the set of related sounds this one is mixed with, unique
+    /// within the skin. Sounds whose events are called release1..release4 share one,
+    /// which is how the grouping is knowable without reading the names.
+    /// </summary>
+    public string Family { get; set; } = "";
+    public int FamilyNumber { get; set; }
+    public List<string> FamilyMembers { get; set; } = [];
+
+    /// <summary>
+    /// The alternatives inside one container when there are any, and otherwise the
+    /// family. Both answer "what does this belong with"; only the first carries odds.
+    /// </summary>
+    public string GroupLabel => Applied?.Alternative is { Count: > 1 } v
+        ? $"{VariantGroup}  {v.Index + 1}/{v.Count}" +
+          (v.Share.Length == 0 ? "" : $"  {v.Share}")
+        : FamilyMembers.Count > 1 ? $"{Family}  of {FamilyMembers.Count}" : "";
 
     public string GroupDetail
     {
         get
         {
-            if (Applied?.Alternative is not { Count: > 1 } v) return "";
-            var lines = new List<string>
+            var lines = new List<string>();
+
+            if (Applied?.Alternative is { Count: > 1 } v)
             {
-                $"{VariantGroup}: {v.Count} alternatives, picked at {v.Mode}.",
-                v.FromWeights
+                lines.Add($"{VariantGroup}: {v.Count} alternatives, picked at {v.Mode}.");
+                lines.Add(v.FromWeights
                     ? "The shares are the container's own weights, read from the .bnk."
-                    : "This container states no weights, so the split is assumed even.",
-                "",
-            };
-            lines.AddRange(Siblings);
+                    : "This container states no weights, so the split is assumed even.");
+                lines.Add("");
+                lines.AddRange(Siblings);
+            }
+
+            if (FamilyMembers.Count > 1)
+            {
+                if (lines.Count > 0) lines.Add("");
+                lines.Add($"{Family}: mixed together with {FamilyMembers.Count - 1} other " +
+                          "sound(s), which is how they are known to belong together without " +
+                          "reading their names.");
+                // The question this answers most often, and the answer is no.
+                lines.Add("It is a mixing group, not an order. The .bnk says nothing about " +
+                          "which of them plays first — that is the game's own logic.");
+                lines.Add("");
+                lines.AddRange(FamilyMembers.Take(12));
+                if (FamilyMembers.Count > 12)
+                    lines.Add($"  …and {FamilyMembers.Count - 12} more");
+            }
+
             return string.Join(Environment.NewLine, lines);
         }
     }
@@ -322,6 +358,29 @@ public static class SoundIndex
                 names[v.GroupId] = name = "V" + (names.Count + 1);
             row.VariantGroup = name;
             row.VariantGroupNumber = int.Parse(name[1..]);
+        }
+
+        // The same idea one level up: sounds sharing a mixer are a set.
+        var families = new Dictionary<uint, string>();
+        foreach (var row in rows)
+        {
+            var id = row.Applied?.FamilyId ?? 0;
+            if (id == 0) continue;
+            if (!families.TryGetValue(id, out var name))
+                families[id] = name = "F" + (families.Count + 1);
+            row.Family = name;
+            row.FamilyNumber = int.Parse(name[1..]);
+        }
+        foreach (var family in rows.Where(r => r.Family.Length > 0)
+                                   .GroupBy(r => r.Applied.FamilyId))
+        {
+            var members = family.ToList();
+            if (members.Count <= 1) continue;
+            foreach (var row in members)
+                row.FamilyMembers = members
+                    .Select(m => (m == row ? "> " : "  ") +
+                                 (m.EventName ?? $"media {m.MediaId}"))
+                    .ToList();
         }
 
         foreach (var group in rows.Where(r => r.VariantGroup.Length > 0)
