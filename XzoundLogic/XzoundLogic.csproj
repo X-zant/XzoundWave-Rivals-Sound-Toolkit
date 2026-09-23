@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything that is not a window.
+
+       The split is not cosmetic: this assembly targets net10.0 rather than
+       net10.0-windows, so the compiler is what enforces the rule. A System.Windows
+       using in here does not build, which is a stronger guarantee than a convention
+       about which folder a file lives in.
+
+       The namespace stays MRAudioKit on both sides of the split, so moving a file
+       across the boundary changes nothing about how it is referenced. -->
+
+  <PropertyGroup>
+    <!-- Two targets on purpose. net10.0 is the real one and the one Linux uses; the
+         windows target exists only so the Windows build can keep NAudio's WaveOut and
+         Media Foundation, which are packaged for windows TFMs alone. Code that needs
+         either sits behind #if WINDOWS, so the portable target cannot accidentally
+         grow a dependency on them. Both disappear once PortAudio and vgmstream take
+         over playback and decoding. -->
+    <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>XzoundLogic</AssemblyName>
+    <RootNamespace>MRAudioKit</RootNamespace>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <DebugType>embedded</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <Version>1.0.0</Version>
+    <Product>XzoundWave</Product>
+    <Authors>Nikolas Becic</Authors>
+    <Company>Nikolas Becic</Company>
+    <Copyright>Copyright (c) 2026 Nikolas Becic</Copyright>
+    <Description>XzoundWave's engine: paks, soundbanks, building and the headless verbs.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CUE4Parse" Version="1.2.2.202609" />
+    <PackageReference Include="NVorbis" Version="0.10.5" />
+    <!-- Pulled in transitively by CUE4Parse at 9.0.0, which carries a high-severity
+         advisory (GHSA-73j8-2gch-69rq). Pinned forward here; drop this line once
+         CUE4Parse itself moves past it. -->
+    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XzoundCore\XzoundCore.csproj" />
+  </ItemGroup>
+
+  <!-- The sample-provider layer NAudio calls Core is netstandard and portable; the
+       output devices and the Media Foundation readers are not, and are only packaged
+       for a windows TFM. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <PackageReference Include="NAudio" Version="3.0.1" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net10.0-windows'">
+    <PackageReference Include="NAudio.Core" Version="3.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- These live with the code that reads them: Bundled and the licences verb both
+         resolve resources through typeof(X).Assembly, so a resource has to be in the
+         same assembly as its reader. The paths point back up at the repo root because
+         the files themselves are the repo's, not this project's. -->
+    <EmbeddedResource Include="..\LICENSE" LogicalName="XzoundWave.LICENSE" />
+    <EmbeddedResource Include="..\THIRD-PARTY-NOTICES.md" LogicalName="XzoundWave.THIRD-PARTY-NOTICES.md" />
+    <!-- vgmstream-cli and the codec DLLs it loads, unpacked to app data on first use.
+         Trimmed from the official win64 zip: the Winamp and XMPlay plugins are 4.3 MB
+         the CLI does not need. A Linux payload joins this per RID. -->
+    <EmbeddedResource Include="..\vendor\vgmstream-cli-win64.zip" LogicalName="XzoundWave.vgmstream.zip" />
+  </ItemGroup>
+
+</Project>

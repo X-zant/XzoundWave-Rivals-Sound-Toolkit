@@ -64,7 +64,7 @@ public static class AudioDecode
     private static string Describe(string ext, Exception ex) => ext switch
     {
         ".m4a" or ".aac" or ".wma" or ".mp3" or ".flac" =>
-            $"Windows could not decode this {ext.TrimStart('.')} ({ex.Message}). " +
+            $"could not decode this {ext.TrimStart('.')} ({ex.Message}). " +
             "Converting it to wav first will work.",
         ".ogg" => $"not readable as Ogg Vorbis ({ex.Message})",
         _ => ex.Message,
@@ -87,10 +87,25 @@ public static class AudioDecode
         catch { return FromMediaFoundation(path); }
     }
 
+    /// <summary>
+    /// Everything that is not wav or ogg. Media Foundation is Windows' own decoder and
+    /// is packaged only for a windows target framework, so the portable build says what
+    /// it cannot do rather than failing with a missing-type error at the call site.
+    ///
+    /// Both sides of this are temporary: vgmstream is already bundled and already
+    /// carries the ffmpeg codec libraries, so it becomes the one decoder for both
+    /// platforms and this method loses its condition.
+    /// </summary>
     private static WwiseWem.WavData FromMediaFoundation(string path)
     {
+#if WINDOWS
         using var r = new MediaFoundationReader(path);
         return Read(r);
+#else
+        throw new InvalidDataException(
+            $"this build cannot decode {Path.GetExtension(path)} yet — convert it to " +
+            "wav or ogg first.");
+#endif
     }
 
     private static WwiseWem.WavData FromVorbis(string path)

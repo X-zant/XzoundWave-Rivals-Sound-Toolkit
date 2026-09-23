@@ -51,29 +51,22 @@
 
   <ItemGroup>
     <!-- The encoder is its own assembly so other tools can use it without taking
-         a dependency on this app. -->
+         a dependency on this app. XzoundLogic is everything else that is not a
+         window; this project is now only the WPF head. -->
     <ProjectReference Include="XzoundCore\XzoundCore.csproj" />
+    <ProjectReference Include="XzoundLogic\XzoundLogic.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Embedded rather than copied beside the exe: the release IS one file, and a
-         licence notice cannot travel with a distribution it is not inside. Both are
-         readable via the licences verb and written out beside the unpacked vgmstream. -->
-    <EmbeddedResource Include="LICENSE" LogicalName="XzoundWave.LICENSE" />
-    <EmbeddedResource Include="THIRD-PARTY-NOTICES.md" LogicalName="XzoundWave.THIRD-PARTY-NOTICES.md" />
-    <!-- vgmstream-cli and the codec DLLs it loads, unpacked to app data on first use.
-         Trimmed from the official win64 zip: the Winamp and XMPlay plugins are 4.3 MB
-         the CLI does not need. -->
-    <EmbeddedResource Include="vendor/vgmstream-cli-win64.zip" LogicalName="XzoundWave.vgmstream.zip" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- The library lives in a subfolder, and this project's default glob would
-         otherwise compile its sources (and its obj/) a second time, into this
+    <!-- The libraries live in subfolders, and this project's default glob would
+         otherwise compile their sources (and their obj/) a second time, into this
          assembly as well. -->
     <Compile Remove="XzoundCore\**" />
     <EmbeddedResource Remove="XzoundCore\**" />
     <None Remove="XzoundCore\**" />
+    <Compile Remove="XzoundLogic\**" />
+    <EmbeddedResource Remove="XzoundLogic\**" />
+    <None Remove="XzoundLogic\**" />
   </ItemGroup>
 
 </Project>

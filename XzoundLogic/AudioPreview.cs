@@ -11,17 +11,12 @@ namespace MRAudioKit;
 public sealed class AudioPreview : IDisposable
 {
     /// <summary>
-    /// Playback goes through NAudio rather than WPF's MediaPlayer.
-    ///
-    /// MediaPlayer is a front end for Windows Media Player, so on an edition without
-    /// Media Features -- an N build, or one where they have been turned off -- it opens
-    /// the file, reports nothing, and plays silence. That is indistinguishable from a
-    /// broken decoder, and it is what a tester hit on a machine where every other check
-    /// came back clean. NAudio talks to WASAPI and needs none of it.
+    /// Where the samples go. The decode and everything the .bnk applies on top of it
+    /// are portable; only this last step belongs to a platform, so it is the one thing
+    /// behind an interface.
     /// </summary>
-    private WaveOut _out;
+    private IAudioOutput _out;
     private WaveFileReader _reader;
-    private bool _stoppedOnPurpose;
 
     /// <summary>Raised when a clip finishes on its own, which is what lets one
     /// sound lead into the next without polling or guessing at durations.</summary>
@@ -279,17 +274,10 @@ public sealed class AudioPreview : IDisposable
         try
         {
             _reader = new WaveFileReader(wavPath);
-            _out = new WaveOut();
-            _out.PlaybackStopped += (_, e) =>
-            {
-                if (e.Exception is not null) PlaybackFailed?.Invoke(e.Exception.Message);
-                // Stopping on purpose is not the end of a clip, and must not advance
-                // an autoplay run to the next one.
-                if (!_stoppedOnPurpose) Finished?.Invoke();
-            };
-            _out.Init(InGameChain.Build(_reader, applied, out described));
-            _stoppedOnPurpose = false;
-            _out.Play();
+            _out = AudioOut.Create();
+            _out.Failed += msg => PlaybackFailed?.Invoke(msg);
+            _out.Finished += () => Finished?.Invoke();
+            _out.Play(InGameChain.Build(_reader, applied, out described));
         }
         catch (Exception ex)
         {
@@ -302,20 +290,18 @@ public sealed class AudioPreview : IDisposable
 
     /// <summary>
     /// Whether sound is coming out right now. Polling this is how a headless check can
-    /// watch a clip through: PlaybackStopped is posted to the synchronization context
-    /// that created the player, so a caller blocking that thread never sees the event.
+    /// watch a clip through: the finished event is posted to the synchronization
+    /// context that created the player, so a caller blocking that thread never sees it.
     /// </summary>
-    public bool IsPlaying => _out?.PlaybackState == PlaybackState.Playing;
+    public bool IsPlaying => _out?.IsPlaying == true;
 
     public void Stop()
     {
-        _stoppedOnPurpose = true;
         try { _out?.Stop(); } catch { }
     }
 
     private void Release()
     {
-        _stoppedOnPurpose = true;
         try { _out?.Stop(); } catch { }
         try { _out?.Dispose(); } catch { }
         try { _reader?.Dispose(); } catch { }
@@ -329,23 +315,13 @@ public sealed class AudioPreview : IDisposable
     /// </summary>
     public static string OutputProblem()
     {
-        try
-        {
-            return WaveOut.DeviceCount > 0
-                ? null
-                : "Windows reports no audio output device.";
-        }
+        try { using var probe = AudioOut.Create(); return probe.Problem(); }
         catch (Exception ex) { return "could not query audio output: " + ex.Message; }
     }
 
     public static string OutputSummary()
     {
-        try
-        {
-            var n = WaveOut.DeviceCount;
-            if (n == 0) return "none";
-            return $"{n} device(s), default: {WaveOut.GetCapabilities(0).ProductName}";
-        }
+        try { using var probe = AudioOut.Create(); return probe.Summary(); }
         catch (Exception ex) { return "unknown — " + ex.Message; }
     }
 
