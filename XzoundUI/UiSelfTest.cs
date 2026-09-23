@@ -62,11 +62,21 @@ public static class UiSelfTest
               names.SequenceEqual(new[] { "Browse", "Test", "Build", "Mods", "Setup" }),
               string.Join(", ", names));
 
-        var headers = grid.Columns.Select(c => c.Header?.ToString()).ToList();
-        Check("the list has the seven columns the mockup settled on",
-              headers.SequenceEqual(new[]
-              { "Mod", ".bnk", "Event", "Media ID", "Category", "Subtitle / line", "Tags" }),
-              string.Join(" | ", headers));
+        // What the list OFFERS, which is fixed, rather than what is visible, which is
+        // a preference read from this machine's settings. Asserting the visible set
+        // made this test pass or fail depending on which columns whoever ran it had
+        // switched off, which is a test of the tester.
+        var offered = grid.Columns.Select(c => c.Header?.ToString()).ToList();
+        Check("the list offers the mockup's seven columns, plus Len for measured durations",
+              offered.SequenceEqual(new[]
+              { "Mod", ".bnk", "Event", "Media ID", "Category", "Subtitle / line", "Tags", "Len" }),
+              string.Join(" | ", offered));
+
+        var hidden = offered.Where(h =>
+            !grid.Columns.First(c => c.Header?.ToString() == h).IsVisible).ToList();
+        W($"    hidden on this machine: {(hidden.Count == 0 ? "none" : string.Join(", ", hidden))}");
+        Check("nothing is hidden that the list does not offer",
+              hidden.All(offered.Contains));
 
         Check("the tree lets you pick more than one .bnk",
               tree.SelectionMode.HasFlag(Avalonia.Controls.SelectionMode.Multiple),

@@ -74,12 +74,23 @@ public partial class MainWindow
         var stems = taken.Select(t => t.Stem).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var live = Mods.All.Where(e => stems.Contains(e.Stem)).ToList();
 
+        // Selecting nothing would empty the list under a line claiming a load, so the
+        // last file's selection stands if for any reason these have no node.
         var nodes = ModNodesFor(stems);
-        await ModWarmAsync(nodes);
-        ModSelect(nodes);
+        if (nodes.Count > 0)
+        {
+            await ModWarmAsync(nodes);
+            ModSelect(nodes);
+        }
+
+        // Same distinction the single-file line makes: a mod whose banks the game has
+        // no counterpart for cannot be diffed at all, and "0 changed" would read there
+        // as "these mods do nothing".
+        var compared = live.Any(e => e.Sounds.Rows.Any(r => r.ModTag is not null));
 
         Say($"loaded {live.Count} .bnk from {files.Count} file(s) — " +
-            $"{live.Sum(e => e.Changed):N0} sound(s) changed from the shipped .bnk files" +
+            (compared ? $"{live.Sum(e => e.Changed):N0} sound(s) changed from the shipped .bnk files"
+                      : "no shipped .bnk to compare against") +
             (displaced.Count > 0
                 ? "  —  replaced " + string.Join(", ", displaced.Select(d => $"{d.BankName} from {d.SourceName}"))
                 : "") +
@@ -318,10 +329,19 @@ public partial class MainWindow
     /// up to its skin and its character, so a collapsed hero still says how much is in
     /// there.
     /// </summary>
-    private void ModMarkTree(bool expand) =>
+    private void ModMarkTree(bool expand)
+    {
+        // Clear first. PretendModded only WRITES the counts it is handed: a .bnk whose
+        // stem is not in the dictionary is skipped, not zeroed. So a closed mod would
+        // leave its fill and its number on the .bnk row while the skin and character
+        // above it — which are recomputed from the sum — correctly went back to
+        // nothing, and the tree would disagree with itself.
+        foreach (var node in ModTreeNodes()) node.Changed = 0;
+
         PretendModded(
             Mods.All.ToDictionary(e => e.Stem, e => e.Changed, StringComparer.OrdinalIgnoreCase),
             expand);
+    }
 
     /// <summary>
     /// A home in the tree for loaded .bnk files the game does not ship.
@@ -505,7 +525,10 @@ public partial class MainWindow
         if (folder is null) return;
 
         var dest = Path.Combine(folder, Path.GetFileName(source));
-        if (string.Equals(dest, source, StringComparison.OrdinalIgnoreCase))
+        // Compare what the file system would resolve, not the two strings two different
+        // pickers happened to hand back for the same place.
+        if (string.Equals(Path.GetFullPath(dest), Path.GetFullPath(source),
+                          StringComparison.OrdinalIgnoreCase))
         {
             // Writing over the input would leave nothing to fall back on when the
             // conversion is not what the author wanted.

@@ -48,7 +48,7 @@ public partial class MainWindow
         // the one moment this file gets control, so it is where the two are brought
         // back in line -- otherwise a folder staged by filename builds fine while the
         // list says "0 staged" and shows nothing green.
-        if (MarkStagedRows() > 0) Redraw();
+        if (MarkStagedRows() > 0) BuildRedraw();
 
         return
         [
@@ -168,7 +168,7 @@ public partial class MainWindow
 
         Reorder();
         MarkStagedRows();
-        Redraw();
+        BuildRedraw();
         Say($"{name} staged for {ids.Count} sound(s) -- encoded once, {data.bytes.Length:N0} B. " +
             $"{_pending.Count} staged in total. {StagedScope()}");
     }
@@ -219,7 +219,7 @@ public partial class MainWindow
 
         Reorder();
         MarkStagedRows();
-        Redraw();
+        BuildRedraw();
 
         var mismatched = _pending.Count(p => p.FormatTag != 0xFFFF);
         var convertedNow = results.Count(r => !string.IsNullOrEmpty(r.item?.Converted));
@@ -252,11 +252,49 @@ public partial class MainWindow
     /// Tint the rows that have audio waiting on them. The list reads ReplacementPath
     /// when it draws a row, so this is what makes staging visible at all.
     /// </summary>
-    private void MarkStagedRows()
+    /// <returns>
+    /// How many rows changed. A row is only re-drawn as it is realised, so a redraw is
+    /// the only way to see this -- and a redraw costs the selection, which is worth
+    /// nothing when there was nothing to show.
+    /// </returns>
+    private int MarkStagedRows()
     {
-        if (Sounds is null) return;
+        if (Sounds is null) return 0;
         var byId = _pending.ToDictionary(p => p.MediaId, p => p.FullPath);
-        foreach (var r in Sounds.Rows) r.ReplacementPath = byId.GetValueOrDefault(r.MediaId);
+        var changed = 0;
+        foreach (var r in Sounds.Rows)
+        {
+            var want = byId.GetValueOrDefault(r.MediaId);
+            if (want == r.ReplacementPath) continue;
+            r.ReplacementPath = want;
+            changed++;
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// Redraw the list without throwing the selection away.
+    ///
+    /// A row's fill is set as the row is realised, so the only way to re-colour one is
+    /// to hand the grid its items again -- which clears what was selected. WPF's
+    /// Items.Refresh kept it, and losing it here would mean re-picking fifty rows
+    /// between one volume change and the next.
+    /// </summary>
+    private void BuildRedraw()
+    {
+        var keep = SelectedRows;
+        Refresh();
+        if (keep.Count == 0 || Grid_.SelectedItems is not { } back) return;
+
+        // The grid throws ArgumentException for a row the new list does not hold, and a
+        // redraw must never be what fails the thing it was called to show. Losing the
+        // selection is what happened before this method existed, so it is the right
+        // thing to fall back to.
+        try
+        {
+            foreach (var r in keep) back.Add(r);
+        }
+        catch (ArgumentException) { }
     }
 
     /// <summary>
@@ -282,21 +320,48 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Unstage everything.
+    /// Unstage: everything, or just the sounds picked in the list.
     ///
     /// The old button was wired to the drop pane's "Clear all" and wiped every staged
     /// file while sitting next to "Set replacement…", which reads as "clear this row".
     /// Hence the name, and hence asking first once there is more than one file's work
     /// in there to lose.
+    ///
+    /// The old window could also drop ONE staged file, from the pending grid beside the
+    /// drop pane. That grid is not ported and the ability went with it, which left
+    /// staging onto the wrong row undoable except by clearing the lot. So when the
+    /// selection holds staged sounds the question carries both scopes: the row is where
+    /// a mis-stage is visible, and it is the natural place to take one back.
     /// </summary>
     private async Task ClearStagedAsync()
     {
         if (_pending.Count == 0) { Say("nothing is staged."); return; }
-        if (_pending.Count > 1 &&
-            !await Ask("Clear staged audio",
-                       $"{_pending.Count} files are staged. Unstage all of them?\n\n" +
-                       "The files on disk are untouched; only the assignments go.",
-                       "Unstage all", "Keep them"))
+
+        var picked = SelectedRows.Select(r => r.MediaId).ToHashSet();
+        var pickedStaged = _pending.Count(p => picked.Contains(p.MediaId));
+
+        if (pickedStaged > 0 && pickedStaged < _pending.Count)
+        {
+            var answer = await AskScope("Clear staged audio",
+                $"{_pending.Count} files are staged; {pickedStaged} of them are on the " +
+                "sounds you have selected." + Environment.NewLine + Environment.NewLine +
+                "The files on disk are untouched either way; only the assignments go.",
+                "Unstage all", $"Unstage the {pickedStaged} selected");
+            if (answer < 0) { Say("kept."); return; }
+            if (answer == 1)
+            {
+                _pending.RemoveAll(p => picked.Contains(p.MediaId));
+                MarkStagedRows();
+                BuildRedraw();
+                Say($"{pickedStaged} replacement(s) cleared -- {_pending.Count} still staged. {StagedScope()}");
+                return;
+            }
+        }
+        else if (_pending.Count > 1 &&
+                 !await Ask("Clear staged audio",
+                            $"{_pending.Count} files are staged. Unstage all of them?\n\n" +
+                            "The files on disk are untouched; only the assignments go.",
+                            "Unstage all", "Keep them"))
         {
             Say("kept.");
             return;
@@ -305,7 +370,7 @@ public partial class MainWindow
         var n = _pending.Count;
         _pending.Clear();
         MarkStagedRows();
-        Refresh();
+        BuildRedraw();
         Say($"{n} replacement(s) cleared.");
     }
 
@@ -382,17 +447,24 @@ public partial class MainWindow
 
         if (outside.Count > 0)
         {
-            var shared = _pending.Select(p => p.MediaId)
-                .Where(id => Session.BanksForMedia(id).Count > 1)
-                .Select(id => $"  {id} in {Session.BanksForMedia(id).Count} .bnk files")
+            // Muted ids belong in this list as much as staged ones: a mute reaches every
+            // bank the media sits in, and a build with nothing staged at all can be the
+            // one that asks this question. Listing only the staged ids left the dialog
+            // naming a number and then showing nothing under it.
+            var shared = _pending.Select(p => p.MediaId).Concat(mutedIds).Distinct()
+                .Select(id => (Id: id, In: Session.BanksForMedia(id).Count))
+                .Where(x => x.In > 1)
+                .OrderByDescending(x => x.In)
+                .Select(x => $"  {x.Id} in {x.In} .bnk files")
                 .Take(10).ToList();
 
+            var inside = bankPaths.Count - outside.Count;
             var answer = await AskScope("This media is shared",
-                $"{outside.Count} .bnk(s) outside {skin.SkinId} also embed the media you staged:" +
+                $"{outside.Count} .bnk(s) outside {skin.SkinId} also embed the media you are changing:" +
                 Environment.NewLine + Environment.NewLine +
                 string.Join(Environment.NewLine, shared) + Environment.NewLine + Environment.NewLine +
                 "Rebuild all of them and the sound changes everywhere it is used." + Environment.NewLine +
-                $"Keep to this skin and its {skinBanks.Count} .bnk(s) change, while the other " +
+                $"Keep to this skin and only its {inside} .bnk(s) change, while the other " +
                 $"{outside.Count} keep the game's audio.",
                 "Rebuild all", "This skin only");
 
@@ -406,6 +478,10 @@ public partial class MainWindow
         // Prefetch mode is off: the whole clip goes into the bank, which is what the
         // community ships and what is known to work in game. The old window exposed the
         // other mode as a checkbox; nothing in this toolbar sets it yet.
+        //
+        // Both lists can name the same media, and the builder resolves it one way: a
+        // staged file wins over a mute, because staging audio onto a sound you silenced
+        // earlier is plainly a change of mind. Nothing here has to sort them out first.
         var staged = _pending.ToList();
         var built = await Working($"building {bankPaths.Count} .bnk(s)", () =>
             ModBuilder.Build(Session, skin, staged, outRoot, bankPaths,
@@ -474,12 +550,19 @@ public partial class MainWindow
 
     /// <summary>
     /// A mod names a .bnk but not where the game keeps it, and the output has to mirror
-    /// the game's layout. Built once, on first use.
+    /// the game's layout. Built once per mount.
+    ///
+    /// Per MOUNT, not once: the old window threw this map away whenever it filled the
+    /// tree again, and it was right to. Mounting is what sets both the paks folder and
+    /// the language, so a map kept across one would put a rebuilt bank at a path from
+    /// the previous game -- or under the previous language, which is the same bank name
+    /// in a different folder and so fails silently rather than loudly.
     /// </summary>
     private string BuildGamePathForStem(string stem)
     {
-        if (_buildBankPathByStem is null)
+        if (_buildBankPathByStem is null || !ReferenceEquals(_buildBankPathFrom, Session.Provider))
         {
+            _buildBankPathFrom = Session.Provider;
             _buildBankPathByStem = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var path in Session.Provider.Files.Keys)
             {
@@ -506,13 +589,14 @@ public partial class MainWindow
         if (rows.Count == 0) { Say("select one or more sounds first."); return; }
 
         var (applied, gain) = await AskMultiplier("Set volume",
-            $"Multiplier for {rows.Count} selected sound(s):", rows[0].Volume ?? _bulkVolume);
+            $"Multiplier for {rows.Count} selected sound(s):", rows[0].Volume ?? _bulkVolume,
+            $"Empty gives the level back: the sound follows the bulk level ({_bulkVolume:0.0##}x) again.");
         if (!applied) return;
 
         // An empty box is how a hand-set level is given back: the sound follows the bulk
         // level again, which is what the old window's separate "clear" did.
         foreach (var r in rows) { r.Volume = gain; r.VolumeByHand = gain is not null; }
-        Refresh();
+        BuildRedraw();
         Say(gain is null
             ? $"{rows.Count} sound(s) back to following the bulk level ({_bulkVolume:0.0##}x)."
             : $"{rows.Count} sound(s) set to {gain:0.0##}x by hand -- a bulk change will now skip them.");
@@ -526,10 +610,14 @@ public partial class MainWindow
     {
         if (Sounds is null || Sounds.Rows.Count == 0) { Say("open a skin or a .bnk first."); return; }
 
+        // Every sound in the open skin, not just the ones the filter is showing: this is
+        // the level the whole mod is built at, and a filter is about what is on screen.
         var byHand = Sounds.Rows.Count(r => r.VolumeByHand);
         var (applied, gain) = await AskMultiplier("Change all volumes",
-            $"Multiplier for every sound{(byHand > 0 ? $", except the {byHand} set by hand" : "")}:",
-            _bulkVolume);
+            $"Multiplier for all {Sounds.Rows.Count:N0} sounds in the open skin" +
+            $"{(byHand > 0 ? $", except the {byHand} set by hand" : "")}:",
+            _bulkVolume,
+            "Empty is the same as 1.0: everything back to the game's own level.");
         if (!applied) return;
 
         _bulkVolume = gain ?? 1.0;
@@ -541,7 +629,7 @@ public partial class MainWindow
             r.Volume = Math.Abs(_bulkVolume - 1.0) < 0.001 ? null : _bulkVolume;
             moved++;
         }
-        Refresh();
+        BuildRedraw();
         Say($"{moved} sound(s) now at {_bulkVolume:0.0##}x" +
             (byHand > 0 ? $"; {byHand} hand-set left alone" : "") + ".");
     }
@@ -635,7 +723,14 @@ public partial class MainWindow
     /// "follow the bulk level" -- can be told apart from a cancel. Both would otherwise
     /// be a null gain.
     /// </returns>
-    private async Task<(bool Applied, double? Gain)> AskMultiplier(string title, string message, double start)
+    /// <param name="emptyMeans">
+    /// What leaving the box empty does HERE. It is not the same sentence in both
+    /// dialogs -- on a selection it hands the level back to the bulk setting, and in
+    /// the bulk dialog itself that reading is circular -- and a hint that is wrong
+    /// about the one control it describes is worse than none.
+    /// </param>
+    private async Task<(bool Applied, double? Gain)> AskMultiplier(string title, string message,
+                                                                  double start, string emptyMeans)
     {
         var box = new TextBox
         {
@@ -645,8 +740,7 @@ public partial class MainWindow
         var hint = new TextBlock
         {
             Text = $"1.0 leaves it alone. Range {VolumeTool.MinGain:0.0##}-{VolumeTool.MaxGain:0.0#}. " +
-                   "Above 1.0 can clip, and the build says how much. " +
-                   $"Empty means follow the bulk level ({_bulkVolume:0.0##}x).",
+                   "Above 1.0 can clip, and the build says how much. " + emptyMeans,
             Foreground = Palette.Muted,
             TextWrapping = Avalonia.Media.TextWrapping.Wrap,
             MaxWidth = 420,

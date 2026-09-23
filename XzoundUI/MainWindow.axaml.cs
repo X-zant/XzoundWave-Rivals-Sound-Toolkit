@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using Avalonia.Input.Platform;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
@@ -50,6 +51,15 @@ public partial class MainWindow : Window
                 : null;
         };
         TbFilter.TextChanged += (_, _) => ApplyFilter();
+
+        // Double-click is how people expect to hear a row. The context menu carries
+        // the comparison: a staged file wins the ordinary play, so hearing what the
+        // game shipped needs its own way in.
+        Grid_.DoubleTapped += (_, _) =>
+        {
+            if (CurrentRow is not null) PlayRow(CurrentRow, original: false);
+        };
+        Grid_.ContextFlyout = RowMenu();
         BtnColumns.Click += (_, _) => ShowColumnMenu();
         BtnSettings.Click += (_, _) => _ = ShowSettings();
         ApplyColumnVisibility();
@@ -174,6 +184,12 @@ public partial class MainWindow : Window
             Width = new DataGridLength(1, DataGridLengthUnitType.Star),
         });
         Add("Tags", nameof(SoundRow.TagLabel), 120);
+
+        // Hidden on a first run, like .bnk: an unmeasured length is an empty column,
+        // and the mockup's seven are what the default view should be. But Measure
+        // durations has to have somewhere to put its answer, or the button reports
+        // into the status line and nowhere else.
+        Add("Len", nameof(SoundRow.Length), 60);
     }
 
     // ---- selection ----------------------------------------------------------
@@ -198,7 +214,7 @@ public partial class MainWindow : Window
                 _skinCache[skin.SkinId] =
                     await Task.Run(() => SoundIndex.Build(_session, skin, charId, _ => { }));
             }
-            Show();
+            ShowRows();
         }
         catch (Exception ex) { Say("could not read that: " + ex.Message); }
     }
@@ -213,7 +229,7 @@ public partial class MainWindow : Window
                 var charId = _picked.First(n => n.Skin?.SkinId == skin.SkinId).CharId ?? "";
                 _skinCache[skin.SkinId] = SoundIndex.Build(_session, skin, charId, _ => { });
             }
-            Show();
+            ShowRows();
         }
         catch (Exception ex) { Say("could not read that: " + ex.Message); }
     }
@@ -260,6 +276,45 @@ public partial class MainWindow : Window
             c.IsVisible = !_settings.HiddenColumns
                 .Contains(header, StringComparer.OrdinalIgnoreCase);
         }
+    }
+
+    /// <summary>
+    /// What applies to the rows you have picked. Short on purpose: the old one ran to
+    /// twenty items in six groups, most of which duplicated a toolbar button under a
+    /// different name. What is here is either about THIS row, or has no other home.
+    /// </summary>
+    private MenuFlyout RowMenu()
+    {
+        var menu = new MenuFlyout();
+
+        MenuItem Item(string header, Action run, string hint = null)
+        {
+            var item = new MenuItem { Header = header };
+            item.Click += (_, _) => run();
+            if (hint is not null) ToolTip.SetTip(item, hint);
+            menu.Items.Add(item);
+            return item;
+        }
+
+        Item("Play", () => { if (CurrentRow is not null) PlayRow(CurrentRow, original: false); });
+        Item("Play the game's original",
+             () => { if (CurrentRow is not null) PlayRow(CurrentRow, original: true); },
+             "Ignores a staged replacement and a loaded mod, so you can hear what the " +
+             "game shipped and compare.");
+        menu.Items.Add(new Separator());
+        Item("Copy media id(s)", () => _ = CopyIds());
+        return menu;
+    }
+
+    /// <summary>The ids, for pasting into a filename or a message to someone.</summary>
+    private async Task CopyIds()
+    {
+        var ids = SelectedRows.Select(r => r.MediaId.ToString()).ToList();
+        if (ids.Count == 0) { Say("select one or more sounds first."); return; }
+
+        if (Clipboard is null) { Say("no clipboard on this host."); return; }
+        await Clipboard.SetTextAsync(string.Join(Environment.NewLine, ids));
+        Say($"copied {ids.Count} media id(s).");
     }
 
     /// <summary>
@@ -340,7 +395,14 @@ public partial class MainWindow : Window
         Counts();
     }
 
-    private void Show()
+    /// <summary>
+    /// Put the merged rows on screen.
+    ///
+    /// Not called Show: a private Show() on a Window hides Window.Show(), so any call
+    /// inside this class meaning "open the window" would silently have got this
+    /// instead. It only stayed harmless because nothing inside called it.
+    /// </summary>
+    private void ShowRows()
     {
         _sounds = Merge();
         ApplyFilter();
