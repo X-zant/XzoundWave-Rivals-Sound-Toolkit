@@ -14,7 +14,11 @@ public static class Program
         // Render the window to a file instead of a screen. This is how the layout gets
         // looked at on a machine with no display, and how a test can assert about it.
         var shot = Array.FindIndex(args, a => a.Equals("--shot", StringComparison.OrdinalIgnoreCase));
-        if (shot >= 0) return Shot.Take(args.Length > shot + 1 ? args[shot + 1] : "window.png");
+        if (shot >= 0)
+            return Shot.Take(args.Length > shot + 1 ? args[shot + 1] : "window.png",
+                             withGame: args.Any(a => a.Equals("--with-game", StringComparison.OrdinalIgnoreCase)),
+                             skin: Array.FindIndex(args, a => a.Equals("--skin", StringComparison.OrdinalIgnoreCase)) is var k
+                                   && k >= 0 && k + 1 < args.Length ? args[k + 1] : "1029001");
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         return 0;

@@ -5,109 +5,95 @@
         MinWidth="1100" MinHeight="600"
         Background="{StaticResource Bg}">
 
-  <!-- The shape of the window, and why it is this shape.
+  <!-- The layout from the Multi-bnk Mod View mockup, which is the one that was
+       agreed: a tab strip, the active tab's toolbar under it, tree and list side by
+       side, a status line. Nothing else. -->
 
-       The old one had a TabControl across the top whose tabs were not pages: every
-       tab held a row of buttons, and the body underneath never changed. So the tabs
-       looked like places you could be and were really a ribbon, which is why "which
-       tab am I meant to be on" had no answer. Setup made it worse by being an actual
-       form wedged into a toolbar slot, so the strip changed height when you touched it.
+  <Window.Styles>
+    <!-- Tabs: text that underlines when it is the one you are on. A ListBox rather
+         than a TabControl because the tabs do not swap the body, only the toolbar. -->
+    <Style Selector="ListBox#Tabs">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="ItemsPanel">
+        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="2"/></ItemsPanelTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="ListBox#Tabs ListBoxItem">
+      <Setter Property="Padding" Value="13,5"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="CornerRadius" Value="0"/>
+    </Style>
+    <Style Selector="ListBox#Tabs ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+      <Setter Property="BorderThickness" Value="0,0,0,2"/>
+      <Setter Property="TextElement.Foreground" Value="{StaticResource Fg}"/>
+    </Style>
+    <Style Selector="ListBox#Tabs ListBoxItem:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
 
-       Here the rail on the left says what you are DOING, and the only thing it changes
-       is the panel on the right. The tree and the list never move, because they are
-       what you are looking at in every one of those jobs. -->
+    <!-- Toolbar buttons: flat, square, the app's own colours. -->
+    <Style Selector="Button.tool">
+      <Setter Property="Background" Value="{StaticResource Bg2}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="2"/>
+      <Setter Property="Padding" Value="10,4"/>
+      <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+    </Style>
+    <Style Selector="Button.tool.key">
+      <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+  </Window.Styles>
 
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
 
-    <!-- ==== project, filter, counts: always here, never a mode ==== -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="10,8,10,6">
-      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-        <TextBlock Text="Project" Foreground="{StaticResource Muted}" VerticalAlignment="Center"/>
-        <TextBlock x:Name="ProjectLabel" Text="Untitled" FontWeight="SemiBold"
-                   Foreground="{StaticResource Fg}" VerticalAlignment="Center"/>
-        <Button x:Name="BtnProjectNew"  Content="New"/>
-        <Button x:Name="BtnProjectOpen" Content="Open…"/>
-        <Button x:Name="BtnProjectSave" Content="Save"/>
-      </StackPanel>
-
-      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-        <TextBox x:Name="TbFilter" Width="220" Watermark="Filter…"/>
-        <Button x:Name="BtnColumns"  Content="Columns ▾"/>
-        <Button x:Name="BtnSettings" Content="Settings…"/>
-        <Border Width="1" Margin="4,2" Background="{StaticResource Line}"/>
-        <!-- The counts, each able to say that some of its kind are hidden. -->
-        <TextBlock x:Name="StatTotal"   Foreground="{StaticResource Muted}"     VerticalAlignment="Center" Background="Transparent"/>
-        <TextBlock x:Name="StatStaged"  Foreground="{StaticResource TagGreen}"  VerticalAlignment="Center" Background="Transparent"/>
-        <TextBlock x:Name="StatModded"  Foreground="{StaticResource TagPurple}" VerticalAlignment="Center" Background="Transparent"/>
-        <TextBlock x:Name="StatMuted"   Foreground="{StaticResource TagRed}"    VerticalAlignment="Center" Background="Transparent"/>
-      </StackPanel>
-    </Grid>
-
-    <!-- ==== rail | tree | list | panel ==== -->
-    <Grid Grid.Row="1" ColumnDefinitions="Auto,300,4,*,4,380" Margin="10,0,10,0">
-
-      <!-- What you are doing. Four jobs, in the order the tabs had them: you look
-           at sounds, you work out which is which, you build, and mods are the thing
-           you do to somebody else's work. Setup is not among them because it is
-           configuration, it has a home in Settings, and it had two homes before. -->
-      <ListBox x:Name="ModeRail" Grid.Column="0" Width="104"
-               Background="{StaticResource Bg2}" BorderBrush="{StaticResource Line}"
-               BorderThickness="1" SelectedIndex="0" Margin="0,0,8,0">
+    <Border Grid.Row="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1"
+            Padding="8,6,8,0">
+      <ListBox x:Name="Tabs" SelectedIndex="0">
         <ListBoxItem Content="Browse"/>
         <ListBoxItem Content="Test"/>
         <ListBoxItem Content="Build"/>
         <ListBoxItem Content="Mods"/>
+        <ListBoxItem Content="Setup"/>
       </ListBox>
+    </Border>
 
-      <Border Grid.Column="1" BorderBrush="{StaticResource Line}" BorderThickness="1"
-              Background="{StaticResource Bg2}">
-        <TreeView x:Name="Tree" Background="Transparent" BorderThickness="0"
-                  SelectionMode="Multiple"/>
-      </Border>
-
-      <GridSplitter Grid.Column="2" Background="{StaticResource Bg}" ResizeDirection="Columns"/>
-
-      <Border Grid.Column="3" BorderBrush="{StaticResource Line}" BorderThickness="1"
-              Background="{StaticResource Bg2}">
-        <DataGrid x:Name="Grid_" Background="Transparent"
-                  GridLinesVisibility="Horizontal" IsReadOnly="True"
-                  CanUserSortColumns="True" HeadersVisibility="Column"/>
-      </Border>
-
-      <GridSplitter Grid.Column="4" Background="{StaticResource Bg}" ResizeDirection="Columns"/>
-
-      <!-- The right-hand side is the only thing the rail changes, and it carries two
-           things stacked: what this mode does, and everything known about the row that
-           is selected. The details pane is what lets the list drop from fifteen
-           columns to seven  -  the rest was never gone, only hidden in tooltips. -->
-      <Grid Grid.Column="5" RowDefinitions="Auto,*">
-        <Border Grid.Row="0" BorderBrush="{StaticResource Line}" BorderThickness="1"
-                Background="{StaticResource Bg2}" Padding="10" Margin="0,0,0,6">
-          <StackPanel Spacing="6">
-            <TextBlock x:Name="ModeTitle" Text="Browse" FontWeight="SemiBold" FontSize="15"
-                       Foreground="{StaticResource Fg}"/>
-            <TextBlock x:Name="ModeHint" TextWrapping="Wrap"
-                       Foreground="{StaticResource Muted}"/>
-            <StackPanel x:Name="ModeBody" Spacing="6"/>
-          </StackPanel>
-        </Border>
-
-        <Border Grid.Row="1" BorderBrush="{StaticResource Line}" BorderThickness="1"
-                Background="{StaticResource Bg2}" Padding="10">
-          <ScrollViewer>
-            <StackPanel Spacing="4">
-              <TextBlock Text="Selected sound" FontWeight="SemiBold"
-                         Foreground="{StaticResource Fg}"/>
-              <TextBlock x:Name="DetailBody" TextWrapping="Wrap" FontFamily="Consolas"
-                         Foreground="{StaticResource Muted}"
-                         Text="Nothing selected."/>
-            </StackPanel>
-          </ScrollViewer>
-        </Border>
+    <Border Grid.Row="1" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1"
+            Padding="8">
+      <Grid ColumnDefinitions="*,Auto">
+        <WrapPanel x:Name="Toolbar" Grid.Column="0" Orientation="Horizontal"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12"
+                    VerticalAlignment="Center">
+          <TextBlock x:Name="StatScope"  Foreground="{StaticResource Muted}"     Background="Transparent"/>
+          <TextBlock x:Name="StatModded" Foreground="{StaticResource TagPurple}" Background="Transparent"/>
+          <TextBlock x:Name="StatStaged" Foreground="{StaticResource TagGreen}"  Background="Transparent"/>
+          <TextBlock x:Name="StatMuted"  Foreground="{StaticResource TagRed}"    Background="Transparent"/>
+        </StackPanel>
       </Grid>
+    </Border>
+
+    <Grid Grid.Row="2" ColumnDefinitions="310,4,*">
+      <Border Grid.Column="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
+        <TreeView x:Name="Tree" Background="Transparent" BorderThickness="0"
+                  SelectionMode="Multiple" Padding="0,6"/>
+      </Border>
+
+      <GridSplitter Grid.Column="1" Background="{StaticResource Bg}" ResizeDirection="Columns"/>
+
+      <DataGrid x:Name="Grid_" Grid.Column="2" Background="Transparent"
+                GridLinesVisibility="Horizontal" IsReadOnly="True"
+                CanUserSortColumns="True" HeadersVisibility="Column"/>
     </Grid>
 
-    <TextBlock x:Name="Status" Grid.Row="2" Margin="12,6,12,8"
-               Foreground="{StaticResource Muted}" Text="Ready."/>
+    <Border Grid.Row="3" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0"
+            Padding="10,5">
+      <TextBlock x:Name="Status" Foreground="{StaticResource Muted}" Text="Ready."/>
+    </Border>
   </Grid>
 </Window>
