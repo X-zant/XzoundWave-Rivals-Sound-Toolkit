@@ -637,7 +637,7 @@ public partial class MainWindow : Window
         _preview.Play(wav, applied, out var did);
 
         var note = _settings.PreviewAsInGame
-            ? $"  —  as in game: {did}" + Missing(row)
+            ? $"  —  ingame: {did}" + Missing(row)
             : "";
         Say($"{row.Display}  —  {row.Bytes:N0} B from {row.Origin}{note}");
     }
@@ -1923,7 +1923,8 @@ public partial class MainWindow : Window
     /// renaming one silently un-hides it for everybody who had already turned it off.
     /// Rewrite the old name on load rather than stranding the setting.
     /// </summary>
-    private static readonly (string Old, string New)[] RenamedColumns = [("Bank", ".bnk")];
+    private static readonly (string Old, string New)[] RenamedColumns =
+        [("Bank", ".bnk"), ("Game does", "Ingame")];
 
     private void ApplyColumnVisibility()
     {

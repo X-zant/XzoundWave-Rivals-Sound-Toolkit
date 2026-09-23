@@ -24,9 +24,9 @@
               <Button x:Name="BtnStop" Content="■  Stop" Click="BtnStop_Click"/>
               <Button x:Name="BtnDur" Content="Measure durations" Click="BtnDur_Click"/>
               <Border Width="1" Margin="8,2" Background="{StaticResource Line}"/>
-              <CheckBox x:Name="CbInGame" Content="as in game" Margin="4,0,0,0"
+              <CheckBox x:Name="CbInGame" Content="Ingame" Margin="4,0,0,0"
                         Click="CbInGame_Click"
-                        ToolTip="Play it the way the .bnk plays it rather than the way the file sits on disk: the volume trim, pitch shift, start delay and loop the game applies on top.&#10;&#10;Filters, distance attenuation, HDR ducking and anything driven at runtime are NOT reproduced — the Game does column names them when a sound has them.&#10;&#10;A sound authored to repeat for ever is previewed as a few passes."/>
+                        ToolTip="Play it the way the .bnk plays it rather than the way the file sits on disk: the volume trim, pitch shift, start delay and loop the game applies on top.&#10;&#10;Filters, distance attenuation, HDR ducking and anything driven at runtime are NOT reproduced — the Ingame column names them when a sound has them.&#10;&#10;A sound authored to repeat for ever is previewed as a few passes."/>
               <Border Width="1" Margin="8,2" Background="{StaticResource Line}"/>
               <CheckBox x:Name="CbUnnamed" Content="show unnamed" Margin="4,0,0,0"
                         Click="CbUnnamed_Click"
@@ -340,7 +340,7 @@
                     <DataGridTextColumn Header="Codec"    Binding="{Binding Codec}"    Width="75"  IsReadOnly="True"/>
                     <!-- What the .bnk does to the sound on top of the audio. Hover for
                          the breakdown: a swap inherits every one of these. -->
-                    <DataGridTextColumn Header="Game does" Binding="{Binding AppliedLabel}" Width="130" IsReadOnly="True">
+                    <DataGridTextColumn Header="Ingame" Binding="{Binding AppliedLabel}" Width="130" IsReadOnly="True">
                       <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                           <Setter Property="ToolTip" Value="{Binding AppliedDetail}"/>

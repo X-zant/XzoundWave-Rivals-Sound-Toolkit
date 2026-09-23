@@ -88,7 +88,7 @@ mods, and the screen shows that job's tools.
   and the status line names them when a sound has them rather than leaving you to
   wonder. An endless loop is previewed as four passes.
 - **Colour coding** at a glance: green staged, red muted, purple changed by a mod.
-- **What the game does to each sound**, in its own column: the volume trim, pitch
+- **What the game does to each sound**, in the **Ingame** column: the volume trim, pitch
   shift, delay, loop or runtime curve the `.bnk` applies on top of the audio. None of
   it is in the file, and a swap inherits all of it — which is why a replacement can
   come out quieter, late or looping when the file plainly is not. Hover for the
