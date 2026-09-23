@@ -26,12 +26,14 @@ public partial class MainWindow : Window
 
     private void ShowMode()
     {
+        // The order is the tab strip's, which was already right: look, identify,
+        // build, and then mods as the thing you do to someone else's work.
         var mode = (ModeRail.SelectedIndex) switch
         {
-            1 => ("Build", "Drop audio onto the list, or stage files here. A named file " +
-                           "says which sound it replaces, so no skin has to be picked."),
-            2 => ("Test", "Numbered clips, so a sound in game tells you which entry fired. " +
+            1 => ("Test", "Numbered clips, so a sound in game tells you which entry fired. " +
                           "Mute the ones you have identified and build again."),
+            2 => ("Build", "Drop audio onto the list, or stage files here. A named file " +
+                           "says which sound it replaces, so no skin has to be picked."),
             3 => ("Mods", "Open someone else's .bnk files and see them diffed against the " +
                           "game. Several at once; a build uses them as its base."),
             _ => ("Browse", "Pick a character, skin or .bnk on the left. Ctrl+click several " +

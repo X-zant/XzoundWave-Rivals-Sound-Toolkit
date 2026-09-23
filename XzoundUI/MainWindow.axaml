@@ -46,14 +46,16 @@
     <!-- ==== rail | tree | list | panel ==== -->
     <Grid Grid.Row="1" ColumnDefinitions="Auto,300,4,*,4,380" Margin="10,0,10,0">
 
-      <!-- What you are doing. Four jobs, and Setup is not one of them: it is
+      <!-- What you are doing. Four jobs, in the order the tabs had them: you look
+           at sounds, you work out which is which, you build, and mods are the thing
+           you do to somebody else's work. Setup is not among them because it is
            configuration, it has a home in Settings, and it had two homes before. -->
       <ListBox x:Name="ModeRail" Grid.Column="0" Width="104"
                Background="{StaticResource Bg2}" BorderBrush="{StaticResource Line}"
                BorderThickness="1" SelectedIndex="0" Margin="0,0,8,0">
         <ListBoxItem Content="Browse"/>
-        <ListBoxItem Content="Build"/>
         <ListBoxItem Content="Test"/>
+        <ListBoxItem Content="Build"/>
         <ListBoxItem Content="Mods"/>
       </ListBox>
 
