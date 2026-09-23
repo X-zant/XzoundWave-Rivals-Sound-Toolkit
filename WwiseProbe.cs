@@ -287,11 +287,26 @@ public static class WwiseProbe
         var bits = PropsText(Get(bp, "PropBundle"));
         if (bits.Count == 0) bits.Add("no set props");
 
-        var rtpc = (Get(bp, "RtpcList") as IEnumerable)?.Cast<object>().Count() ?? 0;
-        if (rtpc > 0) bits.Add($"{rtpc} RTPC (changes at runtime)");
+        // What a runtime curve actually targets. A property sitting at its minimum with
+        // a curve pointing at it is not a silenced sound -- it is a sound whose level
+        // the game drives.
+        if (Get(bp, "RtpcList") is IEnumerable rtpcs)
+            foreach (var r in rtpcs.Cast<object>())
+                bits.Add("RTPC{" + Dump(r) + "}");
+
+        // A randomised range on a property. Ignoring it would hide the difference
+        // between a level that is off and one that is off on average.
+        if (Get(Get(bp, "PropBundle"), "PropRanges") is IEnumerable ranges)
+            foreach (var r in ranges.Cast<object>())
+                bits.Add("RANGE{" + Dump(r) + "}");
 
         var states = (Get(bp, "StateGroups") as IEnumerable)?.Cast<object>().Count() ?? 0;
-        if (states > 0) bits.Add($"{states} state group(s)");
+        if (states > 0)
+        {
+            bits.Add($"{states} state group(s)");
+            foreach (var g in (Get(bp, "StateGroups") as IEnumerable).Cast<object>())
+                bits.Add("STATE{" + Dump(g) + "}");
+        }
 
         var pos = Get(bp, "PositioningParams");
         if (Get(pos, "IsLooping") is true) bits.Add("positioning loops");

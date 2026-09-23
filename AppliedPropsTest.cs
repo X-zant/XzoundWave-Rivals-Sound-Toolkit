@@ -137,6 +137,63 @@ public static class AppliedPropsTest
         Check("no property is left as a bare number", named == 0,
               named == 0 ? "" : $"{named} unnamed — the table does not cover this bank version");
 
+        // ---- a level at the floor ---------------------------------------------
+        W("");
+        W("levels at the floor");
+
+        // -96 dB is Wwise's minimum. The first guess was that these are driven up by a
+        // game parameter -- setting a level to its floor and letting a curve raise it
+        // is ordinary practice. In these banks that is not what is happening: nothing
+        // points at them, and they really are switched off. The check is here because
+        // the two cases look identical in the data and mean opposite things.
+        var floored = new[] { moon, luna }
+            .SelectMany(s2 => s2.Rows)
+            .Where(r => r.Applied is not null)
+            .SelectMany(r => r.Applied.Props.Select(p => (Row: r, Prop: p)))
+            .Where(x => x.Prop.Unit == WwiseProps.Unit.Db && x.Prop.Float <= -90)
+            .ToList();
+        W($"    {floored.Count} propert(y/ies) at -90 dB or below");
+
+        var silenced = new[] { moon, luna }.SelectMany(s2 => s2.Rows)
+            .Where(r => r.Applied is { Silenced: true }).ToList();
+        Check("a sound the bank turns fully down is reported as silent",
+              silenced.Count > 0, $"{silenced.Count} row(s)");
+
+        foreach (var g in silenced.GroupBy(r => r.EventName ?? "(unnamed)")
+                                  .OrderByDescending(g2 => g2.Count()).Take(6))
+            W($"      {g.Count(),3}x  {g.Key}   {g.First().Applied.StaticDb:0.#} dB");
+
+        var one = silenced.FirstOrDefault(r => r.EventName is not null);
+        if (one is not null)
+        {
+            Check("the column says SILENT rather than a number that reads as a typo",
+                  one.AppliedLabel.Contains("SILENT"), one.AppliedLabel);
+            Check("the tooltip says nothing raises it again",
+                  one.AppliedDetail.Contains("nothing raises it"), "");
+            Check("...and that replacing the audio would be wasted work",
+                  one.AppliedDetail.Contains("changes nothing"), "");
+        }
+
+        // The other reading of a floor value, kept apart from it. A driven level is
+        // left out of the figure entirely rather than counted as silence.
+        var drivenDb = new[] { moon, luna }.SelectMany(s2 => s2.Rows)
+            .Where(r => r.Applied is not null)
+            .SelectMany(r => r.Applied.DrivenProps)
+            .Count(p => p.Unit == WwiseProps.Unit.Db);
+        W($"    {drivenDb} level(s) are driven by a game parameter instead");
+
+        var curves = new[] { moon, luna }.SelectMany(s2 => s2.Rows)
+            .Where(r => r.Applied is not null)
+            .SelectMany(r => r.Applied.Live).Distinct().ToList();
+        Check("runtime curves name what they point at", curves.Count > 0,
+              string.Join(", ", curves.Take(4)));
+        // The RTPC table is a DIFFERENT enumeration from the property one -- they
+        // agree to BusVolume and then diverge, so a curve on id 6 is an initial delay
+        // and a property on id 6 is a make-up gain.
+        Check("...using the RTPC table, not the property one",
+              curves.All(c => !c.StartsWith("parameter ")),
+              curves.FirstOrDefault(c => c.StartsWith("parameter ")) ?? "");
+
         W("");
         W(fails == 0 ? "ALL CHECKS PASSED" : $"{fails} CHECK(S) FAILED");
         return fails == 0 ? 0 : 1;

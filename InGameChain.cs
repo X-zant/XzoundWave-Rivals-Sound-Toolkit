@@ -40,9 +40,13 @@ public static class InGameChain
         var bits = new List<string>();
 
         // Volume and make-up gain add up in dB down the chain, the way Wwise sums
-        // them, and the sum is what becomes a gain factor.
-        var db = applied.Props.Where(p => p.Unit == WwiseProps.Unit.Db && p.Id is 0x00 or 0x06)
-                              .Sum(p => p.Float);
+        // them, and the sum is what becomes a gain factor. A level a game parameter
+        // drives is left out: the bank stores where it starts, not what is heard, and
+        // applying a starting value of -96 dB would play silence for a sound the game
+        // turns up.
+        var db = applied.Props
+            .Where(p => !p.Driven && p.Unit == WwiseProps.Unit.Db && p.Id is 0x00 or 0x06)
+            .Sum(p => p.Float);
 
         // Pitch is in cents and Wwise applies it by resampling, so it moves the speed
         // with it -- the same trade a tape machine makes. Playback speed is the same
@@ -87,8 +91,11 @@ public static class InGameChain
         if (loops > 1)
             bits.Add(applied.LoopCount == 0 ? $"loops ({MaxLoops} shown)" : $"{loops}x");
 
-        described = bits.Count == 0 ? "the .bnk changes nothing you can hear"
-                                    : string.Join(", ", bits);
+        described = applied.Silenced
+            ? $"SILENT — the .bnk turns this down by {-applied.StaticDb:0.#} dB and nothing " +
+              "raises it, so the game plays nothing here"
+            : bits.Count == 0 ? "the .bnk changes nothing you can hear"
+            : string.Join(", ", bits);
         return chain;
     }
 
@@ -106,6 +113,8 @@ public static class InGameChain
             missing.Add("distance attenuation");
         if (applied.Props.Any(p => p.Id is >= 0x1B and <= 0x21)) missing.Add("HDR ducking");
         if (applied.Rtpc > 0) missing.Add($"{applied.Rtpc} runtime curve(s)");
+        foreach (var p in applied.DrivenProps.Where(p => p.Unit == WwiseProps.Unit.Db))
+            missing.Add($"{p.Name}, which the game drives");
         if (applied.StateGroups > 0) missing.Add("state changes");
 
         return missing.Count == 0 ? "" : string.Join(", ", missing);
