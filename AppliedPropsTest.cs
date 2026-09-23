@@ -216,11 +216,49 @@ public static class AppliedPropsTest
                                .GroupBy(r => r.Applied.Alternative.Index)
                                .Sum(g => g.First().Applied.Alternative.Chance) - 1) < 0.05,
                   "");
-            Check("and the column says so", biggest.AppliedLabel.Contains($"1/{v.Count}"),
-                  biggest.AppliedLabel);
+            Check("and the Group column says so", biggest.GroupLabel.Contains($"1/{v.Count}") ||
+                  biggest.GroupLabel.Contains($"/{v.Count}"), biggest.GroupLabel);
             Check("the tooltip warns that the others are untouched",
                   biggest.AppliedDetail.Contains("leaves the others"), "");
         }
+
+        // Where the share comes from. Every random container in these banks carries a
+        // playlist, so a displayed percentage is the bank's own number -- the even
+        // split is a fallback that never fires here and must not look the same.
+        var alts = moon.Rows.Concat(luna.Rows)
+                       .Where(r => r.Applied?.Alternative is { Count: > 1 })
+                       .Select(r => r.Applied.Alternative).ToList();
+        var stated = alts.Count(v => v.FromWeights);
+        Check("the shares are the bank's own weights, not an assumption",
+              stated == alts.Count, $"{stated} of {alts.Count} from weights");
+
+        // Wwise's default weight is 50000, so almost every container is an even split.
+        // The ones that are not are the whole reason for reading weights at all.
+        var uneven = moon.Rows.Concat(luna.Rows)
+                        .Where(r => r.Applied?.Alternative is { Uneven: true }).ToList();
+        Check("an unevenly weighted container is found and reported as such",
+              uneven.Count > 0, $"{uneven.Count} row(s)");
+        // Printed as WHOLE groups: a share only means something beside its siblings.
+        var all = moon.Rows.Concat(luna.Rows).ToList();
+        foreach (var id in uneven.Select(r => r.Applied.Alternative.GroupId).Distinct().Take(3))
+        {
+            var members = all.Where(r => r.Applied?.Alternative?.GroupId == id)
+                             .OrderBy(r => r.Applied.Alternative.Index).ToList();
+            W($"    {members[0].Display}   ({members[0].VariantGroup})");
+            foreach (var r in members)
+                W($"      {r.Applied.Alternative.Index + 1}/{r.Applied.Alternative.Count}" +
+                  $"   {r.Applied.Alternative.Chance,7:P1}   media {r.MediaId}" +
+                  (r.Applied.Alternative.Uneven ? "   <- not an even share" : ""));
+        }
+
+        var grouped = moon.Rows.Where(r => r.VariantGroup.Length > 0).ToList();
+        Check("every alternative carries a group name", grouped.All(r => r.GroupLabel.Length > 0));
+        Check("members of one container share that name",
+              grouped.GroupBy(r => r.Applied.Alternative.GroupId)
+                     .All(g => g.Select(r => r.VariantGroup).Distinct().Count() == 1));
+        Check("different containers get different names",
+              grouped.GroupBy(r => r.VariantGroup)
+                     .All(g => g.Select(r => r.Applied.Alternative.GroupId).Distinct().Count() == 1));
 
         // A sound only one event reaches says nothing; one several reach says which.
         var shared = moon.Rows.Where(r => r.AlsoPlayedBy.Count > 0).ToList();

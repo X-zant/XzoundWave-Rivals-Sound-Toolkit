@@ -338,6 +338,17 @@
                     <DataGridTextColumn Header="Media ID" Binding="{Binding MediaId}"  Width="95"  IsReadOnly="True"/>
                     <DataGridTextColumn Header="Len"      Binding="{Binding Length}"   Width="55"  IsReadOnly="True"/>
                     <DataGridTextColumn Header="Codec"    Binding="{Binding Codec}"    Width="75"  IsReadOnly="True"/>
+                    <!-- Which set of alternatives this sound belongs to. Sort by this
+                         column and a group gathers, which is the quickest way to see
+                         what a swap would have to cover. -->
+                    <DataGridTextColumn Header="Group" Binding="{Binding GroupLabel}" Width="115" IsReadOnly="True">
+                      <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                          <Setter Property="ToolTip" Value="{Binding GroupDetail}"/>
+                          <Setter Property="ToolTipService.ShowDuration" Value="60000"/>
+                        </Style>
+                      </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
                     <!-- What the .bnk does to the sound on top of the audio. Hover for
                          the breakdown: a swap inherits every one of these. -->
                     <DataGridTextColumn Header="Ingame" Binding="{Binding AppliedLabel}" Width="130" IsReadOnly="True">

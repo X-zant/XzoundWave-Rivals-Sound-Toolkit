@@ -49,6 +49,38 @@ public sealed class SoundRow
     /// </summary>
     public List<string> AlsoPlayedBy { get; set; } = [];
 
+    /// <summary>
+    /// A short name for the set of alternatives this sound belongs to, unique within
+    /// the skin. The container's own id would do the job and be unreadable; this is
+    /// the same fact in something you can sort a column by and see the group gather.
+    /// </summary>
+    public string VariantGroup { get; set; } = "";
+
+    /// <summary>The other alternatives, so the group can be read off one row.</summary>
+    public List<string> Siblings { get; set; } = [];
+
+    public string GroupLabel => Applied?.Alternative is not { Count: > 1 } v ? ""
+        : $"{VariantGroup}  {v.Index + 1}/{v.Count}" +
+          (v.Share.Length == 0 ? "" : $"  {v.Share}");
+
+    public string GroupDetail
+    {
+        get
+        {
+            if (Applied?.Alternative is not { Count: > 1 } v) return "";
+            var lines = new List<string>
+            {
+                $"{VariantGroup}: {v.Count} alternatives, picked at {v.Mode}.",
+                v.FromWeights
+                    ? "The shares are the container's own weights, read from the .bnk."
+                    : "This container states no weights, so the split is assumed even.",
+                "",
+            };
+            lines.AddRange(Siblings);
+            return string.Join(Environment.NewLine, lines);
+        }
+    }
+
     public string AppliedDetail
     {
         get
@@ -252,7 +284,38 @@ public static class SoundIndex
                     .ToList();
         }
         result.Rows.Sort((a, b) => string.Compare(a.Display, b.Display, StringComparison.OrdinalIgnoreCase));
+        NameVariantGroups(result.Rows);
         return result;
+    }
+
+    /// <summary>
+    /// Give every set of alternatives a short name, and let each of its members list
+    /// the others. Numbered in the order they first appear in the sorted list, so the
+    /// same skin always reads the same way.
+    /// </summary>
+    private static void NameVariantGroups(List<SoundRow> rows)
+    {
+        var names = new Dictionary<uint, string>();
+        foreach (var row in rows)
+        {
+            if (row.Applied?.Alternative is not { Count: > 1 } v) continue;
+            if (!names.TryGetValue(v.GroupId, out var name))
+                names[v.GroupId] = name = "V" + (names.Count + 1);
+            row.VariantGroup = name;
+        }
+
+        foreach (var group in rows.Where(r => r.VariantGroup.Length > 0)
+                                  .GroupBy(r => r.Applied.Alternative.GroupId))
+        {
+            var members = group.OrderBy(r => r.Applied.Alternative.Index).ToList();
+            foreach (var row in members)
+                row.Siblings = members
+                    .Select(m => (m == row ? "> " : "  ") +
+                                 $"{m.Applied.Alternative.Index + 1}. media {m.MediaId}" +
+                                 (m.Applied.Alternative.Share.Length == 0
+                                     ? "" : $"   {m.Applied.Alternative.Share}"))
+                    .ToList();
+        }
     }
 
     /// <summary>

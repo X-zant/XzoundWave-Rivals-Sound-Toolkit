@@ -230,16 +230,30 @@ public static class WwiseProps
     /// like the mod barely works. Sequence containers are worse to guess at, because
     /// the order is fixed and position matters.
     /// </summary>
-    /// <param name="Chance">Share of the picks this one gets, 0-1, from the weights.</param>
-    public sealed record Variation(int Index, int Count, string Mode, double Chance)
+    /// <param name="Chance">Share of the picks this one gets, 0-1.</param>
+    /// <param name="FromWeights">
+    /// The share is the container's own playlist weights, not an assumption. Every
+    /// random container in this game's character banks carries a playlist, so the even
+    /// split below is a fallback for banks that do not -- and the two must not look
+    /// alike on screen, or a guess reads as a measurement.
+    /// </param>
+    public sealed record Variation(int Index, int Count, string Mode, double Chance,
+                                   bool FromWeights, uint GroupId)
     {
+        /// <summary>True when the bank gives this one a different share from its siblings.</summary>
+        public bool Uneven => FromWeights && Math.Abs(Chance - 1.0 / Count) > 0.005;
+
+        public string Share => Mode == "sequence" ? ""
+            : FromWeights ? $"{Chance:P0}"
+            : $"~{Chance:P0} (even split assumed)";
+
         public string Text
         {
             get
             {
                 if (Count <= 1) return "";
-                var pct = Chance > 0 ? $" — {Chance:P0} of the time" : "";
-                return $"{Index + 1} of {Count} {Mode}{(Mode == "sequence" ? "" : pct)}";
+                var share = Share.Length == 0 ? "" : $" — {Share} of the time";
+                return $"{Index + 1} of {Count} {Mode}{share}";
             }
         }
     }
@@ -322,7 +336,6 @@ public static class WwiseProps
                 if (DrivenProps.Any(p => p.Unit == Unit.Db)) bits.Add("level driven");
                 else if (Rtpc > 0) bits.Add("live");
 
-                if (Alternative is { Count: > 1 }) bits.Add($"1/{Alternative.Count}");
 
                 // Something is set, but nothing that changes what you hear. Saying so
                 // beats an empty cell that reads as "not looked at".
@@ -344,6 +357,9 @@ public static class WwiseProps
                 if (Alternative is { Count: > 1 })
                 {
                     lines.Add($"One of several: {Alternative.Text}.");
+                    if (Alternative.Uneven)
+                        lines.Add("The bank gives this one a different weight from its " +
+                                  "siblings, so the alternatives are not equally likely.");
                     lines.Add("Replacing only this one leaves the others as they are.");
                     lines.Add("");
                 }
@@ -489,14 +505,15 @@ public static class WwiseProps
             ? "sequence" : "random";
 
         var chance = 1.0 / rnd.ChildIds.Length;
+        var fromWeights = false;
         if (rnd.Playlist is { Length: > 0 })
         {
             var total = rnd.Playlist.Sum(i => (double)Math.Max(i.Weight, 0));
             var mine = rnd.Playlist.Where(i => i.PlayId == childId)
                                    .Sum(i => (double)Math.Max(i.Weight, 0));
-            if (total > 0) chance = mine / total;
+            if (total > 0) { chance = mine / total; fromWeights = true; }
         }
-        return new Variation(index, rnd.ChildIds.Length, mode, chance);
+        return new Variation(index, rnd.ChildIds.Length, mode, chance, fromWeights, rnd.Id);
     }
 
     /// <summary>The runtime curves on one object, and which property each drives.</summary>

@@ -148,7 +148,13 @@ public static class WwiseProbe
                     break;
 
                 case HierarchyRandomSequenceContainer rnd:
+                    // Weights decide how often each alternative is picked. Printed raw
+                    // so an even split can be told from one the bank actually states.
+                    var weights = rnd.Playlist is { Length: > 0 }
+                        ? "  weights=[" + string.Join(",", rnd.Playlist.Select(i => i.Weight)) + "]"
+                        : "  weights=NONE";
                     W($"{pad}CONTAINER  {rnd.Mode}  loop={(rnd.LoopCount == 0 ? "INFINITE" : rnd.LoopCount.ToString())}" +
+                      $"  children={rnd.ChildIds?.Length ?? 0}{weights}" +
                       $"  transition={rnd.TransitionMode}/{rnd.TransitionTime}  {Shape(rnd)}");
                     foreach (var child in Children(rnd)) Walk(child, nodes, pad + "  ", depth + 1);
                     return;

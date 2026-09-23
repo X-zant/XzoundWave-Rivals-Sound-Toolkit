@@ -98,8 +98,13 @@ mods, and the screen shows that job's tools.
     82 sounds across two characters are in that state, mostly foley; −96 dB is Wwise's
     floor and pulling a level to it is how a layer is switched off without being
     deleted. Replacing the audio there changes nothing anybody will hear.
-  - **`1/9`** — it is one of nine alternatives the container picks between, so it is
-    heard about one time in nine. Swapping it alone leaves the other eight.
+  - **Group** (its own column) — `V85 6/6 29%`: which set of alternatives the sound
+    belongs to, which one it is, and how often it is picked. Sort by it and a group
+    gathers; hover to see every member and its share. The shares are the container's
+    own playlist weights read from the `.bnk`, not an assumption — every random
+    container in the character banks carries one, and where a bank does not the split
+    is marked as assumed rather than stated. Most are even, but not all: Moon Knight's
+    `ftp_foley2` has five alternatives at 14.3% and a sixth at 28.6%.
   - **also played by** — the other events that reach the same audio, which one swap
     changes along with it.
 - **Tags** from a shared vocabulary (`[ULT]`, `[MVP]`, `[LOOP]`, `[3D]` …) picked from a
