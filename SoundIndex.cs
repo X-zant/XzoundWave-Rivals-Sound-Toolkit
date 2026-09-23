@@ -42,7 +42,34 @@ public sealed class SoundRow
     /// </summary>
     public WwiseProps.Applied Applied { get; set; }
     public string AppliedLabel => Applied?.Summary ?? "";
-    public string AppliedDetail => Applied?.Detail ?? "Not read for this .bnk.";
+
+    /// <summary>
+    /// Other events that play this same media. A sound reached by several events is one
+    /// a swap changes in all of them, which is either the point or a surprise.
+    /// </summary>
+    public List<string> AlsoPlayedBy { get; set; } = [];
+
+    public string AppliedDetail
+    {
+        get
+        {
+            if (Applied is null) return "Not read for this .bnk.";
+
+            var lines = new List<string> { Applied.Detail };
+            if (Applied.SampleRate > 0)
+                lines.Add($"Source: {Applied.SampleRate:N0} Hz.");
+
+            if (AlsoPlayedBy.Count > 0)
+            {
+                lines.Add("");
+                lines.Add($"Also played by {AlsoPlayedBy.Count} other event(s), which this " +
+                          "swap would change too:");
+                foreach (var e in AlsoPlayedBy.Take(8)) lines.Add("  " + e);
+                if (AlsoPlayedBy.Count > 8) lines.Add($"  …and {AlsoPlayedBy.Count - 8} more");
+            }
+            return string.Join(Environment.NewLine, lines);
+        }
+    }
 
     /// <summary>User-kept notes, persisted in notes.json. Editable in the grid.</summary>
     public string Notes { get; set; } = "";
@@ -211,6 +238,19 @@ public static class SoundIndex
 
         var seen = new HashSet<string>();
         result.Rows.RemoveAll(r => !seen.Add($"{r.Bank}|{r.EventHash}|{r.MediaId}"));
+
+        // Which other events reach the same audio. Only knowable once every bank of
+        // the skin has been read, so it happens here rather than per row.
+        foreach (var group in result.Rows.GroupBy(r => r.MediaId))
+        {
+            var names = group.Select(r => r.EventName).Where(n => n is not null)
+                             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (names.Count <= 1) continue;
+            foreach (var row in group)
+                row.AlsoPlayedBy = names
+                    .Where(n => !n.Equals(row.EventName, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+        }
         result.Rows.Sort((a, b) => string.Compare(a.Display, b.Display, StringComparison.OrdinalIgnoreCase));
         return result;
     }

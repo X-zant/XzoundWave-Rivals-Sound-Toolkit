@@ -222,9 +222,37 @@ public static class WwiseProps
         public override string ToString() => $"{Name} {Text}";
     }
 
+    /// <summary>
+    /// One of several alternatives the container picks between.
+    ///
+    /// The thing a modder needs before replacing anything: a line that is one of seven
+    /// random variations is heard about one time in seven, so swapping it alone looks
+    /// like the mod barely works. Sequence containers are worse to guess at, because
+    /// the order is fixed and position matters.
+    /// </summary>
+    /// <param name="Chance">Share of the picks this one gets, 0-1, from the weights.</param>
+    public sealed record Variation(int Index, int Count, string Mode, double Chance)
+    {
+        public string Text
+        {
+            get
+            {
+                if (Count <= 1) return "";
+                var pct = Chance > 0 ? $" — {Chance:P0} of the time" : "";
+                return $"{Index + 1} of {Count} {Mode}{(Mode == "sequence" ? "" : pct)}";
+            }
+        }
+    }
+
     /// <summary>Everything acting on one sound, nearest first.</summary>
     public sealed class Applied
     {
+        /// <summary>Which alternative this is, when the container picks between several.</summary>
+        public Variation Alternative { get; set; }
+
+        /// <summary>The rate the bank says the source was encoded at.</summary>
+        public uint SampleRate { get; set; }
+
         public List<Prop> Props { get; } = [];
 
         /// <summary>0 means it repeats for ever, 1 means it plays once.</summary>
@@ -294,6 +322,8 @@ public static class WwiseProps
                 if (DrivenProps.Any(p => p.Unit == Unit.Db)) bits.Add("level driven");
                 else if (Rtpc > 0) bits.Add("live");
 
+                if (Alternative is { Count: > 1 }) bits.Add($"1/{Alternative.Count}");
+
                 // Something is set, but nothing that changes what you hear. Saying so
                 // beats an empty cell that reads as "not looked at".
                 if (bits.Count == 0 && Props.Count > 0) return "—";
@@ -306,10 +336,17 @@ public static class WwiseProps
         {
             get
             {
-                if (Props.Count == 0 && LoopCount is null or 1 && Rtpc == 0 && ActionDelay <= 0)
+                if (Props.Count == 0 && LoopCount is null or 1 && Rtpc == 0 && ActionDelay <= 0
+                    && Alternative is null or { Count: <= 1 })
                     return "The .bnk sets nothing on this sound — it plays as the file is.";
 
                 var lines = new List<string>();
+                if (Alternative is { Count: > 1 })
+                {
+                    lines.Add($"One of several: {Alternative.Text}.");
+                    lines.Add("Replacing only this one leaves the others as they are.");
+                    lines.Add("");
+                }
                 if (ActionDelay > 0)
                     lines.Add($"Event waits {ActionDelay:0.###} s before playing it");
                 if (LoopCount == 0) lines.Add("Repeats for ever until something stops it");
@@ -362,9 +399,13 @@ public static class WwiseProps
         // which is worse than saying nothing: the numbers would look authoritative.
         var known = version is >= FirstVersion and <= LastVersion;
 
+        if (soundNode is HierarchySoundSfxVoice sfx)
+            applied.SampleRate = sfx.Source.SampleRate;
+
         var node = soundNode;
         var owner = "sound";
         var seen = new HashSet<uint>();
+        var child = (soundNode as AbstractHierarchy)?.Id ?? 0;
 
         while (node is not null)
         {
@@ -392,6 +433,12 @@ public static class WwiseProps
             var parentId = Field(bp, "DirectParentId") as uint? ?? 0;
             if (parentId == 0 || !seen.Add(parentId) || !nodes.TryGetValue(parentId, out var parent))
                 break;
+
+            // Only the container the sound sits in directly decides whether it is one
+            // alternative among several. A grandparent picking between containers is a
+            // different question and would read as a false reassurance here.
+            applied.Alternative ??= AlternativeIn(parent, child);
+            child = parent.Id;
             node = parent;
             owner = parent switch
             {
@@ -424,6 +471,32 @@ public static class WwiseProps
             // an attenuation reference comes back as a number near zero.
             yield return new Prop(prop.Id, name, unit, prop.Value.f32, prop.Value.u32, owner);
         }
+    }
+
+    /// <summary>
+    /// Where this child sits among its container's alternatives, and how often it is
+    /// picked. Weights are the container's own; equal weights make an even split, so a
+    /// container with no playlist at all is treated as even.
+    /// </summary>
+    private static Variation AlternativeIn(AbstractHierarchy parent, uint childId)
+    {
+        if (parent is not HierarchyRandomSequenceContainer rnd || rnd.ChildIds is null) return null;
+
+        var index = Array.IndexOf(rnd.ChildIds, childId);
+        if (index < 0 || rnd.ChildIds.Length <= 1) return null;
+
+        var mode = rnd.Mode.ToString().Equals("Sequence", StringComparison.OrdinalIgnoreCase)
+            ? "sequence" : "random";
+
+        var chance = 1.0 / rnd.ChildIds.Length;
+        if (rnd.Playlist is { Length: > 0 })
+        {
+            var total = rnd.Playlist.Sum(i => (double)Math.Max(i.Weight, 0));
+            var mine = rnd.Playlist.Where(i => i.PlayId == childId)
+                                   .Sum(i => (double)Math.Max(i.Weight, 0));
+            if (total > 0) chance = mine / total;
+        }
+        return new Variation(index, rnd.ChildIds.Length, mode, chance);
     }
 
     /// <summary>The runtime curves on one object, and which property each drives.</summary>

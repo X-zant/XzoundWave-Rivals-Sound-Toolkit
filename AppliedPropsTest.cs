@@ -194,6 +194,52 @@ public static class AppliedPropsTest
               curves.All(c => !c.StartsWith("parameter ")),
               curves.FirstOrDefault(c => c.StartsWith("parameter ")) ?? "");
 
+        // ---- one alternative among several -------------------------------------
+        W("");
+        W("variations");
+
+        var variants = moon.Rows.Where(r => r.Applied?.Alternative is { Count: > 1 }).ToList();
+        Check("a sound in a container of alternatives knows which one it is",
+              variants.Count > 0, $"{variants.Count} of {moon.Rows.Count} rows");
+
+        var biggest = variants.OrderByDescending(r => r.Applied.Alternative.Count).FirstOrDefault();
+        if (biggest is not null)
+        {
+            var v = biggest.Applied.Alternative;
+            W($"    widest: {biggest.Display}  —  {v.Text}");
+            Check("the index is inside the count", v.Index >= 0 && v.Index < v.Count,
+                  $"{v.Index + 1} of {v.Count}");
+            Check("the chances across one container add up to 1",
+                  Math.Abs(moon.Rows.Where(r => r.Applied?.Alternative is not null &&
+                                                r.Applied.Alternative.Count == v.Count &&
+                                                r.Bank == biggest.Bank)
+                               .GroupBy(r => r.Applied.Alternative.Index)
+                               .Sum(g => g.First().Applied.Alternative.Chance) - 1) < 0.05,
+                  "");
+            Check("and the column says so", biggest.AppliedLabel.Contains($"1/{v.Count}"),
+                  biggest.AppliedLabel);
+            Check("the tooltip warns that the others are untouched",
+                  biggest.AppliedDetail.Contains("leaves the others"), "");
+        }
+
+        // A sound only one event reaches says nothing; one several reach says which.
+        var shared = moon.Rows.Where(r => r.AlsoPlayedBy.Count > 0).ToList();
+        Check("a sound several events reach names the others",
+              shared.Count > 0, $"{shared.Count} row(s)");
+        if (shared.Count > 0)
+            W($"    e.g. {shared[0].Display} is also played by " +
+              string.Join(", ", shared[0].AlsoPlayedBy.Take(3)));
+
+        // The source record has a sample-rate field and this game leaves it at zero --
+        // the rate lives in the wem header instead. What matters is that nothing
+        // invents a figure from it.
+        var rated = moon.Rows.Count(r => r.Applied?.SampleRate > 0);
+        W($"    {rated} row(s) carry a source rate in the .bnk itself");
+        Check("no sample rate is shown when the .bnk does not state one",
+              moon.Rows.Where(r => r.Applied is { SampleRate: 0 })
+                       .All(r => !r.AppliedDetail.Contains("Hz")),
+              "");
+
         W("");
         W(fails == 0 ? "ALL CHECKS PASSED" : $"{fails} CHECK(S) FAILED");
         return fails == 0 ? 0 : 1;

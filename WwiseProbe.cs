@@ -46,6 +46,9 @@ public static class WwiseProbe
                      typeof(HierarchySoundSfxVoice), typeof(HierarchyRandomSequenceContainer),
                      typeof(HierarchySwitchContainer), typeof(HierarchyActorMixer),
                      typeof(HierarchyMusicSegment), typeof(HierarchyMusicTrack),
+                     typeof(HierarchyAttenuation), typeof(HierarchyAudioBus),
+                     typeof(BaseHierarchy), typeof(AkPlayListItem),
+                     typeof(AkBankSourceData),
                  })
             W($"  {t.Name,-36} {string.Join(", ", Members(t))}");
 

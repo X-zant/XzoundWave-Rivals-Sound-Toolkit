@@ -93,6 +93,15 @@ mods, and the screen shows that job's tools.
   it is in the file, and a swap inherits all of it — which is why a replacement can
   come out quieter, late or looping when the file plainly is not. Hover for the
   breakdown, including what it inherits from the containers above it.
+- Three things worth knowing **before** replacing anything, all in that column:
+  - **`SILENT`** — the bank turns this sound fully down and nothing raises it again.
+    82 sounds across two characters are in that state, mostly foley; −96 dB is Wwise's
+    floor and pulling a level to it is how a layer is switched off without being
+    deleted. Replacing the audio there changes nothing anybody will hear.
+  - **`1/9`** — it is one of nine alternatives the container picks between, so it is
+    heard about one time in nine. Swapping it alone leaves the other eight.
+  - **also played by** — the other events that reach the same audio, which one swap
+    changes along with it.
 - **Tags** from a shared vocabulary (`[ULT]`, `[MVP]`, `[LOOP]`, `[3D]` …) picked from a
   menu and never typed, so two people's notes mean the same thing. Free-text notes sit
   alongside. Both survive a patch: they re-link by event name when media ids change.
