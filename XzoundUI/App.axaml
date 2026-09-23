@@ -1,0 +1,50 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="MRAudioKit.UI.App"
+             RequestedThemeVariant="Dark">
+
+  <!-- The theme is one line now.
+
+       The WPF version of this file was 488 lines, of which about 420 were control
+       templates rewritten from scratch: TextBox, Button, CheckBox, ComboBox,
+       ContextMenu, MenuItem, TabItem. None of them changed how anything behaved. They
+       existed because WPF's stock chrome repaints a disabled box, a dropdown popup or
+       a menu from system brushes, putting the window's light text on a white surface,
+       and the only way to stop it was to replace the template.
+
+       Fluent has a dark variant, so all of that is gone. What is left is the palette,
+       which is the part that was ever ours. -->
+
+  <Application.Styles>
+    <FluentTheme />
+    <!-- The grid is its own package in Avalonia, and so is its theme. -->
+    <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
+  </Application.Styles>
+
+  <Application.Resources>
+    <SolidColorBrush x:Key="Bg"       Color="#1E1F22"/>
+    <SolidColorBrush x:Key="Bg2"      Color="#2B2D30"/>
+    <SolidColorBrush x:Key="Bg3"      Color="#35383D"/>
+    <SolidColorBrush x:Key="Line"     Color="#3C3F41"/>
+    <SolidColorBrush x:Key="Fg"       Color="#DFE1E5"/>
+    <SolidColorBrush x:Key="Muted"    Color="#9BA1A9"/>
+    <SolidColorBrush x:Key="Accent"   Color="#6BA5F8"/>
+    <SolidColorBrush x:Key="Selected" Color="#2F4C7A"/>
+    <SolidColorBrush x:Key="Disabled" Color="#6A6E75"/>
+
+    <!-- Text versions of the row tints. The row colours are dark enough to sit
+         under text; as text themselves they have to be lifted to stay legible. -->
+    <SolidColorBrush x:Key="TagGreen"  Color="#6FD68F"/>
+    <SolidColorBrush x:Key="TagRed"    Color="#E88C97"/>
+    <SolidColorBrush x:Key="TagPurple" Color="#B79BE8"/>
+
+    <!-- Row state tints. Named rather than inline so the tree can mark a modded
+         .bnk with the same colour the grid uses for a modded row: one language
+         for "a mod changed this", wherever it appears. -->
+    <SolidColorBrush x:Key="RowModded" Color="#3B2A5C"/>
+    <SolidColorBrush x:Key="RowNew"    Color="#4A3570"/>
+    <SolidColorBrush x:Key="RowStaged" Color="#204A2F"/>
+    <SolidColorBrush x:Key="RowMuted"  Color="#5A2A33"/>
+    <SolidColorBrush x:Key="RowStripe" Color="#26282B"/>
+  </Application.Resources>
+</Application>

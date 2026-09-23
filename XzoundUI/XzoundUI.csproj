@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The window, second attempt.
+
+       Avalonia rather than WPF because it is the same model without the Windows
+       ceiling: XAML, styles, data templates, bindings. That matters because the point
+       is one application for both platforms rather than two that drift.
+
+       net10.0 with no -windows, and a reference to XzoundLogic and nothing else. The
+       compiler is what keeps that true. -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>XzoundWave</AssemblyName>
+    <RootNamespace>MRAudioKit.UI</RootNamespace>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <DebugType>embedded</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <RollForward>LatestMajor</RollForward>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <Version>1.0.0</Version>
+    <Product>XzoundWave</Product>
+    <Authors>Nikolas Becic</Authors>
+    <Company>Nikolas Becic</Company>
+    <Copyright>Copyright (c) 2026 Nikolas Becic</Copyright>
+    <Description>Marvel Rivals sound toolkit — browse, preview, tag and re-pack Wwise soundbanks.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
+    <!-- Renders a window to a bitmap with no screen attached, which is how the layout
+         can be looked at on a build machine and checked by a test rather than by
+         someone remembering to open the app. -->
+    <PackageReference Include="Avalonia.Headless" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Skia" Version="12.1.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\XzoundLogic\XzoundLogic.csproj" />
+  </ItemGroup>
+
+</Project>
