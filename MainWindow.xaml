@@ -336,12 +336,14 @@
                     <DataGridTextColumn Header=".bnk"     Binding="{Binding Bank}"     Width="175" IsReadOnly="True"/>
                     <DataGridTextColumn Header="Event"    Binding="{Binding Display}"  Width="280" IsReadOnly="True"/>
                     <DataGridTextColumn Header="Media ID" Binding="{Binding MediaId}"  Width="95"  IsReadOnly="True"/>
-                    <DataGridTextColumn Header="Len"      Binding="{Binding Length}"   Width="55"  IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Len"      Binding="{Binding Length}"   Width="55"  IsReadOnly="True"
+                                        SortMemberPath="Seconds"/>
                     <DataGridTextColumn Header="Codec"    Binding="{Binding Codec}"    Width="75"  IsReadOnly="True"/>
                     <!-- Which set of alternatives this sound belongs to. Sort by this
                          column and a group gathers, which is the quickest way to see
                          what a swap would have to cover. -->
-                    <DataGridTextColumn Header="Group" Binding="{Binding GroupLabel}" Width="115" IsReadOnly="True">
+                    <DataGridTextColumn Header="Group" Binding="{Binding GroupLabel}" Width="115" IsReadOnly="True"
+                                        SortMemberPath="GroupSort">
                       <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                           <Setter Property="ToolTip" Value="{Binding GroupDetail}"/>
@@ -351,7 +353,8 @@
                     </DataGridTextColumn>
                     <!-- What the .bnk does to the sound on top of the audio. Hover for
                          the breakdown: a swap inherits every one of these. -->
-                    <DataGridTextColumn Header="Ingame" Binding="{Binding AppliedLabel}" Width="130" IsReadOnly="True">
+                    <DataGridTextColumn Header="Ingame" Binding="{Binding AppliedLabel}" Width="130" IsReadOnly="True"
+                                        SortMemberPath="AppliedSort">
                       <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                           <Setter Property="ToolTip" Value="{Binding AppliedDetail}"/>
@@ -361,8 +364,10 @@
                     </DataGridTextColumn>
                     <DataGridTextColumn Header="Category" Binding="{Binding CategoryShown}" Width="150" IsReadOnly="True"/>
                     <DataGridTextColumn Header="Subtitle / line" Binding="{Binding Subtitle}" Width="*" IsReadOnly="True"/>
-                    <DataGridTextColumn Header="Test #" Binding="{Binding TestLabel}" Width="60" IsReadOnly="True"/>
-                    <DataGridTextColumn Header="Vol"    Binding="{Binding VolumeLabel}" Width="56" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Test #" Binding="{Binding TestLabel}" Width="60" IsReadOnly="True"
+                                        SortMemberPath="TestNumber"/>
+                    <DataGridTextColumn Header="Vol"    Binding="{Binding VolumeLabel}" Width="56" IsReadOnly="True"
+                                        SortMemberPath="Volume"/>
                     <!-- Read-only on purpose: tags come from the right-click menu so
                          that nobody can invent their own spelling of [ULT]. -->
                     <DataGridTextColumn Header="Tags"   Binding="{Binding TagLabel}" Width="120" IsReadOnly="True"/>

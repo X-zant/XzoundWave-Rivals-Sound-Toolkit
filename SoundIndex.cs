@@ -44,6 +44,13 @@ public sealed class SoundRow
     public string AppliedLabel => Applied?.Summary ?? "";
 
     /// <summary>
+    /// The level behind the label, so the column sorts by how loud the .bnk makes the
+    /// sound rather than alphabetically -- which would put "+2 dB" beside "-6 dB" and
+    /// "SILENT" somewhere else entirely. Quietest first, so the silenced ones gather.
+    /// </summary>
+    public double AppliedSort => Applied?.StaticDb ?? 0;
+
+    /// <summary>
     /// Other events that play this same media. A sound reached by several events is one
     /// a swap changes in all of them, which is either the point or a surprise.
     /// </summary>
@@ -55,6 +62,18 @@ public sealed class SoundRow
     /// the same fact in something you can sort a column by and see the group gather.
     /// </summary>
     public string VariantGroup { get; set; } = "";
+
+    /// <summary>
+    /// The group's number on its own, because "V10" sorts before "V2" as text and a
+    /// column of variation groups is exactly where that reads as broken. Combined with
+    /// the position inside the group, so sorting gathers a group AND puts its members
+    /// in order. Rows in no group sort last rather than pretending to be group zero.
+    /// </summary>
+    public int VariantGroupNumber { get; set; }
+
+    public long GroupSort => VariantGroupNumber == 0
+        ? long.MaxValue
+        : (long)VariantGroupNumber * 100_000 + (Applied?.Alternative?.Index ?? 0);
 
     /// <summary>The other alternatives, so the group can be read off one row.</summary>
     public List<string> Siblings { get; set; } = [];
@@ -302,6 +321,7 @@ public static class SoundIndex
             if (!names.TryGetValue(v.GroupId, out var name))
                 names[v.GroupId] = name = "V" + (names.Count + 1);
             row.VariantGroup = name;
+            row.VariantGroupNumber = int.Parse(name[1..]);
         }
 
         foreach (var group in rows.Where(r => r.VariantGroup.Length > 0)

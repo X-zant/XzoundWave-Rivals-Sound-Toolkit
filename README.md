@@ -110,6 +110,8 @@ mods, and the screen shows that job's tools.
 - **Tags** from a shared vocabulary (`[ULT]`, `[MVP]`, `[LOOP]`, `[3D]` …) picked from a
   menu and never typed, so two people's notes mean the same thing. Free-text notes sit
   alongside. Both survive a patch: they re-link by event name when media ids change.
+- Columns whose text carries a number **sort by the number**: `V2` before `V10`, `#2`
+  before `#100`, `3.7s` before `12.0s`. The label is only a label.
 - **Settings** for which rows and columns the list shows — hide everything already
   tagged, or everything a mod left alone.
 
@@ -202,7 +204,7 @@ Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 ```
 --selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
 --mediapath  --playtest  --cachetest  --mutetest  --noskinbuild  --openorder  --modset
---prefetchpreview  --applied  --ingame
+--prefetchpreview  --applied  --ingame  --sorting
 --roundtrip  --fmtcheck  --vorbistest  --setuproundtrip
 ```
 

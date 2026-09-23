@@ -83,6 +83,13 @@ public partial class App : Application
             return;
         }
 
+        var so = Array.FindIndex(e.Args, a => a.Equals("--sorting", StringComparison.OrdinalIgnoreCase));
+        if (so >= 0 && so + 1 < e.Args.Length)
+        {
+            Shutdown(SortingSelfTest.Run(e.Args[so + 1]));
+            return;
+        }
+
         if (Array.FindIndex(e.Args, a => a.Equals("--ingame", StringComparison.OrdinalIgnoreCase)) >= 0)
         {
             Shutdown(InGameChainTest.Run());
