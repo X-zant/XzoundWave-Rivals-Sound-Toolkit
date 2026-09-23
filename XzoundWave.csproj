@@ -67,6 +67,9 @@
     <Compile Remove="XzoundLogic\**" />
     <EmbeddedResource Remove="XzoundLogic\**" />
     <None Remove="XzoundLogic\**" />
+    <Compile Remove="XzoundCli\**" />
+    <EmbeddedResource Remove="XzoundCli\**" />
+    <None Remove="XzoundCli\**" />
   </ItemGroup>
 
 </Project>
