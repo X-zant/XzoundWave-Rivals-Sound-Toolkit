@@ -13,6 +13,9 @@ public static class Program
 
         // Render the window to a file instead of a screen. This is how the layout gets
         // looked at on a machine with no display, and how a test can assert about it.
+        if (args.Any(a => a.Equals("--uitest", StringComparison.OrdinalIgnoreCase)))
+            return UiSelfTest.Run();
+
         var shot = Array.FindIndex(args, a => a.Equals("--shot", StringComparison.OrdinalIgnoreCase));
         if (shot >= 0)
             return Shot.Take(args.Length > shot + 1 ? args[shot + 1] : "window.png",

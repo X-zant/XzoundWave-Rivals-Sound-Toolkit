@@ -1,0 +1,71 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="MRAudioKit.UI.SettingsWindow"
+        Title="Settings" Width="760" Height="560"
+        MinWidth="620" MinHeight="420"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{StaticResource Bg}">
+
+  <!-- Categories down the side rather than tabs across the top: this list is
+       expected to grow, and a growing tab strip is where settings go to die.
+
+       There is no OK button and no Apply. Every page writes its change and saves it
+       as it is made, so there is nothing to forget to press, and nothing in here is
+       destructive enough to need holding back. The one destructive choice, replacing
+       an imported file with its .wem, asks before it is turned on rather than when
+       it is applied. -->
+
+  <Window.Styles>
+    <!-- The same flat square buttons the main window uses. Styles do not cross a
+         window boundary, so the rule is restated here rather than shared. -->
+    <Style Selector="Button.tool">
+      <Setter Property="Background" Value="{StaticResource Bg2}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="2"/>
+      <Setter Property="Padding" Value="10,4"/>
+      <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+    </Style>
+
+    <Style Selector="ListBox#Categories ListBoxItem">
+      <Setter Property="Padding" Value="10,6"/>
+      <Setter Property="CornerRadius" Value="0"/>
+    </Style>
+  </Window.Styles>
+
+  <Grid Margin="10" RowDefinitions="*,Auto" ColumnDefinitions="Auto,*">
+
+    <ListBox x:Name="Categories" Grid.Row="0" Grid.Column="0" Width="170"
+             Margin="0,0,10,0" Background="{StaticResource Bg2}"
+             BorderBrush="{StaticResource Line}" BorderThickness="1"/>
+
+    <Border Grid.Row="0" Grid.Column="1" BorderBrush="{StaticResource Line}"
+            BorderThickness="1" Background="{StaticResource Bg2}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12">
+        <StackPanel>
+          <TextBlock x:Name="PaneTitle" FontWeight="Bold" FontSize="15"
+                     TextWrapping="Wrap" Foreground="{StaticResource Fg}"/>
+          <TextBlock x:Name="PaneHint" Margin="0,4,0,10" TextWrapping="Wrap"
+                     Foreground="{StaticResource Muted}"/>
+          <!-- Built in code, because most of these rows are a question the engine has
+               to be asked: which columns the grid really has, what the conversion
+               cache is holding, which warnings have been silenced. -->
+          <StackPanel x:Name="PaneBody"/>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,10,0,0"
+          ColumnDefinitions="*,Auto">
+      <!-- What is being withheld, always in view: a list that is hiding half of
+           itself should never look like a list that is empty. -->
+      <TextBlock x:Name="Summary" Grid.Column="0" VerticalAlignment="Center"
+                 Margin="0,0,10,0" Foreground="{StaticResource Muted}"
+                 TextTrimming="CharacterEllipsis"/>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button x:Name="BtnReset" Content="Reset this page" Classes="tool"/>
+        <Button x:Name="BtnClose" Content="Close" Classes="tool" MinWidth="90"/>
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

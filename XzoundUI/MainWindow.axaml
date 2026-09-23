@@ -68,8 +68,16 @@
             Padding="8">
       <Grid ColumnDefinitions="*,Auto">
         <WrapPanel x:Name="Toolbar" Grid.Column="0" Orientation="Horizontal"/>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12"
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
                     VerticalAlignment="Center">
+          <!-- Not in the mockup, which was drawing the Mods tab rather than the whole
+               window. The list needs a filter and the columns need a switch, and they
+               belong with the counts because all three are about what is on screen
+               rather than about what you are doing. -->
+          <TextBox x:Name="TbFilter" Width="180" PlaceholderText="Filter…"/>
+          <Button x:Name="BtnColumns"  Content="Columns ▾" Classes="tool"/>
+          <Button x:Name="BtnSettings" Content="Settings…" Classes="tool"/>
+          <Border Width="1" Margin="4,2" Background="{StaticResource Line}"/>
           <TextBlock x:Name="StatScope"  Foreground="{StaticResource Muted}"     Background="Transparent"/>
           <TextBlock x:Name="StatModded" Foreground="{StaticResource TagPurple}" Background="Transparent"/>
           <TextBlock x:Name="StatStaged" Foreground="{StaticResource TagGreen}"  Background="Transparent"/>

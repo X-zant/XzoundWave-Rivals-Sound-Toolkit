@@ -26,8 +26,7 @@ public static class Notice
     public static bool Show(Window owner, Settings settings, string key,
                             string title, string message, bool cancellable = true)
     {
-        if (settings?.SuppressedWarnings?.Contains(key, StringComparer.OrdinalIgnoreCase) == true)
-            return true;
+        if (Notices.IsSuppressed(settings, key)) return true;
 
         Brush B(string k) => (Brush)Application.Current.Resources[k];
 
@@ -84,28 +83,17 @@ public static class Notice
 
         // Only remember the choice when they accepted it. Silencing a warning someone
         // cancelled out of would suppress it for a decision they had refused.
-        if (accepted && again.IsChecked == true && settings is not null)
-        {
-            settings.SuppressedWarnings ??= [];
-            if (!settings.SuppressedWarnings.Contains(key, StringComparer.OrdinalIgnoreCase))
-                settings.SuppressedWarnings.Add(key);
-            settings.Save();
-        }
+        if (accepted && again.IsChecked == true) Notices.Suppress(settings, key);
         return accepted;
     }
 
-    /// <summary>Keys, in one place so a typo cannot silently create a second warning.</summary>
-    public const string ModReplaced = "mod-replaced-an-already-loaded-bnk";
-    public const string BuildOnMod = "build-uses-a-loaded-mod-as-its-base";
-
     /// <summary>
-    /// What a key means, for the list in settings. A key is written to be stable, not
-    /// to be read, and "mod-replaced-an-already-loaded-bnk" is not an explanation.
+    /// The keys and their wording live in Notices, in the engine, because the settings
+    /// page that offers to bring a warning back is in a different window from the code
+    /// that raises it and both have to mean the same thing.
     /// </summary>
-    public static string Describe(string key) => key switch
-    {
-        ModReplaced => "Loading a .bnk another mod had already claimed replaces it.",
-        BuildOnMod  => "Building while a mod is loaded uses that mod as the base.",
-        _ => key,
-    };
+    public const string ModReplaced = Notices.ModReplaced;
+    public const string BuildOnMod = Notices.BuildOnMod;
+
+    public static string Describe(string key) => Notices.Describe(key);
 }

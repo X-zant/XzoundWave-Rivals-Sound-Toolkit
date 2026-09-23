@@ -3,6 +3,7 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 
 namespace MRAudioKit.UI;
@@ -34,6 +35,24 @@ public partial class MainWindow : Window
             if (e.Container is TreeViewItem item && item.DataContext is Node n)
                 item.IsExpanded = n.Expanded;
         };
+        // State at a glance, in the same colours the tree uses. Avalonia has no
+        // DataTrigger, and a row's fill depends on four properties of its item, so it
+        // is set as the row is realised rather than expressed as a style. Order
+        // matters: a muted row that also has a replacement staged reads as muted,
+        // because that is the one that will surprise you in game.
+        Grid_.LoadingRow += (_, e) =>
+        {
+            e.Row.Background = e.Row.DataContext is not SoundRow r ? null
+                : r.Muted                              ? Palette.RowMuted
+                : r.ReplacementPath is not null        ? Palette.RowStaged
+                : r.ModTag == "NEW"                    ? Palette.RowNew
+                : r.ModTag == "MODDED"                 ? Palette.RowModded
+                : null;
+        };
+        TbFilter.TextChanged += (_, _) => ApplyFilter();
+        BtnColumns.Click += (_, _) => ShowColumnMenu();
+        BtnSettings.Click += (_, _) => _ = ShowSettings();
+        ApplyColumnVisibility();
         Tabs.SelectionChanged += (_, _) => ShowToolbar();
         Tree.SelectionChanged += async (_, _) => await PickedChanged();
         ShowToolbar();
@@ -205,11 +224,126 @@ public partial class MainWindow : Window
                .Where(s => !_skinCache.ContainsKey(s.SkinId))
                .ToList();
 
+    // ---- which columns are on screen ---------------------------------------
+
+    /// <summary>
+    /// Hidden on a first run. The .bnk column repeats what the tree already says when
+    /// one bank is picked, and a length nobody has measured yet is an empty column.
+    /// </summary>
+    private static readonly string[] HiddenColumnsByDefault = [".bnk"];
+
+    /// <summary>
+    /// A column header is the key its hidden-or-not preference is stored under, so
+    /// renaming one silently un-hides it for everybody who had already turned it off.
+    /// Rewrite the old name on load rather than stranding the setting.
+    ///
+    /// Both of these are real: Bank became .bnk in the WPF app, and the port renamed
+    /// "Subtitle / line" from the old "Subtitle / line" unchanged but dropped several
+    /// columns entirely, whose entries are left alone because an absent column cannot
+    /// be shown or hidden.
+    /// </summary>
+    private static readonly (string Old, string New)[] RenamedColumns =
+        [("Bank", ".bnk"), ("Game does", "Ingame")];
+
+    private void ApplyColumnVisibility()
+    {
+        _settings.HiddenColumns ??= [.. HiddenColumnsByDefault];
+        foreach (var (was, now) in RenamedColumns)
+            for (var i = 0; i < _settings.HiddenColumns.Count; i++)
+                if (_settings.HiddenColumns[i].Equals(was, StringComparison.OrdinalIgnoreCase))
+                    _settings.HiddenColumns[i] = now;
+
+        foreach (var c in Grid_.Columns)
+        {
+            var header = c.Header?.ToString();
+            if (string.IsNullOrEmpty(header)) continue;
+            c.IsVisible = !_settings.HiddenColumns
+                .Contains(header, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Settings owns everything that is a preference rather than an action. It is
+    /// handed the grid so its Columns page can enumerate the real columns, and a
+    /// callback so a change takes effect here without it knowing how.
+    /// </summary>
+    private async Task ShowSettings()
+    {
+        await new SettingsWindow(_settings, Grid_, () =>
+        {
+            ApplyColumnVisibility();
+            ApplyFilter();
+        }).ShowDialog(this);
+
+        ApplyColumnVisibility();
+        ApplyFilter();
+    }
+
+    /// <summary>
+    /// A tick per column, next to the button. The same preference lives in Settings;
+    /// this is the quick way to it, because deciding which columns you want is
+    /// something you do while looking at them.
+    /// </summary>
+    private void ShowColumnMenu()
+    {
+        var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        foreach (var column in Grid_.Columns)
+        {
+            var header = column.Header?.ToString();
+            if (string.IsNullOrEmpty(header)) continue;
+
+            var item = new MenuItem
+            {
+                Header = header,
+                ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked = column.IsVisible,
+            };
+            item.Click += (_, _) =>
+            {
+                _settings.HiddenColumns.RemoveAll(h =>
+                    h.Equals(header, StringComparison.OrdinalIgnoreCase));
+                if (item.IsChecked != true) _settings.HiddenColumns.Add(header);
+                _settings.Save();
+                ApplyColumnVisibility();
+            };
+            menu.Items.Add(item);
+        }
+        menu.ShowAt(BtnColumns);
+    }
+
+    /// <summary>
+    /// What the list shows, out of what the selection holds. The filter is deliberately
+    /// only the text box: the row-kind switches are a persisted setting and belong in
+    /// Settings, where they can be seen rather than remembered.
+    /// </summary>
+    private void ApplyFilter()
+    {
+        if (_sounds is null) return;
+        var q = TbFilter.Text?.Trim() ?? "";
+        IEnumerable<SoundRow> rows = _sounds.Rows;
+
+        // Whole kinds of row can be switched off in Settings, and that setting applies
+        // everywhere the list is read from.
+        rows = RowClasses.Apply(rows, _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault]);
+
+        if (q.Length > 0)
+            rows = rows.Where(r =>
+                r.Display.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                r.Subtitle.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                r.MediaId.ToString().Contains(q) ||
+                r.Bank.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                SoundTags.Matches(r.Tags, q) ||
+                // Clips are spoken zero-padded, so "042" should find #42 as well.
+                (int.TryParse(q.TrimStart('#'), out var n) && r.TestNumber == n));
+
+        Grid_.ItemsSource = rows.ToList();
+        Counts();
+    }
+
     private void Show()
     {
         _sounds = Merge();
-        Grid_.ItemsSource = _sounds.Rows;
-        Counts();
+        ApplyFilter();
         Say($"{_picked.Count} selected — {_sounds.Rows.Count:N0} sounds.");
     }
 
@@ -250,50 +384,89 @@ public partial class MainWindow : Window
         return merged;
     }
 
+    /// <summary>
+    /// The counts, each able to say that some of its kind are NOT on screen.
+    ///
+    /// A filter that silently removes the sounds you came to look at reads as a broken
+    /// tool: hiding unnamed events is on by default, and a mod that replaced sounds the
+    /// game never named has every one of its changes dropped by it. So a count carries
+    /// a star when rows of its kind are being withheld, and says so on hover. It shows
+    /// at zero too, because "0 modded *" is the sentence that stops someone concluding
+    /// their mod failed to load.
+    ///
+    /// The text box is deliberately not counted. Typing a filter is an act you can see
+    /// and undo; a setting from three sessions ago is not.
+    /// </summary>
     private void Counts()
     {
-        var rows = _sounds?.Rows ?? [];
+        var shown = (Grid_.ItemsSource as IEnumerable<SoundRow>)?.ToList() ?? [];
+        var all = _sounds?.Rows ?? [];
+        var hiddenKeys = _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault];
+        var withheld = all.Where(r => RowClasses.IsHidden(r, hiddenKeys)).ToList();
+
         StatScope.Text = _mods.Any
             ? $"{_mods.Sources.Count()} mod loaded · {_mods.Count} .bnk"
-            : $"{rows.Count:N0} sounds";
-        var modded = rows.Count(r => r.ModTag is "MODDED" or "NEW");
-        var staged = rows.Count(r => r.ReplacementPath is not null);
-        var muted = rows.Count(r => r.Muted);
-        StatModded.Text = modded > 0 ? $"● {modded:N0} modded" : "";
-        StatStaged.Text = staged > 0 ? $"{staged:N0} staged" : "";
-        StatMuted.Text = muted > 0 ? $"{muted:N0} muted" : "";
+            : $"{shown.Count:N0} sounds";
+
+        Set(StatModded, shown.Count(r => r.ModTag is "MODDED" or "NEW"), "modded",
+            withheld, r => r.ModTag is "MODDED" or "NEW", "● ");
+        Set(StatStaged, shown.Count(r => r.ReplacementPath is not null), "staged",
+            withheld, r => r.ReplacementPath is not null);
+        Set(StatMuted, shown.Count(r => r.Muted), "muted", withheld, r => r.Muted);
+
+        void Set(TextBlock box, int count, string label, List<SoundRow> off,
+                 Func<SoundRow, bool> belongs, string mark = "")
+        {
+            var hidden = off.Where(belongs).ToList();
+            if (count == 0 && hidden.Count == 0) { box.Text = ""; return; }
+
+            box.Text = $"{mark}{count:N0} {label}" + (hidden.Count > 0 ? " *" : "");
+            if (hidden.Count == 0) { ToolTip.SetTip(box, null); return; }
+
+            var by = hidden.SelectMany(r => RowClasses.HidingKinds(r, hiddenKeys))
+                           .Select(c => c.Label).Distinct()
+                           .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+            ToolTip.SetTip(box,
+                $"{hidden.Count:N0} more are hidden by the row filter, so they are not " +
+                "counted here." + Environment.NewLine + Environment.NewLine +
+                "Hidden by: " + string.Join(", ", by) + Environment.NewLine +
+                "Settings › Rows turns them back on.");
+        }
     }
 
     // ---- the toolbar, which is the only thing a tab changes -----------------
 
+    /// <summary>
+    /// The toolbar is the only thing a tab changes. Each tab's buttons come from its
+    /// own file, so the tabs do not have to share one method and can be worked on
+    /// without colliding.
+    /// </summary>
     private void ShowToolbar()
     {
         Toolbar.Children.Clear();
-        var buttons = Tabs.SelectedIndex switch
+        var tools = Tabs.SelectedIndex switch
         {
-            1 => new (string, bool)[] {("Numbered test .bnk…", false), ("Test the selection…", false),
-                 ("Test only the selection…", false), ("Mute / unmute", false), ("Silent .bnk…", false)},
-            2 => [("Build modded .bnk", true), ("Set replacement…", false), ("Clear", false),
-                  ("Set volume…", false), ("Change all volumes…", false),
-                  ("Build at these volumes…", false)],
-            3 => [("Open .bnk / .pak…", false), ("Close mods", false), ("Merge mods…", false),
-                  ("Recompress .bnk…", false)],
-            4 => [("Paks folder…", false), ("AES key…", false), ("usmap…", false),
-                  ("Fetch latest", false), ("Load game", true)],
-            _ => [("▶  Play", false), ("▶▶  Autoplay", false), ("■  Stop", false),
-                  ("Measure durations", false), ("Ingame", false)],
+            1 => TestTools(),
+            2 => BuildTools(),
+            3 => ModTools(),
+            4 => SetupTools(),
+            _ => BrowseTools(),
         };
 
-        foreach (var (text, key) in buttons)
+        foreach (var tool in tools)
         {
-            var b = new Button { Content = text, Margin = new Avalonia.Thickness(0, 0, 6, 0) };
+            var b = new Button
+            {
+                Content = tool.Text,
+                Margin = new Avalonia.Thickness(0, 0, 6, 0),
+            };
             b.Classes.Add("tool");
-            if (key) b.Classes.Add("key");
+            if (tool.Key) b.Classes.Add("key");
+            if (tool.Hint is not null) ToolTip.SetTip(b, tool.Hint);
+            b.Click += (_, _) => tool.Run();
             Toolbar.Children.Add(b);
         }
     }
-
-    private void Say(string s) => Status.Text = s;
 
     // ---- used by the window and by the render harness ------------------------
 
