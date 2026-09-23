@@ -1,6 +1,5 @@
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Windows;
 
 namespace MRAudioKit;
 
@@ -17,6 +16,23 @@ namespace MRAudioKit;
 /// </summary>
 public static class EnvCheck
 {
+    /// <summary>
+    /// How to reach someone who has no console.
+    ///
+    /// These reports exist for the person whose audio will not play, who is exactly the
+    /// person least able to run a command and read its output -- and a windowed build
+    /// has nowhere to print. A host with a window replaces this with a dialog; left
+    /// alone it writes to the console, which is right for a command-line host and for
+    /// every platform that has one.
+    /// </summary>
+    public static Action<string, string, bool> Tell { get; set; } = (title, body, fatal) =>
+    {
+        var to = fatal ? Console.Error : Console.Out;
+        to.WriteLine();
+        to.WriteLine(title);
+        to.WriteLine(body);
+    };
+
     public const int RequiredMajor = 10;
     public const string DownloadUrl = "https://dotnet.microsoft.com/download/dotnet/10.0";
     public const string RuntimeName = ".NET Desktop Runtime 10 (x64)";
@@ -89,6 +105,7 @@ public static class EnvCheck
     private static bool MediaFoundationWorks(out string error)
     {
         error = null;
+#if WINDOWS
         try
         {
             NAudio.MediaFoundation.MediaFoundationApi.Startup();
@@ -100,6 +117,11 @@ public static class EnvCheck
             error = ex.Message;
             return false;
         }
+#else
+        // Nothing to report: a build that never asks Media Foundation for anything
+        // cannot be let down by it.
+        return true;
+#endif
     }
 
     /// <summary>
@@ -113,9 +135,7 @@ public static class EnvCheck
 
         foreach (var p in problems.OrderByDescending(p => p.Fatal))
         {
-            MessageBox.Show(
-                p.Detail, p.Title, MessageBoxButton.OK,
-                p.Fatal ? MessageBoxImage.Error : MessageBoxImage.Warning);
+            Tell(p.Title, p.Detail, p.Fatal);
             if (p.Fatal) return false;
         }
         return true;
@@ -255,9 +275,9 @@ public static class EnvCheck
         }
         else
         {
-            MessageBox.Show(
-                text + Environment.NewLine + "Saved to:" + Environment.NewLine + ReportPath,
-                "XzoundWave diagnostics", MessageBoxButton.OK, MessageBoxImage.Information);
+            Tell("XzoundWave diagnostics",
+                 text + Environment.NewLine + "Saved to:" + Environment.NewLine + ReportPath,
+                 false);
         }
 
         return problems.Any(p => p.Fatal) ? 1 : 0;

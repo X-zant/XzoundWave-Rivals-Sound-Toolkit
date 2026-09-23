@@ -14,9 +14,14 @@ namespace MRAudioKit;
 ///
 /// So: attach to whatever console launched us if there is one, and let callers know
 /// when there is not, so they can put the text somewhere a person will find it.
+///
+/// None of which applies anywhere else. An ordinary process on any other platform is
+/// handed a real stdout, so the whole class answers "yes, there is one" and does
+/// nothing.
 /// </summary>
 public static class ConsoleBridge
 {
+#if WINDOWS
     private const int AttachParentProcess = -1;
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -45,6 +50,7 @@ public static class ConsoleBridge
     /// <summary>True once output will actually land somewhere visible.</summary>
     public static bool HasConsole { get; private set; }
 
+
     /// <summary>
     /// Call before a verb writes anything. Safe to call more than once, and harmless
     /// when the process was started from a shell that already redirects our output.
@@ -69,4 +75,10 @@ public static class ConsoleBridge
             catch { HasConsole = false; }
         }
     }
+#else
+    /// <summary>Always true off Windows: the process was given a real stdout.</summary>
+    public static bool HasConsole => true;
+
+    public static void Attach() { }
+#endif
 }
