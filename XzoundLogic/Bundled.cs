@@ -22,7 +22,14 @@ public static class Bundled
     public static string VgmstreamExe =>
         Path.Combine(ToolsDir, AppPaths.Exe("vgmstream-cli"));
 
-    private const string ZipResource = "XzoundWave.vgmstream.zip";
+    /// <summary>
+    /// The payload for this platform. A build carries only the one it needs, so a
+    /// missing resource means "built for something else" rather than a broken build,
+    /// and EnsureVgmstream says so.
+    /// </summary>
+    private static string ZipResource =>
+        OperatingSystem.IsWindows() ? "XzoundWave.vgmstream.windows.zip"
+                                    : "XzoundWave.vgmstream.linux.zip";
     private const string LicenceResource = "XzoundWave.LICENSE";
     private const string NoticesResource = "XzoundWave.THIRD-PARTY-NOTICES.md";
 

@@ -64,10 +64,23 @@
          the files themselves are the repo's, not this project's. -->
     <EmbeddedResource Include="..\LICENSE" LogicalName="XzoundWave.LICENSE" />
     <EmbeddedResource Include="..\THIRD-PARTY-NOTICES.md" LogicalName="XzoundWave.THIRD-PARTY-NOTICES.md" />
-    <!-- vgmstream-cli and the codec DLLs it loads, unpacked to app data on first use.
-         Trimmed from the official win64 zip: the Winamp and XMPlay plugins are 4.3 MB
-         the CLI does not need. A Linux payload joins this per RID. -->
-    <EmbeddedResource Include="..\vendor\vgmstream-cli-win64.zip" LogicalName="XzoundWave.vgmstream.zip" />
+  </ItemGroup>
+
+  <!-- vgmstream, unpacked to app data on first use. Only the payload for what is
+       being built is carried: a Windows release has no reason to hold a Linux binary.
+       With no runtime identifier, which is what a plain dotnet build gives, both
+       conditions hold and both go in, so a development build can run either way.
+
+       The Windows payload is the official win64 zip trimmed of the Winamp and XMPlay
+       plugins, 4.3 MB the CLI does not need. The Linux one is a single static binary
+       and needs no trimming or codec libraries beside it. -->
+  <ItemGroup Condition="!$(RuntimeIdentifier.StartsWith('linux'))">
+    <EmbeddedResource Include="..\vendor\vgmstream-cli-win64.zip"
+                      LogicalName="XzoundWave.vgmstream.windows.zip" />
+  </ItemGroup>
+  <ItemGroup Condition="!$(RuntimeIdentifier.StartsWith('win'))">
+    <EmbeddedResource Include="..\vendor\vgmstream-cli-linux64.zip"
+                      LogicalName="XzoundWave.vgmstream.linux.zip" />
   </ItemGroup>
 
 </Project>

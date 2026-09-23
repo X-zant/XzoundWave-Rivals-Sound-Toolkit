@@ -73,11 +73,13 @@ public sealed class NoAudio : IAudioOutput
     public void Stop() { }
     public bool IsPlaying => false;
     public event Action Finished;
-    public event Action<string> Failed;
+
+    /// <summary>Never raised: nothing can go wrong on the way to nowhere.</summary>
+    public event Action<string> Failed { add { } remove { } }
 
     public string Problem() =>
         "this build has no audio output — decoding and building work, playback does not.";
 
     public string Summary() => "none (no output backend in this build)";
-    public void Dispose() { Failed = null; Finished = null; }
+    public void Dispose() => Finished = null;
 }

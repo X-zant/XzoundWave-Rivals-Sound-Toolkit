@@ -14,10 +14,20 @@ public static class Tts
 {
     private const int SSFMCreateForWrite = 3;
 
+    /// <summary>
+    /// Whether this machine can speak. SAPI is COM and Windows' own, and asking for it
+    /// anywhere else throws rather than answering -- so the platform is checked first
+    /// and the question is never put.
+    ///
+    /// Temporary. A generator that ships with the tool replaces this, so that a
+    /// numbered test bank means the same thing on every platform instead of being a
+    /// feature one of them happens to have.
+    /// </summary>
     public static bool IsAvailable
     {
         get
         {
+            if (!OperatingSystem.IsWindows()) return false;
             try { return Type.GetTypeFromProgID("SAPI.SpVoice") is not null; }
             catch { return false; }
         }
@@ -27,6 +37,7 @@ public static class Tts
         => target.GetType().InvokeMember(member, flags, null, target, args);
 
     /// <summary>Speak <paramref name="text"/> into a .wav file. Returns the path.</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     public static string SpeakToWav(string text, string wavPath, int rateBoost = 0)
     {
         var voiceType = Type.GetTypeFromProgID("SAPI.SpVoice")
@@ -60,6 +71,14 @@ public static class Tts
     public static int GenerateNumbers(string outDir, int first, int last,
                                       Action<string> progress, int rateBoost = 2)
     {
+        // The voice is Windows' own. Callers ask IsAvailable first; this is the
+        // backstop, and it says which of the two things is missing rather than
+        // failing somewhere inside COM.
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException(
+                "Generating spoken numbers needs the Windows speech voice. " +
+                "Point the test build at a folder of clips instead.");
+
         Directory.CreateDirectory(outDir);
         var tmp = Path.Combine(Path.GetTempPath(), "XzoundWave", "tts");
         Directory.CreateDirectory(tmp);
