@@ -78,4 +78,16 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- The distributable is the one exe. UAssetTool and UAssetAPI are compiled into it like
+       every other library; what the publish would otherwise leave beside it is debug symbols
+       (the vendor projects' and the native SkiaSharp and HarfBuzz ones, about 107 MB) and
+       UAssetTool's runtimeconfig, which matters only when UAssetTool runs as a program of its
+       own, which this app never does. Done here, so UAssetToolRivals itself is left as it is. -->
+  <Target Name="PublishOnlyTheExe" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'UAssetTool.runtimeconfig.json'" />
+    </ItemGroup>
+  </Target>
+
 </Project>

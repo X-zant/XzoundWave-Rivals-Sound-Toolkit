@@ -61,27 +61,37 @@ public partial class MainWindow
             new("Build mod", () => _ = BuildModAsync(), Key: true,
                 Hint: "Rebuild every .bnk that embeds a staged or muted sound and package the mod for ~mods: " +
                       "a .pak, or, with new voice lines, the .utoc/.ucas/.pak bundle they need."),
-            new(HasPakNameList ? "Pak name list ✓" : "Pak name list…", () => _ = PickPakNameListAsync(),
-                Hint: "Sort Build mod's output by a SoundKit 0-PAK-NAME-LIST.txt: each rule <search>:<folder>:<pakname> " +
-                      "puts the banks whose name contains <search> (and a loose wem by its id, or by the bank that plays it) " +
-                      "into <folder>\\<pakname>.pak. What no rule takes goes where it would anyway. " +
-                      (HasPakNameList ? $"Now: {Config.PakNameList}" : "Off.")),
-            new(Config.SplitModsByGroup ? "One .pak per character ✓" : "One .pak per character", ToggleSplit,
-                Hint: "Build mod writes one mod per character (and per map, menu or music for the sounds no character " +
-                      "owns), each in a folder of its name, instead of one mod for everything."),
             new("Install to ~mods", () => _ = InstallLastBuildAsync(),
-                Hint: "Copy what the last Build mod made into the game's ~mods folder, in a folder named after the project."),
-            new("Set replacement…", () => _ = SetReplacementAsync(),
-                Hint: "Stage audio. With rows selected it goes to those sounds; otherwise the filenames say where it goes."),
-            new("Clear staged", () => _ = ClearStagedAsync(),
-                Hint: "Unstage. Everything by default; with staged rows selected it offers those alone."),
-            new("Set volume…", () => _ = SetVolumeAsync(),
-                Hint: "A level for the selected sounds, kept against them so a bulk change leaves them alone."),
-            new("Change all volumes…", () => _ = SetAllVolumesAsync(),
-                Hint: "One level for every sound in the open skin -- not just the filtered ones -- except those set by hand."),
-            new("Build at these volumes…", () => _ = BuildVolumesAsync(),
-                Hint: "One .pak per level you give (1.0; 0.8; 0.6 ...), each named after its level. " +
-                      "Sounds you set a level on by hand keep it in every one."),
+                Hint: "Copy what the last build made into the game's ~mods folder, in a folder named after the project."),
+            new("Staging", null, Hint: "Put audio on sounds, or take it off again.", Menu:
+            [
+                new("Set replacement…", () => _ = SetReplacementAsync(),
+                    Hint: "Stage audio. With rows selected it goes to those sounds; otherwise the filenames say where it goes."),
+                new("Clear staged…", () => _ = ClearStagedAsync(),
+                    Hint: "Unstage. Everything by default; with staged rows selected it offers those alone."),
+            ]),
+            new("Volume", null, Hint: "Levels for sounds, and builds at several levels at once.", Menu:
+            [
+                new("Set volume…", () => _ = SetVolumeAsync(),
+                    Hint: "A level for the selected sounds, kept against them so a bulk change leaves them alone."),
+                new("Change all volumes…", () => _ = SetAllVolumesAsync(),
+                    Hint: "One level for every sound in the open skin -- not just the filtered ones -- except those set by hand."),
+                ToolButton.Separator,
+                new("Build at these volumes…", () => _ = BuildVolumesAsync(),
+                    Hint: "One .pak per level you give (1.0; 0.8; 0.6 ...), each named after its level. " +
+                          "Sounds you set a level on by hand keep it in every one."),
+            ]),
+            new("Output", null, Hint: "How Build mod splits and names what it writes. Both are off unless ticked.", Menu:
+            [
+                new("One .pak per character", ToggleSplit, Checked: Config.SplitModsByGroup,
+                    Hint: "Build mod writes one mod per character (and per map, menu or music for the sounds no character " +
+                          "owns), each in a folder of its name, instead of one mod for everything."),
+                new("Pak name list…", () => _ = PickPakNameListAsync(), Checked: HasPakNameList,
+                    Hint: "Sort Build mod's output by a SoundKit 0-PAK-NAME-LIST.txt: each rule <search>:<folder>:<pakname> " +
+                          "puts the banks whose name contains <search> (and a loose wem by its id, or by the bank that plays it) " +
+                          "into <folder>\\<pakname>.pak. What no rule takes goes where it would anyway. " +
+                          (HasPakNameList ? $"Now: {PakNameListPath}" : "Off.")),
+            ]),
         ];
     }
 

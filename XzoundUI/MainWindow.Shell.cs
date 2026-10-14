@@ -5,7 +5,13 @@ using Avalonia.Platform.Storage;
 namespace MRAudioKit.UI;
 
 /// <summary>What a toolbar button is: a label, what it does, and whether it is the big one.</summary>
-public sealed record ToolButton(string Text, Action Run, bool Key = false, string Hint = null);
+/// <param name="Menu">Items of a dropdown: the button opens them instead of running anything. "-" is a separator.</param>
+/// <param name="Checked">For a dropdown item that is a setting: shown ticked or not.</param>
+public sealed record ToolButton(string Text, Action Run, bool Key = false, string Hint = null,
+                                IReadOnlyList<ToolButton> Menu = null, bool? Checked = null)
+{
+    public static ToolButton Separator => new("-", null);
+}
 
 /// <summary>
 /// The parts every tab needs and none of them should reimplement.

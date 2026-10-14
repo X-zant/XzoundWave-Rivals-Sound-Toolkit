@@ -955,13 +955,33 @@ public partial class MainWindow : Window
         {
             var b = new Button
             {
-                Content = tool.Text,
+                Content = tool.Menu is null ? tool.Text : tool.Text + " ▾",
                 Margin = new Avalonia.Thickness(0, 0, 6, 0),
             };
             b.Classes.Add("tool");
             if (tool.Key) b.Classes.Add("key");
             if (tool.Hint is not null) ToolTip.SetTip(b, tool.Hint);
-            b.Click += (_, _) => tool.Run();
+            // A dropdown groups the actions that belong together, so the toolbar stays one row
+            // of what is used every time; each item keeps its own explanation on hover.
+            if (tool.Menu is not null)
+            {
+                var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
+                foreach (var item in tool.Menu)
+                {
+                    if (item.Text == "-") { flyout.Items.Add(new Separator()); continue; }
+                    var mi = new MenuItem
+                    {
+                        Header = item.Text,
+                        ToggleType = item.Checked is null ? MenuItemToggleType.None : MenuItemToggleType.CheckBox,
+                        IsChecked = item.Checked == true,
+                    };
+                    if (item.Hint is not null) ToolTip.SetTip(mi, item.Hint);
+                    mi.Click += (_, _) => item.Run();
+                    flyout.Items.Add(mi);
+                }
+                b.Flyout = flyout;
+            }
+            else b.Click += (_, _) => tool.Run();
             Toolbar.Children.Add(b);
         }
     }

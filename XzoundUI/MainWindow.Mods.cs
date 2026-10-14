@@ -21,40 +21,45 @@ public partial class MainWindow
 
     private IEnumerable<ToolButton> ModTools()
     {
-        yield return new ToolButton("Open .bnk / .pak…", () => _ = ModOpenAsync(), Key: true,
-            Hint: "Open .bnk files, or a mod .pak to pick them from. What a mod supplies " +
-                  "wins over the game's copy of that .bnk.");
-
-        yield return new ToolButton("Open mod folder…", () => _ = ModOpenFolderAsync(),
-            Hint: "Open an unpacked mod: the .bnk files and loose Media wems under a folder laid out as the " +
-                  "game's (Marvel/Content/WwiseAudio/...).");
+        yield return new ToolButton("Open mod", null, Key: true,
+            Hint: "Open a mod to see what it changes: its sounds show in the list, tagged MODDED or NEW, and they are " +
+                  "what builds sit on top of. Dropping a mod on the window does the same.", Menu:
+            [
+                new(".bnk / .pak / .utoc file…", () => _ = ModOpenAsync(),
+                    Hint: "Open .bnk files, or a mod .pak to pick them from. What a mod supplies wins over the game's copy of that .bnk."),
+                new("Unpacked mod folder…", () => _ = ModOpenFolderAsync(),
+                    Hint: "Open an unpacked mod: the .bnk files and loose Media wems under a folder laid out as the " +
+                          "game's (Marvel/Content/WwiseAudio/...)."),
+            ]);
 
         yield return new ToolButton("Close mods", () => _ = ModCloseAsync(),
             Hint: "Drop every loaded mod and go back to the game's own .bnk files.");
 
-        yield return new ToolButton("Update mod…", () => _ = ModUpdateAsync(),
-            Hint: "Bring a mod made for an older patch onto the game's current .bnk files, as a .pak: the game's " +
-                  "banks as they are now, carrying only the audio the mod changed, each line placed by its Sound.");
-
-        yield return new ToolButton("Merge mods…", () => _ = ModMergeAsync(),
-            Hint: "Combine two mods into one .pak. The priority one wins any sound both of them changed.");
-
-        yield return new ToolButton("Recompress…", () => _ = ModRecompressAsync(),
-            Hint: "Re-encode PCM audio to Vorbis, the way the game's own is: in .bnk files, loose .wem files, " +
-                  "or a whole mod .pak, which comes back as a .pak of the same name with every file it ships.");
-
-        yield return new ToolButton("Organize wems…", () => _ = ModOrganizeAsync(),
-            Hint: "Copy a folder of finished wems into one folder per mod: by a SoundKit rule list " +
-                  "(0-WEM-FOLDER-NAME-LIST.txt), matched against what the game says plays each wem, or by the " +
-                  "character, skin and bank that play it. Nothing is moved or deleted.");
-
-        yield return new ToolButton("Extract modded wems…", () => _ = ModExtractAsync(),
-            Hint: "Write out the sounds a loaded mod changed, and the game's originals of them beside, " +
-                  "in folders named after the character, skin and .bnk.");
-
         var onlyChanged = (_settings.HiddenRowClasses ?? [.. RowClasses.HiddenByDefault]).Contains("unchanged");
         yield return new ToolButton(onlyChanged ? "Showing only changed ✓" : "Show only changed", ToggleOnlyChanged,
             Hint: "Hide what an opened mod left as the game shipped it. The same switch as Settings > Rows.");
+
+        yield return new ToolButton("Mod tools", null,
+            Hint: "Work on mod files: bring one up to date, combine two, take one apart, sort wems, shrink one.", Menu:
+            [
+                new("Update mod…", () => _ = ModUpdateAsync(),
+                    Hint: "Bring a mod made for an older patch onto the game's current .bnk files, as a .pak: the game's " +
+                          "banks as they are now, carrying only the audio the mod changed, each line placed by its Sound."),
+                new("Merge mods…", () => _ = ModMergeAsync(),
+                    Hint: "Combine two mods into one .pak. The priority one wins any sound both of them changed."),
+                ToolButton.Separator,
+                new("Extract modded wems…", () => _ = ModExtractAsync(),
+                    Hint: "Write out the sounds a loaded mod changed, and the game's originals of them beside, " +
+                          "in folders named after the character, skin and .bnk."),
+                new("Organize wems…", () => _ = ModOrganizeAsync(),
+                    Hint: "Copy a folder of finished wems into one folder per mod: by a SoundKit rule list " +
+                          "(0-WEM-FOLDER-NAME-LIST.txt), matched against what the game says plays each wem, or by the " +
+                          "character, skin and bank that play it. Nothing is moved or deleted."),
+                ToolButton.Separator,
+                new("Recompress…", () => _ = ModRecompressAsync(),
+                    Hint: "Re-encode PCM audio to Vorbis, the way the game's own is: in .bnk files, loose .wem files, " +
+                          "or a whole mod .pak, which comes back as a .pak of the same name with every file it ships."),
+            ]);
     }
 
     // ---- opening somebody else's bank ---------------------------------------

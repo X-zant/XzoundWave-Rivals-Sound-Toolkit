@@ -41,20 +41,22 @@ public partial class MainWindow
         yield return new ToolButton("usmap…", () => _ = SetupUsmapAsync(),
             Hint: "Mappings file.\n" + SetupUsmapNote());
 
-        yield return new ToolButton("Fetch latest mappings", () => _ = SetupFetchAsync(),
-            Hint: "Download the newest mappings from the community depot.\n" +
-                  "Your own file, if you picked one, is kept until you confirm.");
-
         yield return new ToolButton("Language…", () => _ = SetupLanguageAsync(),
             Hint: $"Which language's voice lines and subtitles to read.\nNow: {Config.Language}.");
 
-        yield return new ToolButton("Import SoundKit lists…", () => _ = SetupImportSubsAsync(),
-            Hint: "SoundKit's subtitle lists from earlier seasons (its SUBS-OLD folder): what lets Update mod " +
-                  "move a loose voice line made before XzoundWave recorded that season onto today's id.");
-
-        yield return new ToolButton("Record a game folder…", () => _ = SetupSnapshotFolderAsync(),
-            Hint: "An older copy of the game's Paks folder, recorded so Update mod knows what its media ids were. " +
-                  "The game you load is recorded on its own, once per version.");
+        yield return new ToolButton("More", null, Hint: "Mappings from the community, and the game's history for Update mod.", Menu:
+        [
+            new("Fetch latest mappings", () => _ = SetupFetchAsync(),
+                Hint: "Download the newest mappings from the community depot.\n" +
+                      "Your own file, if you picked one, is kept until you confirm."),
+            ToolButton.Separator,
+            new("Import SoundKit lists…", () => _ = SetupImportSubsAsync(),
+                Hint: "SoundKit's subtitle lists from earlier seasons (its SUBS-OLD folder): what lets Update mod " +
+                      "move a loose voice line made before XzoundWave recorded that season onto today's id."),
+            new("Record a game folder…", () => _ = SetupSnapshotFolderAsync(),
+                Hint: "An older copy of the game's Paks folder, recorded so Update mod knows what its media ids were. " +
+                      "The game you load is recorded on its own, once per version."),
+        ]);
     }
 
     /// <summary>Said after whatever is on the status line, rather than over it.</summary>
