@@ -132,8 +132,11 @@ public static class AppliedPropsTest
               untouched is null || untouched.AppliedLabel.Length == 0,
               untouched is null ? "(every sound here has something set)" : untouched.AppliedDetail);
 
+        // "Property " is this tool's own placeholder wording for an id it could not
+        // name, so it is matched literally. A check whose verdict depends on the
+        // machine's collation cannot be trusted on the machine that fails it.
         var named = moon.Rows.SelectMany(r => r.Applied?.Props ?? [])
-                        .Count(p => p.Name.StartsWith("Property "));
+                        .Count(p => p.Name.StartsWith("Property ", StringComparison.Ordinal));
         Check("no property is left as a bare number", named == 0,
               named == 0 ? "" : $"{named} unnamed — the table does not cover this bank version");
 
@@ -191,8 +194,8 @@ public static class AppliedPropsTest
         // agree to BusVolume and then diverge, so a curve on id 6 is an initial delay
         // and a property on id 6 is a make-up gain.
         Check("...using the RTPC table, not the property one",
-              curves.All(c => !c.StartsWith("parameter ")),
-              curves.FirstOrDefault(c => c.StartsWith("parameter ")) ?? "");
+              curves.All(c => !c.StartsWith("parameter ", StringComparison.Ordinal)),
+              curves.FirstOrDefault(c => c.StartsWith("parameter ", StringComparison.Ordinal)) ?? "");
 
         // ---- one alternative among several -------------------------------------
         W("");

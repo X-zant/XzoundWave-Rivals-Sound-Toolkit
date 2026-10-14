@@ -137,33 +137,17 @@ public static class SelfTest
     public static int Recompress(string input, string outDir)
     {
         void W(string s) => Console.WriteLine(s);
-        var banks = Directory.Exists(input)
-            ? Directory.EnumerateFiles(input, "*.bnk", SearchOption.AllDirectories).OrderBy(x => x).ToList()
-            : [input];
-        W($"{banks.Count} bank(s)");
-        Directory.CreateDirectory(outDir);
-
-        long tb = 0, ta = 0;
-        foreach (var b in banks)
-        {
-            var src = File.ReadAllBytes(b);
-            var name = Path.GetFileName(b);
-            var t0 = DateTime.UtcNow;
-            var r = BankRecompress.Run(src, m => W($"  [{name}] {m}"));
-            var rel = Directory.Exists(input) ? Path.GetRelativePath(input, b) : name;
-            var dst = Path.Combine(outDir, rel);
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(dst))!);
-            File.WriteAllBytes(dst, r.Bytes);
-            tb += src.Length; ta += r.Bytes.Length;
-            W($"  {name,-24} {src.Length,13:N0} -> {r.Bytes.Length,12:N0} B  " +
-              $"({(src.Length == 0 ? 0 : 100.0 * r.Bytes.Length / src.Length),5:F1}%) " +
-              $"converted={r.Converted} kept={r.Skipped} failed={r.Failed} " +
-              $"in {(DateTime.UtcNow - t0).TotalSeconds:N1}s");
-            foreach (var note in r.Notes.Take(5)) W("      " + note);
-        }
+        // The key opens a mod .pak; nothing else here needs the game.
+        var settings = Settings.Load();
+        settings.AutoDetect();
+        var t0 = DateTime.UtcNow;
+        var r = BankRecompress.RunPicked([input], settings, outDir, W);
+        foreach (var line in r.Lines) W("  " + line);
         W("");
-        W($"TOTAL {tb:N0} -> {ta:N0} B  ({(tb == 0 ? 0 : 100.0 * ta / tb):F1}%, " +
-          $"{(ta == 0 ? 0 : (double)tb / ta):F1}x smaller)");
+        W($"{r.Converted} converted, {r.Kept} already compressed, {r.Failed} left as they were; " +
+          $"{r.Before:N0} -> {r.After:N0} B ({(r.After == 0 ? 0 : (double)r.Before / r.After):F1}x smaller) " +
+          $"in {(DateTime.UtcNow - t0).TotalSeconds:N1}s");
+        foreach (var f in r.Written) W("  wrote " + f);
         return 0;
     }
 
@@ -356,9 +340,9 @@ public static class SelfTest
                                    Path.Combine(outDir, "_extracted"), W);
             W("");
             W(r.Log);
-            W($"{r.Banks} bank(s) written, {r.FromPriority} from priority, " +
+            W($"{r.Banks} bank(s) and {r.Loose} loose file(s) written, {r.FromPriority} from priority, " +
               $"{r.FromSecondary} from secondary, {r.Collisions.Count} collision(s)");
-            return r.Banks > 0 ? 0 : 1;
+            return r.Banks + r.Loose > 0 ? 0 : 1;
         }
         catch (Exception ex) { W("MERGE FAILED: " + ex.Message); return 1; }
     }
@@ -523,11 +507,11 @@ public static class SelfTest
     public static int TtsTest(string outDir, int first, int last)
     {
         void W(string s) => Console.WriteLine(s);
-        W($"SAPI available: {Tts.IsAvailable}");
-        if (!Tts.IsAvailable) return 1;
+        W($"can speak: {NumberSpeech.CanSpeak}");
+        if (!NumberSpeech.CanSpeak) return 1;
 
         var t0 = DateTime.UtcNow;
-        var made = Tts.GenerateNumbers(outDir, first, last, W);
+        var made = NumberSpeech.Generate(outDir, first, last, W);
         W($"{made} clip(s) in {(DateTime.UtcNow - t0).TotalSeconds:0.0}s " +
           $"({(DateTime.UtcNow - t0).TotalMilliseconds / Math.Max(1, made):0} ms each)");
 
@@ -621,8 +605,16 @@ public static class SelfTest
         session.Mount(settings, _ => { });
         session.IndexBanks(_ => { });
 
-        var charId = skinId[..4];
-        var skin = session.Characters.First(c => c.CharId == charId).Skins.First(s => s.SkinId == skinId);
+        // Both catalogues, because a bank belonging to no character is catalogued under its
+        // own file name and a music or ambience bank is as moddable as a skin's. Taking the
+        // character list alone threw "Sequence contains no matching element" before a file
+        // had been read, which made every one of those banks unbuildable without a window.
+        // Not found is not fatal either: the builder takes the skin as a label and the
+        // staged media ids say which .bnk each sound belongs to.
+        var skin = session.Characters.Concat(session.OtherBanks)
+                          .SelectMany(c => c.Skins)
+                          .FirstOrDefault(s => s.SkinId.Equals(skinId, StringComparison.OrdinalIgnoreCase));
+        if (skin is null) W($"no skin or bank called {skinId}; building from the staged ids alone");
 
         var pending = Directory.EnumerateFiles(wemDir, "*.wem")
             .Select(f => PendingWem.FromFile(f, out _)).Where(x => x is not null).ToList();
@@ -681,7 +673,7 @@ public static class SelfTest
             foreach (var bp in banks.Where(b => bankHint is null ||
                      Path.GetFileName(b).Contains(bankHint, StringComparison.OrdinalIgnoreCase)))
             {
-                var bytes = session.Provider.Files[bp].Read();
+                var bytes = session.Bank(bp).Read();
                 var didx = BnkBuilder.ReadDidx(
                     BnkBuilder.ReadSections(bytes).First(s => s.Tag == "DIDX").Body);
                 var e = didx.First(x => x.Id == id);
@@ -692,19 +684,27 @@ public static class SelfTest
             // bank holds the whole clip, PrefetchStreaming means bank-then-file.
             foreach (var bp in banks.Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                var f = session.Provider.Files[bp];
+                var f = session.Bank(bp);
                 using var ar = f.CreateReader();
                 var w = new CUE4Parse.UE4.Wwise.WwiseReader(
                     new CUE4Parse.UE4.Wwise.FWwiseArchive(ar),
                     new CUE4Parse.UE4.Wwise.WwiseGameFileSource(f));
+                // A Sound or a music track: both own sources, and a medium carried only by
+                // a track printed nothing here at all, which reads as a bank that does not
+                // reference audio it plainly embeds.
                 foreach (var h in w.Hierarchies ?? [])
                 {
-                    if (h.Data is not CUE4Parse.UE4.Wwise.Objects.HIRC.Containers.HierarchySoundSfxVoice s)
-                        continue;
-                    if (s.Source.SourceId != id && s.Source.FileId != id) continue;
-                    W($"    {bp}");
-                    W($"      SourceType={s.Source.SourceType}  plugin={s.Source.Plugin.PluginId}  " +
-                      $"inMemorySize={s.Source.InMemoryMediaSize:N0}");
+                    IEnumerable<CUE4Parse.UE4.Wwise.Objects.AkBankSourceData> sources = h.Data switch
+                    {
+                        CUE4Parse.UE4.Wwise.Objects.HIRC.Containers.HierarchySoundSfxVoice s => [s.Source],
+                        CUE4Parse.UE4.Wwise.Objects.HIRC.Containers.HierarchyMusicTrack t => t.Sources ?? [],
+                        _ => [],
+                    };
+                    var source = sources.FirstOrDefault(x => x.SourceId == id || x.FileId == id);
+                    if (source is null) continue;
+                    W($"    {bp}   on a {h.Data.GetType().Name.Replace("Hierarchy", "")}");
+                    W($"      SourceType={source.SourceType}  plugin={source.Plugin.PluginId}  " +
+                      $"inMemorySize={source.InMemoryMediaSize:N0}");
                     break;
                 }
             }
@@ -714,7 +714,7 @@ public static class SelfTest
 
             if (banks.Count > 0 && loose is not null)
             {
-                var bankBytes = session.Provider.Files[banks[0]].Read();
+                var bankBytes = session.Bank(banks[0]).Read();
                 var sec = BnkBuilder.ReadSections(bankBytes);
                 var didx = BnkBuilder.ReadDidx(sec.First(s => s.Tag == "DIDX").Body);
                 var body = sec.First(s => s.Tag == "DATA").Body;
@@ -1172,9 +1172,15 @@ public static class SelfTest
             W($"  survives save/load: \"{numbered.TestLabel}\" -> " +
               $"{(numbered.TestLabel == "#0" ? "ok" : "FAIL")}");
 
+            // Against the literal "audio/x.wem" rather than Path.Combine: comparing a
+            // stored path against the host's own separator only asks this machine to
+            // agree with itself, which it always does, and says nothing about whether
+            // the project opens anywhere else. --platform has the whole round trip.
             var relProbe = Path.Combine(Path.GetDirectoryName(projPath)!, "audio", "x.wem");
             W($"  path stored relative: \"{re.ToStoredPath(relProbe)}\" -> " +
-              $"{(re.ToStoredPath(relProbe) == Path.Combine("audio", "x.wem") ? "ok" : "FAIL")}");
+              $"{(re.ToStoredPath(relProbe) == "audio/x.wem" ? "ok" : "FAIL")}");
+            W($"  a stored \"audio\\x.wem\" resolves to the same file -> " +
+              $"{(re.ToFullPath("audio\\x.wem") == relProbe ? "ok" : "FAIL")}");
             File.Delete(projPath);
         }
 

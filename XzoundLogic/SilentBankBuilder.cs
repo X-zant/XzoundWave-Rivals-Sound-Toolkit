@@ -1,4 +1,5 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
+using System.Globalization;
 using System.IO;
 using System.Text;
 
@@ -85,16 +86,8 @@ public static class SilentBankBuilder
                            $"{orig.Length:N0} B -> {built.Bytes.Length:N0} B");
         }
 
-        var csv = new StringBuilder();
-        csv.AppendLine("MediaId,Bank,Event(s),Category,Subtitle,Length");
-        foreach (var r in legend.OrderBy(r => r.Bank).ThenBy(r => r.MediaId))
-            csv.AppendLine(string.Join(',', new[]
-            {
-                r.MediaId.ToString(), r.Bank, r.Events, r.Category, r.Subtitle,
-                r.Seconds.ToString("0.00"),
-            }.Select(x => $"\"{(x ?? "").Replace("\"", "\"\"")}\"")));
         Directory.CreateDirectory(outRoot);
-        File.WriteAllText(Path.Combine(outRoot, "silent-bank-legend.csv"), csv.ToString(),
+        File.WriteAllText(Path.Combine(outRoot, "silent-bank-legend.csv"), LegendCsv(legend),
                           new UTF8Encoding(true));
 
         var missing = only.Count - found.Count;
@@ -108,6 +101,31 @@ public static class SilentBankBuilder
         File.WriteAllText(Path.Combine(outRoot, "build-log.txt"), header.ToString(), new UTF8Encoding(true));
 
         return new Result(banks, silenced, missing, legend, header.ToString());
+    }
+
+    /// <summary>
+    /// The legend as it is written to disk.
+    ///
+    /// The length is formatted with the invariant culture, never the machine's own: a
+    /// German-locale build would otherwise write "3,71" into a comma-separated file,
+    /// which a reader either splits into two columns or parses as 3. A legend is an
+    /// artefact people hand to each other, so it cannot depend on who produced it.
+    /// </summary>
+    public static string LegendCsv(IEnumerable<Row> legend)
+    {
+        var csv = new StringBuilder();
+        csv.AppendLine("MediaId,Bank,Event(s),Category,Subtitle,Length");
+        // Ordinal, not the machine's collation: these are identifiers, and a legend
+        // whose rows come out in a different order on a German machine than on an
+        // English one is not a file two people can compare.
+        foreach (var r in legend.OrderBy(r => r.Bank, StringComparer.Ordinal).ThenBy(r => r.MediaId))
+            csv.AppendLine(string.Join(',', new[]
+            {
+                r.MediaId.ToString(CultureInfo.InvariantCulture),
+                r.Bank, r.Events, r.Category, r.Subtitle,
+                r.Seconds.ToString("0.00", CultureInfo.InvariantCulture),
+            }.Select(x => $"\"{(x ?? "").Replace("\"", "\"\"")}\"")));
+        return csv.ToString();
     }
 
     // ---- format of the sound being replaced --------------------------------

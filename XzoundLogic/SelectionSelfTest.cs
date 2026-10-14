@@ -29,7 +29,7 @@ public static class SelectionSelfTest
         var bankPath = skin.Banks.Select(b => b.Path)
             .FirstOrDefault(p => Path.GetFileName(p).Contains("sfx", StringComparison.OrdinalIgnoreCase))
             ?? skin.Banks[0].Path;
-        var orig = session.Provider.Files[bankPath].Read();
+        var orig = session.Bank(bankPath).Read();
         var entries = Entries(orig);
         W($"bank: {Path.GetFileName(bankPath)}  {entries.Count} media, {orig.Length:N0} B");
 
@@ -53,7 +53,7 @@ public static class SelectionSelfTest
         if (!Directory.Exists(clipDir) || TestBankBuilder.ScanFolder(clipDir).ByNumber.Count < chosen.Count)
         {
             Directory.CreateDirectory(clipDir);
-            Tts.GenerateNumbers(clipDir, 0, chosen.Count - 1, _ => { });
+            NumberSpeech.Generate(clipDir, 0, chosen.Count - 1, _ => { });
         }
         var wems = TestBankBuilder.ScanFolder(clipDir);
         var testDir = Path.Combine(outRoot, "test");

@@ -16,7 +16,8 @@ namespace MRAudioKit.UI;
 /// </summary>
 public sealed class Node
 {
-    public enum Kind { Character, Skin, Bank, Group }
+    /// <summary>NewLines: the project's new voice lines, one row each, staged like any sound.</summary>
+    public enum Kind { Character, Skin, Bank, Group, NewLines }
 
     public Kind What { get; init; }
     public string Label { get; init; } = "";
@@ -61,6 +62,8 @@ public static class Palette
 {
     public static readonly IBrush Fg        = New("#DFE1E5");
     public static readonly IBrush Muted     = New("#9BA1A9");
+    public static readonly IBrush Accent    = New("#6BA5F8");
+    public static readonly IBrush Line      = New("#3C3F41");
     public static readonly IBrush TagPurple = New("#B79BE8");
     public static readonly IBrush TagGreen  = New("#6FD68F");
     public static readonly IBrush TagRed    = New("#E88C97");

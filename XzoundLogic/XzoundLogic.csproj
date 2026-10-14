@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Everything that is not a window.
 
@@ -47,11 +47,31 @@
     <ProjectReference Include="..\XzoundCore\XzoundCore.csproj" />
   </ItemGroup>
 
-  <!-- The sample-provider layer NAudio calls Core is netstandard and portable; the
-       output devices and the Media Foundation readers are not, and are only packaged
-       for a windows TFM. -->
+  <!-- UAssetToolRivals, a git submodule pinned to a commit, for the voice-line builder:
+       UAssetAPI edits the game's cooked assets as typed objects (the voice table, the
+       VoiceItem, AkAudioEvent through its typed export), and UAssetTool's own mod builder
+       turns them into the IoStore bundle the game loads. Referenced as projects rather
+       than copied DLLs so one build covers both and the pinned commit says exactly
+       which version shipped. A fresh clone needs the submodule initialised before it builds. -->
+  <ItemGroup>
+    <ProjectReference Include="..\vendor\UAssetToolRivals\src\UAssetAPI\UAssetAPI.csproj" />
+    <ProjectReference Include="..\vendor\UAssetToolRivals\src\UAssetTool\UAssetTool.csproj" />
+  </ItemGroup>
+
+  <!-- The sample-provider layer NAudio calls Core is netstandard and portable; WaveOut,
+       the one Windows output this uses, is not, and is packaged for a windows TFM alone.
+
+       WinMM rather than the NAudio meta-package, which is what this took until the
+       window started building for a windows moniker too. The meta-package also brings
+       WinForms, Wasapi, Asio, Dmo and Midi, and NAudio.WinForms declares a framework
+       reference on Microsoft.WindowsDesktop.App.WindowsForms. A framework reference
+       reaches the runtimeconfig of everything downstream, so taking the whole set would
+       have made the Avalonia window ask for the .NET Desktop Runtime on Windows, on
+       account of six assemblies it never loads, where before it needed only the plain
+       one. The Media Foundation readers go with them and are not missed: every
+       compressed import has gone through vgmstream since, on all three platforms. -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
-    <PackageReference Include="NAudio" Version="3.0.1" />
+    <PackageReference Include="NAudio.WinMM" Version="3.0.1" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' != 'net10.0-windows'">
     <PackageReference Include="NAudio.Core" Version="3.0.1" />
@@ -64,6 +84,17 @@
          the files themselves are the repo's, not this project's. -->
     <EmbeddedResource Include="..\LICENSE" LogicalName="XzoundWave.LICENSE" />
     <EmbeddedResource Include="..\THIRD-PARTY-NOTICES.md" LogicalName="XzoundWave.THIRD-PARTY-NOTICES.md" />
+  </ItemGroup>
+
+  <!-- Thirty spoken words, recorded once on Windows by the numberclips verb, from which any
+       number up to four digits is composed. They are embedded rather than generated on
+       demand because the recorder is a Windows speech voice and the numbered test banks
+       are wanted on every platform: without these, a Linux build cannot say "42" at all.
+
+       The LogicalName has to match NumberSpeech.ResourceName, hence %(Filename). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\assets\numberwords\*.wav"
+                      LogicalName="XzoundWave.numbers.%(Filename).wav" />
   </ItemGroup>
 
   <!-- vgmstream, unpacked to app data on first use. Only the payload for what is

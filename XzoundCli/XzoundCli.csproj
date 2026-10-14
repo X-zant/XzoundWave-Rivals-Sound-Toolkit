@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- The engine with no window on top.
 
@@ -14,6 +14,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>xzoundwave</AssemblyName>
     <RootNamespace>MRAudioKit</RootNamespace>
+    <!-- Windows carries ICU in the operating system, so the Windows build keeps full
+         globalization and a reader in a German locale goes on seeing German numbers.
+         Linux does not reliably have it, and a self-contained .NET app without ICU
+         fails before Main rather than falling back, which would break "nothing to
+         install" for the one platform that needed it. See the Linux half below.
+
+         Bundling ICU would cost about 30 MB against a 52 MB binary, so the cheaper
+         half of the trade was measured first: with globalization off the Chinese
+         category table comes out byte-identical, every self-test passes, and no list
+         changes order, because this code sorts with explicit ordinal comparers rather
+         than the current culture. What Linux loses is locale-styled numbers. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <DebugType>embedded</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -33,5 +44,11 @@
   <ItemGroup>
     <ProjectReference Include="..\XzoundLogic\XzoundLogic.csproj" />
   </ItemGroup>
+
+  <!-- The Linux half of the note above. Conditioned on the runtime identifier rather
+       than on the target framework, because both builds are the same net10.0. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' And !$(RuntimeIdentifier.StartsWith('win'))">
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- The window, second attempt.
 
@@ -6,16 +6,37 @@
        ceiling: XAML, styles, data templates, bindings. That matters because the point
        is one application for both platforms rather than two that drift.
 
-       net10.0 with no -windows, and a reference to XzoundLogic and nothing else. The
-       compiler is what keeps that true. -->
+       A reference to XzoundLogic and nothing else, and the compiler is what keeps that
+       true.
+
+       Two target frameworks, matching XzoundLogic's own pair. net10.0 is the portable
+       one and the one Linux publishes; net10.0-windows exists so the Windows build of
+       the window links the Windows build of the engine and can therefore reach the code
+       behind #if WINDOWS. That is not a detail. Built as net10.0 alone, the window took
+       the non-Windows branch of every one of those on Windows, so it had no playback
+       device at all and told its reader that PipeWire, PulseAudio and ALSA were missing
+       while NAudio's WaveOut sat in the engine unreachable. Avalonia itself does not
+       care which moniker it is built for and all six of its packages resolve for either;
+       the suffix buys the platform-specific half of XzoundLogic and nothing else. -->
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>XzoundWave</AssemblyName>
     <RootNamespace>MRAudioKit.UI</RootNamespace>
+    <!-- Windows carries ICU in the operating system, so the Windows build keeps full
+         globalization and a reader in a German locale goes on seeing German numbers.
+         Linux does not reliably have it, and a self-contained .NET app without ICU
+         fails before Main rather than falling back, which would break "nothing to
+         install" for the one platform that needed it. See the Linux half below.
+
+         Bundling ICU would cost about 30 MB against a 52 MB binary, so the cheaper
+         half of the trade was measured first: with globalization off the Chinese
+         category table comes out byte-identical, every self-test passes, and no list
+         changes order, because this code sorts with explicit ordinal comparers rather
+         than the current culture. What Linux loses is locale-styled numbers. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <DebugType>embedded</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -48,5 +69,13 @@
   <ItemGroup>
     <ProjectReference Include="..\XzoundLogic\XzoundLogic.csproj" />
   </ItemGroup>
+
+  <!-- The Linux half of the note above. Conditioned on the runtime identifier rather
+       than on the target framework, because what decides this is the operating system
+       the published binary will run on, and the runtime identifier is what names that:
+       net10.0 is the portable moniker and can be published for Windows too. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' And !$(RuntimeIdentifier.StartsWith('win'))">
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
 
 </Project>

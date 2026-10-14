@@ -4,6 +4,7 @@ using CUE4Parse.UE4.Objects.Core.i18N;
 using CUE4Parse.UE4.Objects.UObject;
 using CUE4Parse.UE4.Wwise;
 using CUE4Parse.UE4.Wwise.Enums;
+using CUE4Parse.UE4.Wwise.Objects;
 using CUE4Parse.UE4.Wwise.Objects.HIRC;
 using CUE4Parse.UE4.Wwise.Objects.HIRC.Containers;
 
@@ -124,8 +125,8 @@ public sealed class SoundRow
                           "sound(s), which is how they are known to belong together without " +
                           "reading their names.");
                 // The question this answers most often, and the answer is no.
-                lines.Add("It is a mixing group, not an order. The .bnk says nothing about " +
-                          "which of them plays first — that is the game's own logic.");
+                lines.Add("It is a mixing group, not an order. Which of them plays first is " +
+                          "the game's own logic, and the .bnk says nothing about it.");
                 lines.Add("");
                 lines.AddRange(FamilyMembers.Take(12));
                 if (FamilyMembers.Count > 12)
@@ -157,6 +158,32 @@ public sealed class SoundRow
             return string.Join(Environment.NewLine, lines);
         }
     }
+
+    /// <summary>
+    /// Every place this music medium is used, when its bank uses it in more than one. ONE
+    /// ENTRY PER SOURCE OCCURRENCE, not one per track: 7 of music_formal's tracks carry one
+    /// medium more than once, so medium 679409166 is three entries in a single track and
+    /// 299299185 is nine entries in five, and reading this count out as a number of tracks
+    /// would be wrong on 4 of that bank's media. Empty on everything else, which is every
+    /// sound outside a music bank and the 308 of its 655 media that are used once.
+    ///
+    /// The row's own numbers are the first entry's, because a row is one row per medium
+    /// and something has to be shown. This is what lets that be said out loud instead of
+    /// read as the whole truth: 141 of that bank's 655 rows have another placement stating
+    /// a different level or a different segment length.
+    /// </summary>
+    public List<MusicPlacement> Placements { get; set; } = [];
+
+    /// <summary>
+    /// Whether the placements disagree about anything a reader would act on. Compared on
+    /// the level, the segment and the trim and NOT on the clip's own duration, because
+    /// none of the 347 media the bank places more than once disagree about that one. Media
+    /// and not tracks: 345 of those 347 are in more than one track, and the other two are
+    /// one track placing the same medium twice.
+    /// </summary>
+    public bool PlacementsDiffer => Placements
+        .Select(p => (p.Db, p.Driven, p.SegmentSeconds, p.Trimmed))
+        .Distinct().Count() > 1;
 
     /// <summary>User-kept notes, persisted in notes.json. Editable in the grid.</summary>
     public string Notes { get; set; } = "";
@@ -222,6 +249,24 @@ public sealed class SoundRow
     public string Length => Seconds is null ? "" : $"{Seconds.Value:0.00}s";
 }
 
+/// <summary>
+/// What one of a music medium's placements states, reduced to the four things its tracks
+/// were measured to disagree about.
+///
+/// The <see cref="WwiseProps.Applied"/> it was read from is not kept: a row with 18
+/// placements would then carry 18 property chains for the sake of one number each, and
+/// every figure here is one the pane prints.
+/// </summary>
+/// <param name="Db">The fixed part of the level this placement's chain comes to.</param>
+/// <param name="Driven">
+/// A game parameter drives that level, so the number above is where it starts. Kept
+/// beside the number rather than folded into it, because two placements that state the
+/// same dB and disagree about this do not agree.
+/// </param>
+/// <param name="Shown">This is the placement the row's own columns describe.</param>
+public sealed record MusicPlacement(double Db, bool Driven, double? Seconds,
+                                    double? SegmentSeconds, bool Trimmed, bool Shown);
+
 public sealed class SkinSounds
 {
     public List<SoundRow> Rows { get; } = [];
@@ -238,6 +283,9 @@ public sealed class SkinSounds
     /// return the VANILLA sound and quietly show the wrong audio.
     /// </summary>
     public Dictionary<uint, byte[]> Raw { get; } = [];
+
+    /// <summary>Where an entry of <see cref="Raw"/> came from, when it is not an opened .bnk.</summary>
+    public Dictionary<uint, string> RawFrom { get; } = [];
 }
 
 public static class SoundIndex
@@ -293,13 +341,16 @@ public static class SoundIndex
                 {
                     if (!nodes.TryGetValue(actionId, out var an) || an is not HierarchyEventAction act)
                         continue;
-                    foreach (var snd in Sounds(act.ReferencedId, nodes, []))
+                    // The same walk a container's stated membership is read with
+                    // (WwiseProps.SoundsUnder), so a set cannot list a medium the rows were
+                    // never built from, or leave one out that they were.
+                    foreach (var snd in WwiseProps.SoundsUnder(act.ReferencedId, nodes))
                     {
                         var id = snd.Source.SourceId != 0 ? snd.Source.SourceId : snd.Source.FileId;
                         if (id == 0) continue;
                         claimed.Add(id);
-                        result.Rows.Add(MakeRow(session, kind, bankName, ev.Id, name, snd, id, subs,
-                                               nodes, version, ActionDelay(act)));
+                        result.Rows.Add(MakeRow(session, kind, bankName, ev.Id, name, snd, snd.Source,
+                                               id, subs, nodes, version, ActionDelay(act)));
                     }
                 }
             }
@@ -312,8 +363,54 @@ public static class SoundIndex
                 var id = snd.Source.SourceId != 0 ? snd.Source.SourceId : snd.Source.FileId;
                 if (id == 0 || claimed.Contains(id)) continue;
                 claimed.Add(id);
-                result.Rows.Add(MakeRow(session, kind, bankName, 0, null, snd, id, subs,
+                result.Rows.Add(MakeRow(session, kind, bankName, 0, null, snd, snd.Source, id, subs,
                                        nodes, version, 0));
+            }
+
+            // Music. Neither walk above can see it: a music medium hangs off a MusicTrack
+            // rather than off a Sound, and the game's music bank holds over twelve hundred
+            // tracks and a single Sound, so the list showed one row for 36.9 MB of audio.
+            // Those media are as replaceable as any other -- 80 sit in that bank's DIDX
+            // and the rest ship as loose Media/ wems, both of which the build already
+            // handles -- so what was missing was the row, not the ability to swap it.
+            //
+            // Walked in hierarchy order rather than the node map's, so a bank whose rows
+            // share an event name still lists them the same way on every run.
+            foreach (var clip in MusicIndex.Read(w.Hierarchies.Select(h => h.Data).Where(d => d is not null),
+                                                 nodes, session.EventName))
+            {
+                if (claimed.Contains(clip.MediaId)) continue;
+                claimed.Add(clip.MediaId);
+                var row = MakeRow(session, kind, bankName, clip.EventHash, clip.EventName,
+                                  clip.Track, clip.Source, clip.MediaId, subs, nodes, version,
+                                  ActionDelay(clip.Action));
+                // The bank states this clip's own length, so there is nothing to measure:
+                // the figure agrees with the audio to a millisecond on every clip checked,
+                // and filling it spares the Measure durations button five hours of decoding.
+                row.Seconds = clip.Seconds;
+                row.AlsoPlayedBy = clip.AlsoPlayedBy;
+                if (row.Applied is { } applied)
+                {
+                    applied.ClipSeconds = clip.Seconds;
+                    applied.SegmentSeconds = clip.SegmentSeconds;
+                    applied.ClipTrimmed = clip.Trimmed;
+                }
+                // What the other tracks carrying this medium state. Read here rather than
+                // in MusicIndex because the property chain needs the bank's VERSION, which
+                // is a fact about the file this loop is holding and not about the walk; and
+                // only when there is more than one placement, so the 308 media placed once
+                // cost nothing and the build's timings walk stays one chain per medium.
+                if (clip.Placements.Count > 1)
+                    row.Placements = [.. clip.Placements.Select((p, at) =>
+                    {
+                        var chain = at == 0 ? row.Applied
+                                  : WwiseProps.Read(p.Track, nodes, version, ActionDelay(clip.Action));
+                        return new MusicPlacement(
+                            chain?.StaticDb ?? 0,
+                            chain?.DrivenProps.Any(d => d.Unit == WwiseProps.Unit.Db) ?? false,
+                            p.Seconds, p.SegmentSeconds, p.Trimmed, at == 0);
+                    })];
+                result.Rows.Add(row);
             }
         }
 
@@ -338,7 +435,19 @@ public static class SoundIndex
                     .Where(n => !n.Equals(row.EventName, StringComparison.OrdinalIgnoreCase))
                     .ToList();
         }
-        result.Rows.Sort((a, b) => string.Compare(a.Display, b.Display, StringComparison.OrdinalIgnoreCase));
+        // The media id breaks a tie on the name. Several rows CAN share one: a music bank
+        // names 468 of its 627 tracks after the one event that plays nearly all of them, and
+        // sorting 468 equal keys with an unstable sort put the list in a different order on
+        // every run, which made the same row impossible to find twice.
+        // Named events first: an unnamed one shows as "<unnamed:hash>", and "<" sorts ahead of
+        // every letter, so with unnamed rows on screen a bank opened on a wall of hashes.
+        result.Rows.Sort((a, b) =>
+        {
+            var byNamed = (a.EventName is null).CompareTo(b.EventName is null);
+            if (byNamed != 0) return byNamed;
+            var byName = string.Compare(a.Display, b.Display, StringComparison.OrdinalIgnoreCase);
+            return byName != 0 ? byName : a.MediaId.CompareTo(b.MediaId);
+        });
         NameVariantGroups(result.Rows);
         return result;
     }
@@ -383,17 +492,33 @@ public static class SoundIndex
                     .ToList();
         }
 
-        foreach (var group in rows.Where(r => r.VariantGroup.Length > 0)
-                                  .GroupBy(r => r.Applied.Alternative.GroupId))
+        // Read off each row's own container rather than gathered from the rows sharing its
+        // group id. Those two disagree wherever the bank builds one set of media into
+        // several containers, which it does constantly: the rows spread across whichever
+        // container each medium was met in first, so container 183834482 of bnk_sfx_1022001
+        // holds three media and gathering rows on it finds one. 47 sets across skins
+        // 1030001, 1029001, 1034001, 1022001 and 1048001 were listed short that way, and a
+        // set of one listed itself and called that the set.
+        //
+        // The marker goes on the slot this row sits in and on its medium both, because a
+        // medium the container holds twice would otherwise be marked in a slot the reader
+        // did not come from.
+        foreach (var row in rows.Where(r => r.VariantGroup.Length > 0))
         {
-            var members = group.OrderBy(r => r.Applied.Alternative.Index).ToList();
-            foreach (var row in members)
-                row.Siblings = members
-                    .Select(m => (m == row ? "> " : "  ") +
-                                 $"{m.Applied.Alternative.Index + 1}. media {m.MediaId}" +
-                                 (m.Applied.Alternative.Share.Length == 0
-                                     ? "" : $"   {m.Applied.Alternative.Share}"))
-                    .ToList();
+            var v = row.Applied.Alternative;
+            row.Siblings = v.Members
+                .Select(m => (m.Index == v.Index && m.Media.Contains(row.MediaId) ? "> " : "  ") +
+                             $"{m.Index + 1}. " +
+                             // A slot whose child is a container reaches several media and
+                             // has no single one to name, so it says what it holds instead
+                             // of naming the first and passing it off as the slot. Worded
+                             // as the panel words the same slot, so a reader meeting one in
+                             // the tooltip and one on screen sees the same line.
+                             (m.Media.Count == 1 ? $"media {m.Media[0]}"
+                              : m.Media.Count == 0 ? "no media in this bank"
+                              : $"a group of {m.Media.Count}: " + string.Join(", ", m.Media)) +
+                             (m.Share.Length == 0 ? "" : $"   {m.Share}"))
+                .ToList();
         }
     }
 
@@ -410,8 +535,19 @@ public static class SoundIndex
         return 0;
     }
 
+    /// <param name="owner">
+    /// The node the source belongs to, which is what the inherited property chain starts
+    /// from. The NODE and not its BaseParams: WwiseProps looks that block up by name on
+    /// whatever it is handed, so a BaseHierarchy would end the chain before a single
+    /// property was read and every row's Applied column would come back blank.
+    /// </param>
+    /// <param name="src">
+    /// The one source this row is about. A Sound has exactly one and a MusicTrack has an
+    /// array of them, so the source travels separately from the node that owns it.
+    /// </param>
     private static SoundRow MakeRow(GameSession session, string kind, string bank,
-                                    uint evHash, string evName, HierarchySoundSfxVoice snd,
+                                    uint evHash, string evName, AbstractHierarchy owner,
+                                    AkBankSourceData src,
                                     uint mediaId, Dictionary<string, (string Cat, string Line)> subs,
                                     IReadOnlyDictionary<uint, AbstractHierarchy> nodes,
                                     uint version, float actionDelay)
@@ -424,13 +560,13 @@ public static class SoundIndex
             EventHash = evHash,
             EventName = evName,
             MediaId = mediaId,
-            Streamed = snd.Source.SourceType == EAKBKSourceType.Streaming,
-            Codec = snd.Source.Plugin.PluginId.ToString(),
+            Streamed = src.SourceType == EAKBKSourceType.Streaming,
+            Codec = src.Plugin.PluginId.ToString(),
             // LOOSE FIRST. The bank's embedded voice copy is a prefetch stub -- a few
             // hundred bytes of the opening moment. Reading it first gives a 0.03 s click.
             Origin = loose is not null ? loose.Path : "bank (embedded)",
             Bytes = loose?.Size ?? 0,
-            Applied = WwiseProps.Read(snd, nodes, version, actionDelay),
+            Applied = WwiseProps.Read(owner, nodes, version, actionDelay),
         };
         if (evName is not null && subs.TryGetValue(evName, out var s))
         {
@@ -448,28 +584,6 @@ public static class SoundIndex
         return row;
     }
 
-    private static IEnumerable<HierarchySoundSfxVoice> Sounds(
-        uint id, Dictionary<uint, AbstractHierarchy> nodes, HashSet<uint> seen)
-    {
-        if (!seen.Add(id) || !nodes.TryGetValue(id, out var n)) yield break;
-        switch (n)
-        {
-            case HierarchySoundSfxVoice s:
-                yield return s; break;
-            case HierarchyRandomSequenceContainer r:
-                foreach (var c in r.ChildIds) foreach (var x in Sounds(c, nodes, seen)) yield return x;
-                break;
-            case HierarchySwitchContainer sw:
-                foreach (var c in sw.ChildIds) foreach (var x in Sounds(c, nodes, seen)) yield return x;
-                break;
-            case HierarchyLayerContainer l:
-                foreach (var c in l.ChildIds) foreach (var x in Sounds(c, nodes, seen)) yield return x;
-                break;
-            case HierarchyActorMixer m:
-                foreach (var c in m.ChildIds) foreach (var x in Sounds(c, nodes, seen)) yield return x;
-                break;
-        }
-    }
 
     /// <summary>
     /// event name -> (category, subtitle).

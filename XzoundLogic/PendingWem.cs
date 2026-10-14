@@ -24,6 +24,16 @@ public sealed class PendingWem
     public ushort FormatTag { get; init; }
 
     /// <summary>
+    /// How long this audio plays, from its own header.
+    ///
+    /// Read while the bytes are already in hand, because it is the figure a slot's stated
+    /// clip length has to be checked against: a music bank records each clip's duration
+    /// beside the clip and a rebuild cannot change it, so a replacement of a different
+    /// length is worth saying before it is built rather than after.
+    /// </summary>
+    public double? Seconds { get; init; }
+
+    /// <summary>
     /// The wem bytes, when this file was converted from mp3/wav/ogg/etc rather than
     /// dropped in as a wem. Null means the file on disk is already the payload, so
     /// the build reads it straight from <see cref="FullPath"/> and nothing is held
@@ -49,11 +59,24 @@ public sealed class PendingWem
         {
             var head = string.IsNullOrWhiteSpace(OriginalEvent)
                 ? Original : $"{OriginalEvent}\n{Original}".TrimEnd();
+
+            // The note leads, because it is the one thing in the row the author wrote
+            // themselves and its column is a star column that ellipsises at roughly 95 px
+            // on Windows and 70 on Linux. Left out of here, as it was, a reminder longer
+            // than about a dozen characters is readable nowhere in the window at all.
+            var mine = string.IsNullOrWhiteSpace(Note) ? ""
+                     : Note + (head.Length > 0 ? "\n\n" : "");
             var tail = Status.StartsWith("loose", StringComparison.OrdinalIgnoreCase)
                 ? "\n\nNo .bnk embeds this id, so it ships as a loose Media/ wem instead."
                 : "";
             var banks = string.IsNullOrWhiteSpace(BankList) ? "" : $"\n\nEmbedded in:\n{BankList}";
-            return head + tail + banks;
+
+            // Where the pane's Codec column went: four columns are what fit at the pane's
+            // width, and this is the one of the five whose answer is VORBIS for very nearly
+            // every staged file. Said for every row rather than only the surprising ones,
+            // because "it is Vorbis" answers the same question.
+            var codec = string.IsNullOrWhiteSpace(Codec) ? "" : $"\n\n{Codec}";
+            return mine + head + tail + banks + codec;
         }
     }
 
@@ -92,20 +115,25 @@ public sealed class PendingWem
     /// Wem bytes for a source file, reusing an earlier conversion when there is one.
     ///
     /// Encoding is the slow step, and nothing about a file that has not changed can
-    /// change what it encodes to, so the answer is worth keeping. A file that is
-    /// already Wwise Vorbis is passed straight through and never cached: the cache
-    /// would just be a second copy of a file we already have.
+    /// change what it encodes to under the same decoder, so the answer is worth keeping.
+    /// A file that is already Wwise Vorbis is passed straight through and never cached:
+    /// the cache would just be a second copy of a file we already have.
     /// </summary>
     private static byte[] EncodeOrCached(string path, ref string converted)
     {
         var options = ConvertedCache.Options;
         var caching = options?.CacheConvertedAudio == true;
 
+        // Asked once and used for both halves of the round trip, so that a decoder which
+        // somehow changed between the lookup and the store cannot file its bytes under
+        // the identity of the one that was asked for them.
+        var decoder = AudioDecode.DecoderIdentity;
+
         string hash = null;
         if (caching)
         {
             try { hash = ConvertedCache.HashOf(path); } catch { hash = null; }
-            if (hash is not null && ConvertedCache.Get(options, hash) is { } hit)
+            if (hash is not null && ConvertedCache.Get(options, hash, decoder) is { } hit)
             {
                 // A hit can only exist for something we converted, so it was converted.
                 converted = AudioDecode.IsWem(path)
@@ -128,7 +156,7 @@ public sealed class PendingWem
             converted = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
         }
 
-        if (hash is not null) ConvertedCache.Put(options, hash, result);
+        if (hash is not null) ConvertedCache.Put(options, hash, decoder, result);
         ReplaceSourceIfAsked(options, path, result);
         return result;
     }
@@ -181,6 +209,7 @@ public sealed class PendingWem
             Bytes = bytes.Length,
             Codec = info.Codec,
             FormatTag = info.FormatTag,
+            Seconds = BnkBuilder.Seconds(bytes),
             Payload = bytes,
             Converted = converted ?? (AudioDecode.IsWem(path)
                 ? "" : Path.GetExtension(path).TrimStart('.').ToLowerInvariant()),
@@ -246,6 +275,7 @@ public sealed class PendingWem
             Bytes = data.Length,
             Codec = info.Codec,
             FormatTag = info.FormatTag,
+            Seconds = BnkBuilder.Seconds(data),
             Payload = payload,
             Converted = converted,
         };

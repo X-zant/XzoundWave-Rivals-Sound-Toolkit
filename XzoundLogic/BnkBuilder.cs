@@ -187,6 +187,35 @@ public static class BnkBuilder
         return new WemInfo(true, 0, "no fmt chunk", 0, 0);
     }
 
+    /// <summary>
+    /// How long a wem plays, from its own header, or null when the header does not say.
+    ///
+    /// A Wwise Vorbis wem states its sample count in the vorb block inside fmt, because
+    /// the packets that follow are Wwise's own layout and not something a length can be
+    /// counted from; PCM is the plain data-size division instead. Reading it costs no
+    /// decode, which is what makes it usable while staging a file or building a bank.
+    /// </summary>
+    public static double? Seconds(byte[] wem)
+    {
+        var info = Inspect(wem);
+        if (!info.IsRiff || info.SampleRate == 0) return null;
+
+        var p = 12;
+        while (p + 8 <= wem.Length)
+        {
+            var id = Encoding.ASCII.GetString(wem, p, 4);
+            var sz = (int)BinaryPrimitives.ReadUInt32LittleEndian(wem.AsSpan(p + 4, 4));
+            if (sz < 0 || p + 8 + sz > wem.Length) break;
+            if (id == "fmt " && info.FormatTag == 0xFFFF && sz >= 18 + 48)
+                return BinaryPrimitives.ReadUInt32LittleEndian(wem.AsSpan(p + 8 + 18 + 0x06, 4))
+                       / (double)info.SampleRate;
+            if (id == "data" && info.FormatTag != 0xFFFF)
+                return sz / (double)(info.SampleRate * Math.Max((ushort)1, info.Channels) * 2);
+            p += 8 + sz + (sz & 1);
+        }
+        return null;
+    }
+
     private static string CodecName(ushort tag) => tag switch
     {
         0xFFFF => "VORBIS",

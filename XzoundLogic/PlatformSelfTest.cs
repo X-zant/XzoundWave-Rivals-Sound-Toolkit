@@ -98,6 +98,70 @@ public static class PlatformSelfTest
         Check("a sibling with a longer name is not inside",
               !UsmapFetch.IsManaged(UsmapFetch.ManagedDir + "-old" + Path.DirectorySeparatorChar + "x.usmap"));
 
+        // ---- what a project carries to another machine ----------------------
+        //
+        // Unlike everything above, none of these answers may follow the platform. A
+        // stored path is the one thing here that a different machine has to read back,
+        // so the spelling has to be one both agree on rather than this host's own.
+        W("");
+        W("what a project stores, and what it can read back");
+        var projDir = Path.Combine(Path.GetTempPath(), "xzw-portable-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(Path.Combine(projDir, "audio"));
+        try
+        {
+            var projFile = Path.Combine(projDir, "portable" + Project.Extension);
+            var staged = Path.Combine(projDir, "audio", "x.wem");
+            File.WriteAllBytes(staged, [1, 2, 3, 4]);
+
+            var project = Project.New();
+            project.Save(projFile);
+
+            var stored = project.ToStoredPath(staged);
+            Check("a file under the project is stored relative to it",
+                  stored == "audio/x.wem", stored);
+            Check("...spelled with forward slashes on every host",
+                  !stored.Contains('\\'), stored);
+
+            project.Replacements.Add(new ProjectReplacement { MediaId = 4242, File = stored });
+            project.Save();
+            Check("...and that is what reaches the file on disk",
+                  !File.ReadAllText(projFile).Contains('\\'));
+
+            // The defect this replaces. A project written by a Windows build stored
+            // "audio\x.wem", and a backslash is an ordinary character in a name
+            // anywhere else, so combining it named a single file that has never
+            // existed and the staged clip was reported missing.
+            var fromWindows = project.ToFullPath("audio\\x.wem");
+            Check("a path an older Windows build stored still resolves",
+                  AppPaths.SamePath(fromWindows, staged), fromWindows);
+            Check("...to the file that is really there", File.Exists(fromWindows));
+            Check("...and to the name a person reads",
+                  Path.GetFileName(fromWindows) == "x.wem", Path.GetFileName(fromWindows));
+
+            var portable = project.ToFullPath("audio/x.wem");
+            Check("the forward-slash spelling resolves to the same file",
+                  File.Exists(portable) && AppPaths.SamePath(portable, fromWindows), portable);
+
+            // Through a real save and load, because the loader is what an author
+            // actually opens. No current build can write this any more, so the
+            // replacement is spelled out by hand the way an old one left it.
+            var legacy = Path.Combine(projDir, "legacy" + Project.Extension);
+            var older = Project.New();
+            older.Replacements.Add(new ProjectReplacement { MediaId = 4242, File = "audio\\x.wem" });
+            older.Save(legacy);
+            var reopened = Project.Load(legacy);
+            var restaged = reopened.ToFullPath(reopened.Replacements[0].File);
+            Check("an older project opens and finds its staged file",
+                  File.Exists(restaged), restaged);
+
+            // A path outside the project folder is this machine's own spelling of
+            // somewhere it alone knows about, and rewriting it would help nobody.
+            var outside = Path.Combine(Path.GetTempPath(), "elsewhere.wem");
+            Check("a file outside the project is stored whole and untouched",
+                  project.ToStoredPath(outside) == outside, project.ToStoredPath(outside));
+        }
+        finally { try { Directory.Delete(projDir, true); } catch { } }
+
         // ---- where a game might be -----------------------------------------
         W("");
         W("where to look for the game");

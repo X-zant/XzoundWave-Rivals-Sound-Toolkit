@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -218,18 +219,9 @@ public static class TestBankBuilder
                            $"media replaced, {orig.Length:N0} B -> {built.Bytes.Length:N0} B");
         }
 
-        var csv = new StringBuilder();
-        csv.AppendLine("Number,MediaId,Bank,Event(s),Category,Subtitle,Notes,Length");
-        foreach (var r in legend.OrderBy(r => r.Number))
-            csv.AppendLine(string.Join(',', new[]
-            {
-                r.Number.ToString(), r.MediaId.ToString(), r.Bank, r.Events,
-                r.Category, r.Subtitle, r.Notes,
-                r.Seconds is null ? "" : r.Seconds.Value.ToString("0.00"),
-            }.Select(s => $"\"{(s ?? "").Replace("\"", "\"\"")}\"")));
-
         Directory.CreateDirectory(outRoot);
-        File.WriteAllText(Path.Combine(outRoot, "test-bank-legend.csv"), csv.ToString(), new UTF8Encoding(true));
+        File.WriteAllText(Path.Combine(outRoot, "test-bank-legend.csv"), LegendCsv(legend),
+                          new UTF8Encoding(true));
 
         var header = new StringBuilder();
         header.AppendLine($"Numbered test build — {numbered} sound(s) numbered from {startAt}.");
@@ -241,5 +233,29 @@ public static class TestBankBuilder
         File.WriteAllText(Path.Combine(outRoot, "build-log.txt"), header.ToString(), new UTF8Encoding(true));
 
         return new Result(banks, numbered, silenced, unassigned, legend, header.ToString());
+    }
+
+    /// <summary>
+    /// The legend as it is written to disk.
+    ///
+    /// This is the file the whole numbered build exists for -- hear a number in game,
+    /// find the row -- so it has to be readable by whatever the author opens it with,
+    /// on whatever machine. The length is formatted with the invariant culture: a
+    /// German-locale build would otherwise put "3,71" inside a comma-separated file,
+    /// where a reader splits it into two columns or parses it as 3.
+    /// </summary>
+    public static string LegendCsv(IEnumerable<Row> legend)
+    {
+        var csv = new StringBuilder();
+        csv.AppendLine("Number,MediaId,Bank,Event(s),Category,Subtitle,Notes,Length");
+        foreach (var r in legend.OrderBy(r => r.Number))
+            csv.AppendLine(string.Join(',', new[]
+            {
+                r.Number.ToString(CultureInfo.InvariantCulture),
+                r.MediaId.ToString(CultureInfo.InvariantCulture), r.Bank, r.Events,
+                r.Category, r.Subtitle, r.Notes,
+                r.Seconds is null ? "" : r.Seconds.Value.ToString("0.00", CultureInfo.InvariantCulture),
+            }.Select(s => $"\"{(s ?? "").Replace("\"", "\"\"")}\"")));
+        return csv.ToString();
     }
 }

@@ -92,7 +92,7 @@ public sealed class AudioPreview : IDisposable
                 return streamed.Full;
             }
 
-            row.Origin = "opened .bnk";
+            row.Origin = sounds.RawFrom.GetValueOrDefault(row.MediaId) ?? "opened .bnk";
             row.Bytes = held.Length;
             return held;
         }
@@ -120,6 +120,31 @@ public sealed class AudioPreview : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// The game's own audio for a row, never an opened mod's: the loose file the game
+    /// streams it from when there is one (which is also the whole clip a bank's prefetch stub
+    /// only starts), else the medium embedded in the game's bank at <paramref name="gameBankPath"/>.
+    /// Null when the game has none (a sound a mod added).
+    /// </summary>
+    /// <param name="gameBankPath">
+    /// The game's bank at the path the opened one replaces, language folder included: voice
+    /// banks share media ids across languages, so the ids alone cannot pick the right copy.
+    /// </param>
+    public static byte[] GameBytes(GameSession session, SoundRow row, string gameBankPath)
+    {
+        try
+        {
+            if (session.LooseMedia(row.MediaId)?.Read() is { Length: > 0 } loose) return loose;
+            if (gameBankPath is null || session.Bank(gameBankPath) is not { } bank) return null;
+            var sections = BnkBuilder.ReadSections(bank.Read());
+            var didx = sections.FirstOrDefault(x => x.Tag == "DIDX");
+            var data = sections.FirstOrDefault(x => x.Tag == "DATA");
+            var e = didx is null ? null : BnkBuilder.ReadDidx(didx.Body).FirstOrDefault(m => m.Id == row.MediaId);
+            return e is null || data is null ? null : data.Body.AsSpan((int)e.Offset, (int)e.Size).ToArray();
+        }
+        catch { return null; }
+    }
+
     public string WriteWem(byte[] data, uint mediaId)
     {
         var p = Path.Combine(_cache, $"{mediaId}.wem");
@@ -127,7 +152,14 @@ public sealed class AudioPreview : IDisposable
         return p;
     }
 
-    /// <summary>Decode to wav, returning the path, or null with a reason.</summary>
+    /// <summary>
+    /// Decode to wav, returning the path, or null with a reason.
+    ///
+    /// <see cref="AudioDecode.NoLoop"/> for why the decoder is told not to follow the
+    /// file's loop points: this hands its wav to <see cref="InGameChain"/>, which repeats
+    /// it as many times as the bank authored, and media 972121045 came back as 77.937 s
+    /// of a 44.333 s track before those 77.937 s were then looped four more times.
+    /// </summary>
     public string Decode(byte[] data, uint mediaId, out string error)
     {
         error = null;
@@ -141,7 +173,7 @@ public sealed class AudioPreview : IDisposable
         var wav = Path.Combine(_cache, $"{mediaId}.wav");
         try
         {
-            Run($"-o \"{wav}\" \"{wem}\"", out var stderr, out var exit);
+            Run($"{AudioDecode.NoLoop} -o \"{wav}\" \"{wem}\"", out var stderr, out var exit);
             if (File.Exists(wav)) return wav;
 
             // Say which kind of failure it was: a decoder that will not start at all
@@ -156,13 +188,21 @@ public sealed class AudioPreview : IDisposable
         catch (Exception ex) { error = ex.Message; return null; }
     }
 
-    /// <summary>Sample rate / channels / duration, without decoding the whole file.</summary>
+    /// <summary>
+    /// Sample rate / channels / duration, without decoding the whole file.
+    ///
+    /// <see cref="AudioDecode.NoLoop"/> here too, because the figure this returns is the
+    /// length of the audio and has to be the length of what <see cref="Decode"/> plays.
+    /// vgmstream's play duration otherwise counts the loop pass and the fade it would
+    /// add, which put media 972121045 in the column as 77.937 s against the 44.333 s
+    /// that <see cref="BnkBuilder.Seconds"/> reads out of the same bytes.
+    /// </summary>
     public double? Probe(byte[] data, uint mediaId)
     {
         if (string.IsNullOrWhiteSpace(VgmstreamPath) || !File.Exists(VgmstreamPath)) return null;
         try
         {
-            var meta = Run($"-m \"{WriteWem(data, mediaId)}\"");
+            var meta = Run($"{AudioDecode.NoLoop} -m \"{WriteWem(data, mediaId)}\"");
             foreach (var line in meta.Split('\n'))
             {
                 var i = line.IndexOf("play duration:", StringComparison.OrdinalIgnoreCase);
@@ -171,9 +211,14 @@ public sealed class AudioPreview : IDisposable
                 var sp = line.IndexOf(" seconds", StringComparison.OrdinalIgnoreCase);
                 if (open < 0 || sp < 0) continue;
                 var span = line[(open + 1)..sp];
+                // Both halves are vgmstream's output, not the user's, and it writes
+                // them the same way on every machine -- so both are read the same way.
+                // Only the seconds were, which happened to work because minutes carry
+                // no decimal separator for a locale to disagree about.
                 var parts = span.Split(':');
                 if (parts.Length == 2 &&
-                    double.TryParse(parts[0], out var mm) &&
+                    double.TryParse(parts[0], System.Globalization.NumberStyles.Float,
+                                    System.Globalization.CultureInfo.InvariantCulture, out var mm) &&
                     double.TryParse(parts[1], System.Globalization.NumberStyles.Float,
                                     System.Globalization.CultureInfo.InvariantCulture, out var ss))
                     return mm * 60 + ss;

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using Avalonia.Threading;
 
 namespace MRAudioKit.UI;
@@ -32,10 +32,6 @@ public partial class MainWindow
         new("Test only the selection…", () => _ = TestOnlySelectionAsync(),
             Hint: "Numbers the selection and silences everything else in the same " +
                   ".bnk files, so nothing can drown what you are listening for."),
-
-        new("Mute / unmute", TestToggleMute,
-            Hint: "Silences the selection in every build from now on, not only a test " +
-                  "one. Mute the sound you have already identified to hear what is under it."),
 
         new("Silent .bnk…", () => _ = TestSilentSelectionAsync(),
             Hint: "Replaces the selected sounds with silence of the same length and " +
@@ -336,27 +332,6 @@ public partial class MainWindow
             (marked > 0 ? $"; {marked} row(s) marked (Mute)." : "."));
     }
 
-    /// <summary>
-    /// Mute or unmute the selection. When several sounds fire at once only the loudest
-    /// is intelligible, so silencing the one you have already identified is how the
-    /// ones underneath it become audible on the next run.
-    /// </summary>
-    private void TestToggleMute()
-    {
-        var rows = SelectedRows;
-        if (rows.Count == 0) { Say("select one or more sounds in the list first."); return; }
-
-        // A mixed selection becomes all-muted rather than flipping each one, which is
-        // what "mute these" means when some of them already are.
-        var turnOn = rows.Any(r => !r.Muted);
-        foreach (var r in rows) r.Muted = turnOn;
-        Refresh();
-
-        var muted = Sounds?.Rows.Count(r => r.Muted) ?? 0;
-        Say($"{rows.Count} sound(s) {(turnOn ? "muted" : "unmuted")} — {muted} muted in total. " +
-            "A mute is silent in every build, not only a test one; rebuild to hear the difference.");
-    }
-
     // ---- the parts all four share -------------------------------------------
 
     /// <summary>
@@ -382,7 +357,9 @@ public partial class MainWindow
     /// </summary>
     private async Task<bool> TestBuildOnModRefused()
     {
-        if (!Mods.Any) return false;
+        // Only banks are a base. A loaded loose file is a file of its own, which the build
+        // neither carries nor overwrites unless something is staged on the same sound.
+        if (Mods.Count == 0) return false;
 
         // The same key the old window stored, so somebody who has already ticked this
         // away is not asked again by the new one. Never reuse a key for a different
@@ -581,7 +558,7 @@ public partial class MainWindow
         // Not enough clips, or none at all. Offer to speak them rather than sending the
         // author off to find a set: the Windows voice is on every install of it and a
         // Vorbis wem needs no encoder, so this costs nothing to have.
-        if (!Tts.IsAvailable)
+        if (!NumberSpeech.CanSpeak)
         {
             if (shortfallOk && wems.ByNumber.Count > 0)
             {
@@ -613,8 +590,8 @@ public partial class MainWindow
         // Generation reports its progress, and the status line belongs to the drawing
         // thread while this is running on another one.
         await Working("Speaking the numbers", () =>
-            Tts.GenerateNumbers(Config.TestWemDir, 0, required - 1,
-                                p => Dispatcher.UIThread.Post(() => Say(p))));
+            NumberSpeech.Generate(Config.TestWemDir, 0, required - 1,
+                                  p => Dispatcher.UIThread.Post(() => Say(p))));
 
         wems = TestBankBuilder.ScanFolder(Config.TestWemDir);
         if (wems.ByNumber.Count == 0)

@@ -67,7 +67,7 @@ public static class RoundTripTest
                 if (uint.TryParse(Path.GetFileNameWithoutExtension(f), out var id))
                     payload[id] = File.ReadAllBytes(f);
 
-            var original = session.Provider.Files[cmp.ShippedPath].Read();
+            var original = session.Bank(cmp.ShippedPath).Read();
             var rebuilt = BnkBuilder.Build(original, payload);
             var outBnk = Path.Combine(bnkRoot, bank.Name);
             File.WriteAllBytes(outBnk, rebuilt.Bytes);

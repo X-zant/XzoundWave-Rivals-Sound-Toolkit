@@ -3,11 +3,11 @@
 A sound toolkit for Marvel Rivals. Browse, preview, annotate and re-pack the game's
 Wwise soundbanks.
 
-Standalone in the literal sense: the release is **one `XzoundWave.exe`**. Nothing to
-install, nothing to unzip beside it, no folders exported from FModel first. The Vorbis
-encoder and vgmstream both ship inside the binary.
+Standalone in the literal sense: the release is **one `XzoundWave.exe`** on Windows, or
+**one `xzoundwave`** on Linux. Nothing to install, nothing to unzip beside it, no folders
+exported from FModel first. The Vorbis encoder and vgmstream both ship inside the binary.
 
-## Running it
+## Running it on Windows
 
 Download `XzoundWave.exe` and run it.
 
@@ -30,14 +30,131 @@ is the usual culprit: vgmstream is a native program, so it needs the
 [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe)
 and it will not run if antivirus has removed one of the codec DLLs beside it.
 
+## Running it on Linux
+
+Download `xzoundwave`, make it executable, run it. Nothing to install at all here, not
+even the runtime: this one carries .NET inside it, which is why it is 53 MB. The platform
+that could not assume a runtime is the one that had to bring its own.
+
+What it is not is the window. The Linux release is the toolkit without the tabs:
+`xzoundwave` is the engine and every verb under [Headless verbs](#headless-verbs),
+driving exactly the code the window drives.
+
+`./xzoundwave --doctor` says what the machine provides, and writes the same report to
+`~/.config/XzoundWave/diagnostics.txt`. Settings, the unpacked tools and the optional
+dictionary live in that folder, where `%AppData%` would be on Windows. vgmstream unpacks
+itself there and runs: the Linux payload is one statically linked binary, so there is no
+redistributable to install and no codec libraries beside it to go missing.
+
+Sound is the one thing that cannot ride inside the binary, because handing samples to a
+device is the machine's own business. So `xzoundwave` uses PortAudio where the machine
+has it, and otherwise pipes raw PCM to `pw-play`, `paplay` or `aplay`, whichever is on
+the PATH. A desktop that can already play a sound needs nothing installed for this one
+either. `./xzoundwave --doctor` names the output it found, or what to install if it found
+none, and `./xzoundwave --playtest` decodes a real sound and plays it, which separates a
+decoding problem from a playback one.
+
+**mp3, m4a, aac, wma and flac are decoded by the bundled vgmstream**, the same decoder
+this build already unpacks and runs, so it imports those five rather than turning them
+away. Only wav and Ogg Vorbis are read inside the process, and that is true on both
+platforms. `./xzoundwave --decode` prints the route every extension takes and checks it.
+
+Spoken numbers need no voice installed. They used to come from the Windows speech engine,
+which is what made numbered test banks a Windows feature; the words are now recorded once
+and composed from thirty clips inside the binary, so `--tts` and `--testbank` work here
+and write the same files.
+
+The game is looked for under `~/.local/share/Steam`, `~/.steam/steam`, `~/Games/Steam`
+and the Flatpak tree, so an install played through Proton is found where a native one
+would be.
+
+Numbers printed for a reader come out plain: a size reads `937,404` here, where a Windows
+machine set to German reads `937.404`. That is the visible half of a deliberate trade.
+This build is published with globalization switched off, so that it neither depends on
+an ICU library being on the machine nor has to carry one, and a download that installs
+nothing cannot afford either. Nothing the tool *writes* rests on it: legends, folder
+names and project files come out the same under any locale on either platform.
+
+Everything the tool builds is byte for byte the same. From the same inputs the two
+builds produce the same output, checked by SHA-256: the wem from an `--import` of a wav
+(46,418 B), the `.bnk` from a `--build` (993,292 B), all four banks of a `--testbank`,
+and `--selftest`, which rebuilds the game's own banks and reports `IDENTICAL` on both.
+The legend beside a test bank and the translated category table match too, once line
+endings are normalised, because a text file is written with the host's own newline. The
+build log beside them is the one thing that does not: it states sizes, and sizes are
+printed for a reader.
+
+There is one exception, and it lives in the decoder rather than in anything this tool
+writes. The two downloads carry different vgmstream builds, r1980 here and r2117 on
+Linux, linked against different versions of FFmpeg, and the two round the last bit of a
+sample differently. Decoding one of the game's own sounds on both and comparing: every
+byte of the header agrees, a quarter of the samples differ, and none differs by more
+than 1 part in 32,768, which is about 90 dB below full scale and inaudible. It reaches
+whatever vgmstream decodes, so an mp3, m4a, aac or wma import, and the volume tool,
+which decodes before it re-encodes. It does not reach a wav or an Ogg Vorbis import,
+which are read in this process instead, and it does not reach any bank, because the
+audio in a mod is the wem you gave it copied through. Two people on the two platforms
+building the same mod from the same files get the same bytes. The same two re-levelling
+the game's own audio get files that measure the same and sound the same, but do not hash
+the same.
+
 ## Build
 
 ```
 dotnet build -c Release
 ```
 
-That is the whole story. Dependencies come from NuGet; there are no submodules, no
-sibling checkouts and no paths into another project.
+That is the whole story, and `XzoundWave.slnx` beside it is what makes it true: without
+a solution file the command resolved to the one csproj at the root, which is the old WPF
+window, and never built the Avalonia one at all.
+
+Dependencies come from NuGet; there are no submodules, no sibling checkouts and no paths
+into another project.
+
+### Which XzoundWave.exe is which
+
+The window is built twice, once for each target framework, and the two land in different
+folders. Run the one for the platform you are on:
+
+| Build | Run it on |
+| --- | --- |
+| `XzoundUI/bin/Release/net10.0-windows/XzoundWave.exe` | Windows |
+| `XzoundUI/bin/Release/net10.0/XzoundWave.exe` | Linux and macOS |
+
+The suffix is not decoration. NAudio's WaveOut is packaged for a windows target
+framework alone, so it is only reachable from the build that has one; the portable build
+looks for PortAudio and then for a system player, finds neither on a stock Windows
+machine, and is silent. Both builds are the same source and the same window.
+
+`bin/Release/net10.0-windows/win-x64/XzoundWave.exe` at the repo root is a third file
+with the same name: that is the old WPF window, kept for reference.
+
+### Publishing
+
+A publish rather than a build, because it has to take the native libraries and, on
+Linux, the runtime with it. The window targets two frameworks, so one has to be named:
+
+```
+dotnet publish XzoundUI/XzoundUI.csproj   -c Release -f net10.0-windows -r win-x64 --self-contained false
+dotnet publish XzoundUI/XzoundUI.csproj   -c Release -f net10.0 -r linux-x64 --self-contained
+dotnet publish XzoundCli/XzoundCli.csproj -c Release -r linux-x64 --self-contained -p:EnableCompressionInSingleFile=true
+```
+
+`--self-contained false` is spelled out because a runtime identifier on its own is taken
+as a request to bundle the runtime, which turns 55 MB into 128 MB to save the reader an
+install they have almost certainly already done. The Windows binary asks for .NET 10,
+and the plain runtime rather than the Desktop one is enough for it.
+
+The Linux binaries do carry their runtime, because "nothing to install" is the point of
+that release. It is the runtime identifier and not the framework that turns globalization
+off for them, which is why the Windows line keeps it and the two Linux ones do not.
+
+The Windows publish also drops `libSkiaSharp.pdb` and `libHarfBuzzSharp.pdb` beside the
+exe, about 100 MB of debug symbols for somebody else's native libraries. They come out of
+the Skia package, they are not needed to run anything, and a release can leave them
+behind.
+
+Compression is what keeps that last one to 53 MB; without it, it is nearly twice that.
 
 ## Setup — nothing here ships with the tool
 
@@ -52,14 +169,15 @@ the Setup tab pulls the newest mappings from the community depot
 ([SpaceDepot/rivals-depot](https://github.com/SpaceDepot/rivals-depot)), picking the
 highest game build rather than the most recent commit, and the Setup tab shows which
 build is loaded. A usmap you picked yourself is never replaced without asking.
-`XzoundWave.exe --usmap [--force]` does the same from a console.
+`--usmap [--force]` does the same from a console.
 
-vgmstream used to be on this list and no longer is: it unpacks itself out of the exe.
+vgmstream used to be on this list and no longer is: it unpacks itself out of the binary.
 Settings › Tools can still point at your own build of it.
 
-The Paks folder and a `*.usmap` sitting beside the exe are found automatically on first
-run. Settings, the unpacked tools and the optional dictionary live in
-`%AppData%/XzoundWave/`; your work lives in a `.xzw` project file wherever you put it.
+The Paks folder and a `*.usmap` sitting beside the program are found automatically on
+first run. Settings, the unpacked tools and the optional dictionary live in
+`%AppData%/XzoundWave/`, or `~/.config/XzoundWave/` on Linux; your work lives in a `.xzw`
+project file wherever you put it.
 Upgrading from a build called MRAudioKit carries your old settings over on first start.
 
 **The AES key is never bundled.** It is yours to supply.
@@ -139,11 +257,14 @@ mute; nothing is deleted, and unmuting brings the original back.
 
 ### Build
 
-- Drop **wav, mp3, ogg, flac, m4a, aac, wma or wem** — anything that is not already a
-  wem is encoded to Wwise Vorbis on the way in. No Wwise install, no ffmpeg.
-- Conversions are **remembered**, so the same file is never encoded twice. Matched on
-  the file's contents, so a copy or a rename still counts as the same audio and an
-  edited file correctly does not. Settings › Importing shows what is held and can move
+- Drop **wav, mp3, ogg, flac, m4a, aac, wma or wem** — or opus, aiff, mp4, mp2, ac3 and
+  the rest of what the decoder declares it reads, twenty extensions in all, which
+  `--decode` lists. Anything that is not already a wem is encoded to Wwise Vorbis on the
+  way in. No Wwise install, no ffmpeg.
+- Conversions are **remembered**, so the same file is never encoded twice. Matched on the
+  file's contents and on the decoder that produced them, so a copy or a rename still
+  counts as the same audio, an edited file correctly does not, and a change of decoder is
+  never served an older one's bytes. Settings › Importing shows what is held and can move
   or clear it. A second import of a 174 KB wem went 592 ms → 0 ms.
 - Name files `{MediaID}-{your note}.wem`, or drop a single file onto a selection to give
   every one of them the same audio from one encode. **Set replacement…** takes any of
@@ -180,28 +301,30 @@ mute; nothing is deleted, and unmuting brings the original back.
 
 ## Headless verbs
 
-Everything is verifiable without a window, driving the same code the UI does.
+Everything is verifiable without a window, driving the same code the UI does. Put
+`XzoundWave.exe` in front of these on Windows, or `./xzoundwave` on Linux. The verbs
+themselves are the same on both.
 
 ```
-XzoundWave.exe --selftest <skinId> [report.txt]        full pipeline check
-XzoundWave.exe --build <skinId> <wemDir> <outDir> [--prefetch]
-XzoundWave.exe --testbank <skinId> <clipDir> <outDir> [bankFilter]
-XzoundWave.exe --openbank <bnk|pak> [rows]             diff a mod against the game
-XzoundWave.exe --merge <modA> <modB> <outDir>          A wins collisions
-XzoundWave.exe --import <file> <outDir>                any supported format -> wem
-XzoundWave.exe --recompress <bnk> <outDir>             PCM bank -> Vorbis
-XzoundWave.exe --volume <skinId> <wemDir> <outDir> <gain>
-XzoundWave.exe --media <id> [<id>…] [--bank <name>]    where a media lives, and how
-XzoundWave.exe --wwiseprobe <skinId> [event|?]          what a .bnk says about a sound
-                                                       beyond its audio: the event
-                                                       graph, loop counts, and the
-                                                       volume/pitch the game adds
-XzoundWave.exe --medialayout                           loose-media layout and overlap
-XzoundWave.exe --banks                                 every bank, grouped
-XzoundWave.exe --tts <outDir> <first> <last>           generate spoken numbers
-XzoundWave.exe --usmap [--force]                       newest mappings from the depot
-XzoundWave.exe --doctor                                what this machine provides
-XzoundWave.exe --licences                              every notice inside the binary
+--selftest <skinId> [report.txt]        full pipeline check
+--build <skinId> <wemDir> <outDir> [--prefetch]
+--testbank <skinId> <clipDir> <outDir> [bankFilter]
+--openbank <bnk|pak> [rows]             diff a mod against the game
+--merge <modA> <modB> <outDir>          A wins collisions
+--import <file> <outDir>                any supported format -> wem
+--recompress <bnk> <outDir>             PCM bank -> Vorbis
+--volume <skinId> <wemDir> <outDir> <gain>
+--media <id> [<id>…] [--bank <name>]    where a media lives, and how
+--wwiseprobe <skinId> [event|?]         what a .bnk says about a sound beyond
+                                        its audio: the event graph, loop
+                                        counts, and the volume/pitch the game
+                                        adds
+--medialayout                           loose-media layout and overlap
+--banks                                 every bank, grouped
+--tts <outDir> <first> <last>           generate spoken numbers
+--usmap [--force]                       newest mappings from the depot
+--doctor                                what this machine provides
+--licences                              every notice inside the binary
 ```
 
 Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
@@ -211,6 +334,7 @@ Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 --mediapath  --playtest  --cachetest  --mutetest  --noskinbuild  --openorder  --modset
 --prefetchpreview  --applied  --ingame  --sorting
 --roundtrip  --fmtcheck  --vorbistest  --setuproundtrip
+--platform  --culture  --pipeaudio
 ```
 
 ## XzoundCore
@@ -239,10 +363,12 @@ zero-length buffer and the sound plays as silence — with no error reported any
 MIT — see `LICENSE`.
 
 Third-party components keep their own terms, set out in `THIRD-PARTY-NOTICES.md`. Two
-of them ride inside the exe: the **aoTuV Vorbis codebooks** (Xiph BSD) and **vgmstream**
-with its codec libraries, some of which are **LGPL**. Both notices are compiled in, so
-they travel with the binary automatically — `XzoundWave.exe --licences` prints them, and
-they are written out beside the unpacked vgmstream. If you redistribute the exe, that
-obligation is already met; if you repackage it, keep them with it.
+of them ride inside the binary: the **aoTuV Vorbis codebooks** (Xiph BSD) and
+**vgmstream** with its codec libraries, some of which are **LGPL**. The Linux build
+carries a third, the **.NET runtime** itself, which the Windows one leaves to the
+machine. All of those notices are compiled in, so they travel with the binary
+automatically — `--licences` prints them, and they are written out beside the unpacked
+vgmstream. If you redistribute the binary, that obligation is already met; if you
+repackage it, keep them with it.
 
 Marvel Rivals and its audio belong to NetEase and Marvel. This tool ships none of it.

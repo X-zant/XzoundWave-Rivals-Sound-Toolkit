@@ -47,6 +47,46 @@ public partial class MainWindow
 
         yield return new ToolButton("Language…", () => _ = SetupLanguageAsync(),
             Hint: $"Which language's voice lines and subtitles to read.\nNow: {Config.Language}.");
+
+        yield return new ToolButton("Import SoundKit lists…", () => _ = SetupImportSubsAsync(),
+            Hint: "SoundKit's subtitle lists from earlier seasons (its SUBS-OLD folder): what lets Update mod " +
+                  "move a loose voice line made before XzoundWave recorded that season onto today's id.");
+
+        yield return new ToolButton("Record a game folder…", () => _ = SetupSnapshotFolderAsync(),
+            Hint: "An older copy of the game's Paks folder, recorded so Update mod knows what its media ids were. " +
+                  "The game you load is recorded on its own, once per version.");
+    }
+
+    /// <summary>Said after whatever is on the status line, rather than over it.</summary>
+    private void SetupNote(string note) => Say(string.IsNullOrEmpty(Status.Text) ? note : Status.Text.TrimEnd() + "  " + note);
+
+    private async Task SetupImportSubsAsync()
+    {
+        var folder = await PickFolder("SoundKit's folder, its SUBS-OLD folder, or one season's lists");
+        if (folder is null) return;
+        var found = await Working("importing SoundKit's lists", () => GameHistory.ImportSubs(folder));
+        if (found is null) return;
+        Say(found.Count == 0
+            ? $"no SoundKit subtitle lists under {folder} — pick SoundKit's folder or its 0_DATA/0-TXTs/SUBS-OLD."
+            : $"imported {found.Count} SoundKit list(s): {string.Join(", ", found)}. Update mod reads loose voice lines against them.");
+    }
+
+    private async Task SetupSnapshotFolderAsync()
+    {
+        var folder = await PickFolder("An older copy of the game's Paks folder");
+        if (folder is null) return;
+        var settings = Settings.Load();
+        settings.PaksDir = folder;
+        var taken = await Working($"reading every bank in {folder}", () =>
+        {
+            var session = new GameSession();
+            session.Mount(settings, _ => { });
+            return (Snapshot: GameHistory.EnsureSnapshot(session, folder), Label: GameSnapshot.VersionOf(folder).Version ?? session.BankFingerprint()[..8]);
+        });
+        if (taken.Label is null) return;   // Working has already said why
+        Say(taken.Snapshot is null
+            ? $"that version ({taken.Label}) is already recorded."
+            : $"recorded {taken.Snapshot.Label}: {taken.Snapshot.Media.Count:N0} media. Update mod can read mods made for it now.");
     }
 
     // ---- loading ---------------------------------------------------------------
@@ -98,7 +138,7 @@ public partial class MainWindow
 
         // Everything derived from the session goes when the session does -- counted
         // here because the reload silently drops loaded mods, which is worth a word.
-        var hadMods = Mods.Count;
+        var hadMods = Mods.Count + Mods.LooseFiles.Count;
 
         _setupBusy = true;
         try
@@ -143,8 +183,11 @@ public partial class MainWindow
 
             Tabs.SelectedIndex = 0;   // setup is done; the work happens on Browse
 
+            // From now on the window loads the game by itself when it opens.
+            if (!Config.LoadedOnce) { Config.LoadedOnce = true; Config.Save(); }
+
             if (hadMods > 0)
-                Say(Status.Text + $"  {hadMods} loaded mod .bnk file{(hadMods == 1 ? "" : "s")} " +
+                Say(Status.Text + $"  {hadMods} loaded mod file{(hadMods == 1 ? "" : "s")} " +
                     "closed by the reload.");
 
             // The media-to-bank index is what the build path uses to know where a sound
@@ -159,7 +202,22 @@ public partial class MainWindow
             if (trouble is not null)
                 Say("the game is loaded, but the bank index failed: " + trouble);
             else
+            {
                 Refresh();   // the counts can change once every bank is known
+                // A record of this version, once per version, for updating mods after the next
+                // patch. Reads every bank, so it runs behind everything and says nothing unless
+                // it took one.
+                var session = Session;
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        if (GameHistory.EnsureSnapshot(session) is { } taken)
+                            Dispatcher.UIThread.Post(() => SetupNote($"recorded {taken.Label} for updating mods after the next patch."));
+                    }
+                    catch { /* a version not recorded only means an update after the patch knows less */ }
+                });
+            }
         }
         finally
         {

@@ -1,0 +1,3 @@
+[submodule "vendor/UAssetToolRivals"]
+	path = vendor/UAssetToolRivals
+	url = https://github.com/XzantGaming/UAssetToolRivals.git

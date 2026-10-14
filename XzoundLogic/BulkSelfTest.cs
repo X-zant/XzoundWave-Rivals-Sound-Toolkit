@@ -44,7 +44,7 @@ public static class BulkSelfTest
         var bankPath = session.BanksForMedia(targets[0]).FirstOrDefault();
         if (bankPath is not null)
         {
-            var orig = session.Provider.Files[bankPath].Read();
+            var orig = session.Bank(bankPath).Read();
             var payload = staged.ToDictionary(p => p.MediaId, p => p.Payload);
             var built = BnkBuilder.Build(orig, payload);
             W($"  into {Path.GetFileName(bankPath)}: {built.Replaced} of {payload.Count} replaced");

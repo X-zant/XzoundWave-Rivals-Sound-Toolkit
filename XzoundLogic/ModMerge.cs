@@ -20,7 +20,11 @@ public static class ModMerge
                                    int PriorityBytes, int SecondaryBytes);
 
     public sealed record Result(int Banks, int FromPriority, int FromSecondary,
-                                List<Collision> Collisions, List<string> Skipped, string Log);
+                                List<Collision> Collisions, List<string> Skipped, string Log)
+    {
+        /// <summary>Loose Media files written, each the audio of a sound no bank holds.</summary>
+        public int Loose { get; init; }
+    }
 
     /// <param name="extractTo">
     /// When given, each mod's own changed wems are also written here under a folder
@@ -33,13 +37,26 @@ public static class ModMerge
         var log = new StringBuilder();
         var skipped = new List<string>();
 
-        var a = Load(session, priorityPath, settings, "priority", skipped, progress);
-        var b = Load(session, secondaryPath, settings, "secondary", skipped, progress);
-        if (a.Count == 0 && b.Count == 0)
-            throw new InvalidDataException("neither mod contains a bank with embedded media.");
+        var looseA = new List<ModBank.LooseMedia>();
+        var looseB = new List<ModBank.LooseMedia>();
+        var a = Load(session, priorityPath, settings, "priority", skipped, progress, looseA);
+        var b = Load(session, secondaryPath, settings, "secondary", skipped, progress, looseB);
+        if (a.Count == 0 && b.Count == 0 && looseA.Count == 0 && looseB.Count == 0)
+            throw new InvalidDataException("neither mod changes a sound: no bank with changed embedded media, " +
+                                           "and no loose Media wem that differs from the game's.");
 
         var collisions = new List<Collision>();
         int fromA = 0, fromB = 0, banks = 0;
+
+        // One sound changed by both mods by different routes -- one in a bank, the other as a
+        // loose file -- is a collision like any other, and the priority mod's route wins: its
+        // loose file over the secondary's bank entry (which goes back to the shipped one), its
+        // bank entry over the secondary's loose file (which is left out).
+        var looseIdsA = looseA.Select(f => ModUpdate.MediaIdOf(f.MountedAt)).OfType<uint>().ToHashSet();
+        var looseIdsB = looseB.Select(f => ModUpdate.MediaIdOf(f.MountedAt)).OfType<uint>().ToHashSet();
+        var bankIdsA = new HashSet<uint>();
+        int LooseSize(List<ModBank.LooseMedia> files, uint id) =>
+            files.FirstOrDefault(f => ModUpdate.MediaIdOf(f.MountedAt) == id)?.Bytes.Length ?? 0;
 
         // A bank at a time, so a mod that touches banks the other does not still
         // contributes them whole.
@@ -51,10 +68,28 @@ public static class ModMerge
 
             // Secondary first, then priority overwrites -- that IS the precedence rule.
             var payload = new Dictionary<uint, byte[]>();
-            if (cb is not null) foreach (var (id, bytes) in cb.Changed) payload[id] = bytes;
+            if (cb is not null)
+                foreach (var (id, bytes) in cb.Changed)
+                {
+                    if (looseIdsA.Contains(id))
+                    {
+                        var row = cb.Rows.Rows.FirstOrDefault(r => r.MediaId == id);
+                        collisions.Add(new Collision(id, bankName, row?.Display ?? "", row?.Subtitle ?? "",
+                                                     LooseSize(looseA, id), bytes.Length));
+                        continue;
+                    }
+                    payload[id] = bytes;
+                }
             if (ca is not null)
                 foreach (var (id, bytes) in ca.Changed)
                 {
+                    bankIdsA.Add(id);
+                    if (looseIdsB.Contains(id))
+                    {
+                        var row = ca.Rows.Rows.FirstOrDefault(r => r.MediaId == id);
+                        collisions.Add(new Collision(id, bankName, row?.Display ?? "", row?.Subtitle ?? "",
+                                                     bytes.Length, LooseSize(looseB, id)));
+                    }
                     if (cb is not null && cb.Changed.ContainsKey(id))
                     {
                         var row = (ca.Rows.Rows.FirstOrDefault(r => r.MediaId == id));
@@ -94,7 +129,7 @@ public static class ModMerge
             }
 
             byte[] orig;
-            try { orig = session.Provider.Files[vanillaPath].Read(); }
+            try { orig = session.Bank(vanillaPath).Read(); }
             catch (Exception ex) { log.AppendLine($"{bankName}: {ex.Message}"); continue; }
 
             var built = BnkBuilder.Build(orig, payload);
@@ -105,6 +140,43 @@ public static class ModMerge
             log.AppendLine($"{bankName}: {built.Replaced} merged " +
                            $"({ca?.Changed.Count ?? 0} priority, {cb?.Changed.Count ?? 0} secondary), " +
                            $"{orig.Length:N0} B -> {built.Bytes.Length:N0} B");
+        }
+
+        // Loose Media files: each replaces the game's file at its own path, whatever bank plays
+        // it, so they merge by path -- secondary first, priority over it, the same rule. The same
+        // id under two language folders is two files, not a collision.
+        var looseOut = new Dictionary<string, ModBank.LooseMedia>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in looseB)
+            if (!(ModUpdate.MediaIdOf(f.MountedAt) is { } id && bankIdsA.Contains(id)))
+                looseOut[Norm(f.MountedAt)] = f;
+        foreach (var f in looseA)
+        {
+            if (looseOut.TryGetValue(Norm(f.MountedAt), out var other))
+            {
+                var id = ModUpdate.MediaIdOf(f.MountedAt) ?? 0;
+                string bank = null;
+                try { bank = id == 0 ? null : session.PlayingBank(id); } catch { }
+                var lang = GameSession.LanguageOf(f.MountedAt);
+                collisions.Add(new Collision(id,
+                    (bank is null ? "Media" : Path.GetFileNameWithoutExtension(bank) + " (loose)") + (lang is null ? "" : $" [{lang}]"),
+                    "", "", f.Bytes.Length, other.Bytes.Length));
+            }
+            looseOut[Norm(f.MountedAt)] = f;
+        }
+        foreach (var f in looseOut.Values.OrderBy(f => f.MountedAt, StringComparer.OrdinalIgnoreCase))
+        {
+            var dest = Path.Combine(outRoot, f.MountedAt.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.WriteAllBytes(dest, f.Bytes);
+        }
+        fromA += looseA.Count;
+        fromB += looseB.Count;
+        if (looseOut.Count > 0)
+            log.AppendLine($"loose Media files: {looseOut.Count} written ({looseA.Count} priority, {looseB.Count} secondary).");
+        if (extractTo is not null)
+        {
+            DumpLoose(looseA, Path.Combine(extractTo, "priority - " + Safe(Name(priorityPath))));
+            DumpLoose(looseB, Path.Combine(extractTo, "secondary - " + Safe(Name(secondaryPath))));
         }
 
         var csv = new StringBuilder();
@@ -135,23 +207,35 @@ public static class ModMerge
         header.Append(log);
         File.WriteAllText(Path.Combine(outRoot, "build-log.txt"), header.ToString(), new UTF8Encoding(true));
 
-        return new Result(banks, fromA, fromB, collisions, skipped, header.ToString());
+        return new Result(banks, fromA, fromB, collisions, skipped, header.ToString()) { Loose = looseOut.Count };
     }
 
     // ---- helpers -----------------------------------------------------------
 
+    /// <param name="loose">Receives the loose Media files the mod ships that differ from the game's at the same path.</param>
     private static Dictionary<string, ModBank.Comparison> Load(
         GameSession session, string path, Settings settings, string role,
-        List<string> skipped, Action<string> progress)
+        List<string> skipped, Action<string> progress, List<ModBank.LooseMedia> loose)
     {
         var map = new Dictionary<string, ModBank.Comparison>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(path)) return map;
 
         progress?.Invoke($"reading the {role} mod…");
         ModBank.Opened opened;
-        try { opened = ModBank.Open(path, settings); }
+        try { opened = ModBank.Open(path, settings, withMedia: true); }
         catch (Exception ex) { skipped.Add($"{Name(path)}: {ex.Message}"); return map; }
         skipped.AddRange(opened.Skipped);
+
+        // A file byte for byte the game's own at its path changes nothing and is not carried.
+        var same = 0;
+        foreach (var f in opened.Media)
+        {
+            byte[] game = null;
+            try { game = session.GameFileAt(f.MountedAt)?.Read(); } catch { }
+            if (game is not null && game.AsSpan().SequenceEqual(f.Bytes)) { same++; continue; }
+            loose.Add(f);
+        }
+        if (same > 0) progress?.Invoke($"{role}: {same} loose Media file(s) are the game's own bytes, left out");
 
         foreach (var bank in opened.Banks)
         {
@@ -181,6 +265,20 @@ public static class ModMerge
             File.WriteAllBytes(Path.Combine(dir, name), bytes);
         }
     }
+
+    /// <summary>A mod's loose Media files, under its role folder, in the language folder they came from.</summary>
+    private static void DumpLoose(List<ModBank.LooseMedia> files, string root)
+    {
+        foreach (var f in files)
+        {
+            var lang = GameSession.LanguageOf(f.MountedAt);
+            var dir = Path.Combine(root, "Media", lang ?? "");
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(Path.Combine(dir, Path.GetFileName(f.MountedAt)), f.Bytes);
+        }
+    }
+
+    private static string Norm(string mountedAt) => mountedAt.Replace('\\', '/').TrimStart('/');
 
     private static string Name(string path) => Path.GetFileNameWithoutExtension(path ?? "");
 

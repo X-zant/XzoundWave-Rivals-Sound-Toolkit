@@ -35,6 +35,22 @@
     <Style Selector="ListBox#Tabs ListBoxItem:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="Transparent"/>
     </Style>
+    <!-- Setup pulses green until a game is loaded: nothing else works before that, and it is
+         the last tab, where a first-time user is least likely to look. -->
+    <Style Selector="ListBox#Tabs ListBoxItem.needsSetup">
+      <Style.Animations>
+        <Animation Duration="0:0:0.9" IterationCount="Infinite" PlaybackDirection="Alternate" Easing="SineEaseInOut">
+          <KeyFrame Cue="0%">
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="Background" Value="#006FD68F"/>
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Foreground" Value="{StaticResource TagGreen}"/>
+            <Setter Property="Background" Value="#596FD68F"/>
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
 
     <!-- Toolbar buttons: flat, square, the app's own colours. -->
     <Style Selector="Button.tool">
@@ -49,6 +65,67 @@
       <Setter Property="Foreground" Value="{StaticResource Accent}"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
+
+    <!-- A details-panel box whose rows the list has selected. That box is a selection
+         surface and not a label that jumps the list (MainWindow.Details.cs, MediaBox), so
+         it has to look different when its row is one of the selected ones, and until this
+         existed it looked the same either way. The surface is the one App.axaml declares
+         for a selected thing, so the pane says "selected" in the window's own colour
+         rather than in a hex written here, and the accent border is the mark the tab strip
+         already uses for the one you are on.
+
+         The two rules below reach the template's own presenter because Fluent sets the
+         pointerover and pressed backgrounds THERE, over the template binding that carries
+         a button's own Background: without them a selected box turned back into an
+         ordinary one under the pointer, which is exactly when a reader is looking at it. -->
+    <Style Selector="Button.tool.picked">
+      <Setter Property="Background" Value="{StaticResource Selected}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+    </Style>
+    <Style Selector="Button.tool.picked:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Selected}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+    </Style>
+    <Style Selector="Button.tool.picked:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Selected}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+    </Style>
+
+    <!-- The switch between the right panel's two sub-panels.
+         Deliberately not the tab strip's own style one size down: that strip's accent
+         underline is its signature, and repeating it eighty pixels lower would give the
+         window two underlined strips and two places that look like navigation. This
+         borrows the toolbar button's vocabulary instead, so it reads as something you
+         press and sits at the same visual altitude as Add files and Remove at the
+         panel's foot. A ListBox rather than two toggle buttons for the same reason the
+         tab strip is one: a single SelectedIndex, and the arrow keys work.
+         The pointerover rule comes first on purpose, so the selected rule below wins on
+         an item that is both and the picked sub-panel does not change colour under the
+         pointer. -->
+    <Style Selector="ListBox#PaneTabs">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="3"/>
+      <Setter Property="Padding" Value="1"/>
+      <Setter Property="ItemsPanel">
+        <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="ListBox#PaneTabs ListBoxItem">
+      <Setter Property="Padding" Value="12,3"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="CornerRadius" Value="2"/>
+    </Style>
+    <Style Selector="ListBox#PaneTabs ListBoxItem:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Bg}"/>
+    </Style>
+    <Style Selector="ListBox#PaneTabs ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Bg3}"/>
+      <Setter Property="TextElement.Foreground" Value="{StaticResource Fg}"/>
+    </Style>
   </Window.Styles>
 
   <Grid RowDefinitions="Auto,Auto,*,Auto">
@@ -60,7 +137,7 @@
         <ListBoxItem Content="Test"/>
         <ListBoxItem Content="Build"/>
         <ListBoxItem Content="Mods"/>
-        <ListBoxItem Content="Setup"/>
+        <ListBoxItem x:Name="SetupTab" Content="Setup"/>
       </ListBox>
     </Border>
 
@@ -74,6 +151,8 @@
                window. The list needs a filter and the columns need a switch, and they
                belong with the counts because all three are about what is on screen
                rather than about what you are doing. -->
+          <Button x:Name="BtnProject" Content="Untitled ▾" Classes="tool"/>
+          <Button x:Name="BtnVoiceLines" Content="Voice lines…" Classes="tool"/>
           <TextBox x:Name="TbFilter" Width="180" PlaceholderText="Filter…"/>
           <Button x:Name="BtnColumns"  Content="Columns ▾" Classes="tool"/>
           <Button x:Name="BtnSettings" Content="Settings…" Classes="tool"/>
@@ -86,7 +165,56 @@
       </Grid>
     </Border>
 
-    <Grid Grid.Row="2" ColumnDefinitions="310,4,*">
+    <Grid x:Name="Body" Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="310"/>
+        <ColumnDefinition Width="4"/>
+        <!-- Floors on the two columns the right splitter moves between, so neither can
+             be dragged away to nothing. 560 is what the pane's five columns come to in
+             this host's font, which is wider than the 470 it was ported from: the same
+             difference that has FloorColumns measuring the list's widths rather than
+             declaring them. It leaves the list 562px at the default window width,
+             against the 592 the WPF window gave its own. That list carried 1,781px of
+             columns in those 592 and scrolled; so does this one.
+
+             The list's own floor is what is left of the window's MinWidth once the
+             other four columns have taken theirs: 1100 less 310, 4, 4 and 470. A floor
+             above that would not stop the list being squeezed, because a star column
+             cannot squeeze an absolute one; it would push the pane off the right edge
+             of a window the reader is allowed to make that narrow, taking the Codec
+             column and the pane's own border with it.
+
+             470 is the width the pane had in the window this one replaces, and the
+             width its own columns were then measured to fit. An earlier note here
+             defended it on the ground that 560 cost the list its subtitle column and
+             470 gave it back. That was measured afterwards and is false: at 1440 by 840
+             the list's fixed columns come to about 654 in a 652 viewport, so the
+             subtitle is off the right edge at either width and the list scrolls to
+             reach it, exactly as it did in the window this one replaces.
+
+             What the width really decides is the pane. Five staged columns measured 532
+             against the 456 a 470 pane leaves them, which is why one of them went; four
+             come to about 461, so 470 holds them with a short scrollbar rather than a
+             silent clip. 560 would have held five. The column went instead of the width
+             growing because the list is the thing being worked on and the pane is the
+             thing being worked from, and because the column that went says VORBIS for
+             very nearly every staged file. -->
+        <!-- The two above are the pane's, and are separated from the list's floor
+             deliberately: a reader narrowing the window should lose list columns to a
+             scrollbar rather than lose the pane's headers, because a scrollbar says
+             what it is hiding and a clipped header does not.
+
+             The pane's floor of 380 is this host's three staged columns measured and
+             then rounded up, and it is only a starting point: FloorPending raises it to
+             whatever those columns actually come to in the font the theme resolved, so a
+             wider font moves the floor rather than scrolling the pane sideways. 260 let
+             the pane be dragged until its own grid scrolled before anything in it could
+             be read. -->
+        <ColumnDefinition Width="*" MinWidth="312"/>
+        <ColumnDefinition Width="4"/>
+        <ColumnDefinition Width="470" MinWidth="380" MaxWidth="900"/>
+      </Grid.ColumnDefinitions>
+
       <Border Grid.Column="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
         <TreeView x:Name="Tree" Background="Transparent" BorderThickness="0"
                   SelectionMode="Multiple" Padding="0,6"/>
@@ -96,7 +224,88 @@
 
       <DataGrid x:Name="Grid_" Grid.Column="2" Background="Transparent"
                 GridLinesVisibility="Horizontal" IsReadOnly="True"
-                CanUserSortColumns="True" HeadersVisibility="Column"/>
+                CanUserSortColumns="True" CanUserResizeColumns="True" HeadersVisibility="Column"/>
+
+      <GridSplitter Grid.Column="3" Background="{StaticResource Bg}" ResizeDirection="Columns"/>
+
+      <!-- The right panel: a switch, and one of two sub-panels under it. Staged
+           replacements, and everything about the selected sound that no column in the
+           list can hold.
+
+           NEITHER SUB-PANEL MAY DECLARE A DROP HANDLER OR AllowDrop, and nor may
+           anything put inside them. The window already takes every drop and reads where
+           the pointer was, so a handler in here would be a second one seeing the same
+           file: it would be staged twice and reported as "N staged (0 new, N updated)",
+           which looks plausible. The drag feedback is this outer border, lit from
+           MainWindow.Drop.cs, and it surrounds the switch and whichever sub-panel is
+           showing, so a drop is answered the same way whichever one that is. -->
+      <Border x:Name="DropPane" Grid.Column="4" Background="{StaticResource Bg2}"
+              BorderBrush="{StaticResource Line}" BorderThickness="1">
+        <Grid RowDefinitions="Auto,*">
+
+          <Border Grid.Row="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1"
+                  Padding="8,7">
+            <!-- The staged count rides in the first label, because while Details is
+                 showing there is nothing else on screen saying a drop landed. Written
+                 from code: see PaneCount. -->
+            <ListBox x:Name="PaneTabs" SelectedIndex="0" HorizontalAlignment="Left">
+              <ListBoxItem x:Name="PaneTabFiles" Content="Staged files"/>
+              <ListBoxItem x:Name="PaneTabDetails" Content="Details"/>
+            </ListBox>
+          </Border>
+
+        <Grid x:Name="PaneStaging" Grid.Row="1" RowDefinitions="Auto,*,Auto">
+
+          <!-- Collapsible: the naming rule matters enormously the first time and never
+               again, so it should not keep taking room. Whether it is open is a
+               setting, because a pane that reopens its help on every launch has not
+               understood that it was read. -->
+          <Expander x:Name="DropHelp" Grid.Row="0" Header="Custom audio"
+                    Margin="8,8,8,6" HorizontalAlignment="Stretch"
+                    Background="Transparent" FontWeight="Bold">
+            <StackPanel Spacing="4">
+              <TextBlock Foreground="{StaticResource TagGreen}" FontWeight="Bold"
+                         TextWrapping="Wrap"
+                         Text="Drag files or folders here, batches welcome."/>
+              <TextBlock Foreground="{StaticResource TagGreen}" FontWeight="Bold"
+                         TextWrapping="Wrap"
+                         Text="Name them  {MediaID}-{your note}. Everything after the first hyphen is yours to use as a reminder and is ignored when assigning."/>
+              <!-- Filled in from code: what this host reads is what its own vgmstream
+                   declares, so the sentence is asked for rather than written down. -->
+              <TextBlock x:Name="DropFormats" Foreground="{StaticResource Muted}"
+                         TextWrapping="Wrap" Margin="0,2,0,0"/>
+            </StackPanel>
+          </Expander>
+
+          <DataGrid x:Name="PendingGrid" Grid.Row="1" Margin="6,0,6,0"
+                    Background="Transparent" GridLinesVisibility="Horizontal"
+                    IsReadOnly="True" SelectionMode="Extended"
+                    CanUserSortColumns="False" HeadersVisibility="Column"/>
+
+          <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6" Margin="8">
+            <Button x:Name="BtnAddFiles"      Content="Add files…" Classes="tool"/>
+            <Button x:Name="BtnRemovePending" Content="Remove"     Classes="tool"/>
+            <Button x:Name="BtnClearPending"  Content="Clear all"  Classes="tool"/>
+          </StackPanel>
+        </Grid>
+
+          <!-- What the list cannot hold: the whole subtitle, what the .bnk does to the
+               sound and where each figure came from, where the audio actually is, the
+               other alternatives in the container, and where else a music clip is
+               placed. Built from code because every line of it is conditional on what
+               the selected row turns out to carry; see MainWindow.Details.cs.
+
+               It scrolls, because the longest of these runs well past the panel's
+               height: nine alternatives, ten placements and a property chain of sixteen
+               entries can all be true of one row. Horizontal scrolling is off so the
+               prose wraps instead of running off the edge. -->
+          <ScrollViewer x:Name="PaneDetails" Grid.Row="1" IsVisible="False"
+                        HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="Details" Margin="10,8,10,12"/>
+          </ScrollViewer>
+        </Grid>
+      </Border>
     </Grid>
 
     <Border Grid.Row="3" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0"

@@ -1,0 +1,81 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="MRAudioKit.UI.VoiceLinesWindow"
+        Title="Voice lines" Width="980" Height="640"
+        MinWidth="760" MinHeight="460"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Bg}">
+
+  <!-- New voice lines, kept apart from the main window on purpose: this holds only what
+       is new about a line: which trigger, which condition, what it says, who hears it.
+       Its audio is staged, previewed and built in the main window like any other sound,
+       on the line's slot under "New lines", so nothing here repeats what is there.
+
+       Layout A+D: triggers down the side with a count of your lines on each, your lines
+       as a table, and the composer for the selected one under the table. -->
+
+  <Window.Styles>
+    <!-- Styles do not cross a window boundary, so the main window's rule is restated. -->
+    <Style Selector="Button.tool">
+      <Setter Property="Background" Value="{StaticResource Bg2}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="2"/>
+      <Setter Property="Padding" Value="10,4"/>
+      <Setter Property="Foreground" Value="{StaticResource Fg}"/>
+    </Style>
+    <Style Selector="ListBox#Triggers ListBoxItem">
+      <Setter Property="Padding" Value="8,3"/>
+      <Setter Property="CornerRadius" Value="0"/>
+    </Style>
+    <Style Selector="ListBox#Lines ListBoxItem">
+      <Setter Property="Padding" Value="8,4"/>
+      <Setter Property="CornerRadius" Value="0"/>
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <Border Grid.Row="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1"
+            Padding="10,8">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+        <TextBlock Grid.Column="0" Text="Voice lines" FontWeight="Bold" FontSize="14"
+                   VerticalAlignment="Center" Margin="0,0,12,0" Foreground="{StaticResource Fg}"/>
+        <ComboBox Grid.Column="1" x:Name="SetFilter" Width="300"/>
+        <!-- A hero with several forms keeps one voice item per form; the game reads the one for
+             the form in play, so a line belongs to one of them. Shown only for such a set. -->
+        <ComboBox Grid.Column="2" x:Name="ItemFilter" Width="260" Margin="8,0,0,0"
+                  HorizontalAlignment="Left" IsVisible="False"
+                  ToolTip.Tip="This hero keeps one voice item per form. A new line goes into the form picked here."/>
+        <Button Grid.Column="3" x:Name="BtnNewLine" Content="+ New line" Classes="tool"/>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="230,*">
+      <Border Grid.Column="0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0"
+              Background="{StaticResource Bg2}">
+        <ListBox x:Name="Triggers" Background="Transparent"/>
+      </Border>
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
+        <!-- the table's header: the same widths as each row's columns -->
+        <Grid Grid.Row="0" x:Name="LinesHeader" Margin="8,6,8,2" ColumnDefinitions="140,220,*,90">
+          <TextBlock Grid.Column="0" Text="Voice set" Foreground="{StaticResource Muted}"/>
+          <TextBlock Grid.Column="1" Text="Trigger" Foreground="{StaticResource Muted}"/>
+          <TextBlock Grid.Column="2" Text="Subtitle" Foreground="{StaticResource Muted}"/>
+          <TextBlock Grid.Column="3" Text="Audio" Foreground="{StaticResource Muted}"/>
+        </Grid>
+        <ListBox Grid.Row="1" x:Name="Lines" Background="Transparent"/>
+        <Border Grid.Row="2" x:Name="Composer" BorderBrush="{StaticResource Line}"
+                BorderThickness="0,1,0,0" Background="{StaticResource Bg2}" Padding="12,10">
+          <!-- Built in code: which fields a line has depends on its trigger. -->
+          <StackPanel x:Name="ComposerBody" Spacing="6"/>
+        </Border>
+      </Grid>
+    </Grid>
+
+    <Border Grid.Row="2" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,4">
+      <TextBlock x:Name="Status" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+    </Border>
+  </Grid>
+</Window>

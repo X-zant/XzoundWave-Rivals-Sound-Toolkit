@@ -10,6 +10,15 @@ namespace MRAudioKit;
 public sealed class Settings
 {
     public string PaksDir { get; set; } = "";
+
+    /// <summary>Build mod writes one mod per character (or per map, menu, music) instead of one in all.</summary>
+    public bool SplitModsByGroup { get; set; }
+
+    /// <summary>
+    /// The game has loaded here before with these settings. Opening the window then loads it
+    /// again by itself, in the language last picked, instead of waiting on the Setup tab.
+    /// </summary>
+    public bool LoadedOnce { get; set; }
     public string AesKey { get; set; } = "";
     public string UsmapPath { get; set; } = "";
     public string VgmstreamPath { get; set; } = "";
@@ -42,12 +51,22 @@ public sealed class Settings
     /// </summary>
     public List<string> HiddenColumns { get; set; }
 
+    /// <summary>The list's column widths as they were dragged, by header. Null until one is.</summary>
+    public Dictionary<string, double> ColumnWidths { get; set; }
+
     /// <summary>
     /// Kinds of row the author turned off, by key -- see <see cref="RowClasses"/>.
     /// Same reasoning as <see cref="HiddenColumns"/>: a preference about the tool, and
     /// null means "never chosen" rather than "nothing hidden".
     /// </summary>
     public List<string> HiddenRowClasses { get; set; }
+
+    /// <summary>
+    /// Which change to the row defaults this file has been brought through. 1: unnamed events
+    /// are no longer hidden by default, and a file whose hidden list was exactly the old default
+    /// -- never a choice its owner made -- goes back to the new one.
+    /// </summary>
+    public int RowDefaults { get; set; }
 
     /// <summary>
     /// Keep what each imported file encoded to, so restaging the same audio does not
@@ -83,10 +102,36 @@ public sealed class Settings
     /// <summary>The naming rule in the drop pane, once you know it, is just clutter.</summary>
     public bool ShowDropHelp { get; set; } = true;
 
+    /// <summary>
+    /// Which of the right panel's two sub-panels was last picked. False is the staged list,
+    /// which is what a fresh start should show: it is the one of the two that has to be seen
+    /// while something is being dropped, and the details panel says nothing at all until a
+    /// row is selected.
+    ///
+    /// A plain bool rather than the nullable one <see cref="EnglishCategories"/> uses: null
+    /// exists there to let a property of the HOST decide, and nothing about which sub-panel
+    /// to show comes from the host, so there is no third state to represent. Written only
+    /// when the switch itself is clicked, because a switch the program makes, as a drop
+    /// does, is not a choice and must not be remembered as one.
+    /// </summary>
+    public bool RightPanelDetails { get; set; }
+
     public string TranslateProvider { get; set; } = "none";
     public string DeepLKey { get; set; } = "";
     public string LocalTranslateUrl { get; set; } = "";
     public string LocalTranslateModel { get; set; } = "";
+
+    /// <summary>
+    /// Show the Category column in English rather than in the Chinese the game
+    /// authored it in -- see <see cref="CategoryTranslator"/>, which needs no provider
+    /// and no network to do most of it.
+    ///
+    /// Nullable for the same reason <see cref="HiddenColumns"/> is: null means never
+    /// chosen, which is not the same as chosen-and-off. It is what lets a host with no
+    /// font that can draw the script start in English, where the alternative is a
+    /// column of empty boxes, without overruling anyone who decided otherwise.
+    /// </summary>
+    public bool? EnglishCategories { get; set; }
 
     /// <summary>Reopened on launch, plus the Open menu's recent list.</summary>
     public string LastProject { get; set; } = "";
@@ -119,7 +164,11 @@ public sealed class Settings
         try
         {
             if (File.Exists(File_))
-                return JsonSerializer.Deserialize<Settings>(File.ReadAllText(File_)) ?? new Settings();
+            {
+                var loaded = JsonSerializer.Deserialize<Settings>(File.ReadAllText(File_)) ?? new Settings { RowDefaults = 1 };
+                if (loaded.MigrateRowDefaults()) loaded.Save();
+                return loaded;
+            }
 
             // First run after the rename: adopt the old settings rather than asking
             // for the AES key and paks path again. The old folder is left alone.
@@ -127,11 +176,26 @@ public sealed class Settings
             if (File.Exists(legacy))
             {
                 var moved = JsonSerializer.Deserialize<Settings>(File.ReadAllText(legacy));
-                if (moved is not null) { moved.Save(); return moved; }
+                if (moved is not null) { moved.MigrateRowDefaults(); moved.Save(); return moved; }
             }
         }
         catch { /* a corrupt settings file must not stop the app starting */ }
-        return new Settings();
+        // A first run starts on the current defaults, so nothing it later chooses is migrated away.
+        return new Settings { RowDefaults = 1 };
+    }
+
+    /// <summary>
+    /// Bring the row defaults up to date, once per file. True when anything changed. A hidden
+    /// list that is exactly the old default ("unnamed" alone) was never chosen, so it goes;
+    /// any other list was someone's choice and is kept as it is.
+    /// </summary>
+    public bool MigrateRowDefaults()
+    {
+        if (RowDefaults >= 1) return false;
+        if (HiddenRowClasses is [var only] && only.Equals("unnamed", StringComparison.OrdinalIgnoreCase))
+            HiddenRowClasses = null;
+        RowDefaults = 1;
+        return true;
     }
 
     public void Save()

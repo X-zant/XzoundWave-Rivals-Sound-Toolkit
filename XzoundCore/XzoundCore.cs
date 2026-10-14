@@ -69,8 +69,12 @@ public static class XzoundCore
             {
                 if (_library is not null) return _library;
                 var asm = Assembly.GetExecutingAssembly();
+                // A resource name is an identifier, so it is matched byte for byte. The
+                // default comparison is the machine's collation, which is free to treat
+                // punctuation as ignorable and is not a rule a resource name obeys.
                 var name = asm.GetManifestResourceNames()
-                              .First(n => n.EndsWith("packed_codebooks_aoTuV_603.bin"));
+                              .First(n => n.EndsWith("packed_codebooks_aoTuV_603.bin",
+                                                     StringComparison.Ordinal));
                 using var st = asm.GetManifestResourceStream(name)!;
                 using var ms = new MemoryStream();
                 st.CopyTo(ms);

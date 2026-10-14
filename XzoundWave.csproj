@@ -73,6 +73,10 @@
     <Compile Remove="XzoundCli\**" />
     <EmbeddedResource Remove="XzoundCli\**" />
     <None Remove="XzoundCli\**" />
+    <!-- vendor/ holds the UAssetToolRivals submodule, built by its own projects. -->
+    <Compile Remove="vendor\**" />
+    <EmbeddedResource Remove="vendor\**" />
+    <None Remove="vendor\**" />
   </ItemGroup>
 
 </Project>

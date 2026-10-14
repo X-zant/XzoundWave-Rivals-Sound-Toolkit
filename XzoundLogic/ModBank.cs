@@ -6,6 +6,7 @@ using CUE4Parse.Encryption.Aes;
 using CUE4Parse.FileProvider;
 using CUE4Parse.UE4.Objects.Core.Misc;
 using CUE4Parse.UE4.Versions;
+using CUE4Parse.UE4.VirtualFileSystem;
 
 namespace MRAudioKit;
 
@@ -24,14 +25,40 @@ public static class ModBank
     {
         public string Label => string.IsNullOrEmpty(SourcePath) || SourcePath == Name
             ? Name : $"{Name}  ({Path.GetFileName(SourcePath)})";
+
+        /// <summary>
+        /// Where the bank sits inside the mod, language folder included, or null for a
+        /// loose .bnk that never said. A voice bank ships once per language under the same
+        /// file name, so the name alone cannot say which of the game's copies a mod
+        /// replaces, and comparing an English bank with the Chinese one makes every voice
+        /// line look different.
+        /// </summary>
+        public string MountedAt { get; init; }
     }
+
+    /// <summary>A loose media file a mod ships under WwiseAudio/Media/, by its path in the mod.</summary>
+    public sealed record LooseMedia(string MountedAt, byte[] Bytes);
 
     /// <summary>
     /// What came out of an open. <see cref="Skipped"/> names containers that could
     /// not be read -- an encrypted mod among fifteen good ones must not sink the
     /// whole folder, but the author still needs to know it was left out.
     /// </summary>
-    public sealed record Opened(List<Bank> Banks, List<string> Skipped);
+    public sealed record Opened(List<Bank> Banks, List<string> Skipped)
+    {
+        /// <summary>
+        /// The loose media the mod ships beside its banks. Filled only when the caller
+        /// asks for it, because a mod can carry hundreds of megabytes of them and the
+        /// window, which opens a mod to read its banks, has no use for any of it.
+        /// </summary>
+        public List<LooseMedia> Media { get; init; } = [];
+
+        /// <summary>
+        /// What a container holds besides banks and (when asked for) Media wems -- cooked assets,
+        /// say. Anything that rewrites the mod as a whole from its audio alone would drop these.
+        /// </summary>
+        public List<string> Others { get; init; } = [];
+    }
 
     public static bool IsBank(string p) => p.EndsWith(".bnk", StringComparison.OrdinalIgnoreCase);
     public static bool IsPak(string p) =>
@@ -43,15 +70,21 @@ public static class ModBank
     /// Every bank reachable from this path. A .bnk is itself; a .pak is mounted and
     /// searched. Throws with a message worth showing when nothing can be read.
     /// </summary>
-    public static Opened Open(string path, Settings settings)
+    /// <param name="withMedia">
+    /// Also read the loose .wem files the mod ships under WwiseAudio/Media/. A mod built
+    /// in prefetch mode, or one that replaces a sound the game only streams, carries its
+    /// audio there rather than in a bank, and anything that rewrites the mod as a whole
+    /// would otherwise drop that half of it.
+    /// </param>
+    public static Opened Open(string path, Settings settings, bool withMedia = false)
     {
         if (IsBank(path))
             return new Opened([new Bank(Path.GetFileName(path), path, File.ReadAllBytes(path))], []);
 
-        // A folder of mod files is mounted where it sits -- nothing to copy, and it is
+        // A folder of mod files is read where it sits -- nothing to copy, and it is
         // how an unpacked mod usually arrives.
         if (Directory.Exists(path))
-            return FromMount(path, path, settings);
+            return FromFolder(path, settings, withMedia);
 
         if (!IsPak(path))
             throw new InvalidDataException($"{Path.GetFileName(path)} is not a .bnk or .pak");
@@ -77,7 +110,7 @@ public static class ModBank
             // 39 IoStore containers mount regardless -- so it is not needed, and
             // linking it only produced a "skipped" warning on every open.
 
-            return FromMount(temp, path, settings);
+            return FromMount(temp, path, settings, withMedia);
         }
         finally
         {
@@ -85,8 +118,116 @@ public static class ModBank
         }
     }
 
+    /// <summary>
+    /// A folder of mod files: every loose bank in it, and the loose media under a WwiseAudio/Media
+    /// folder when asked for, at any depth, read from disk; and the containers at its top, mounted
+    /// as a pak is.
+    ///
+    /// The provider names a loose file by the folder it was found in, so a bank at the top of a
+    /// folder called S1_single_bare was said to sit at S1_single_bare/bnk_sfx_1053303.bnk, a path
+    /// the game does not have, and it looked only at the top of the folder, so one laid out the way
+    /// the game lays its files out mounted nothing at all. So loose files are read here instead. One
+    /// under a Marvel/Content folder sits where the game would load it from, and that is its path,
+    /// as a pak would name it; one anywhere else never said where it goes, the same as a bare .bnk,
+    /// and is matched the way one is.
+    /// </summary>
+    private static Opened FromFolder(string dir, Settings settings, bool withMedia)
+    {
+        var banks = new List<Bank>();
+        var media = new List<LooseMedia>();
+        var others = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+        {
+            var at = GamePathOf(dir, file);
+            if (IsBank(file))
+                banks.Add(new Bank(Path.GetFileName(file), dir, File.ReadAllBytes(file)) { MountedAt = at });
+            else if (withMedia && at is not null && file.EndsWith(".wem", StringComparison.OrdinalIgnoreCase) &&
+                     at.Contains("/WwiseAudio/Media/", StringComparison.OrdinalIgnoreCase))
+                media.Add(new LooseMedia(at, File.ReadAllBytes(file)));
+        }
+
+        // The containers at the top of the folder, mounted where they sit, as they always were. A
+        // container that does not open is named, and is only fatal when nothing else was found.
+        var skipped = new List<string>();
+        if (Directory.EnumerateFiles(dir).Any(IsPak))
+        {
+            var mounted = Mount(dir, dir, settings, withMedia);
+            if (mounted.Problem is not null && banks.Count == 0 && media.Count == 0)
+                throw new InvalidDataException(mounted.Problem);
+            banks.AddRange(mounted.Banks);
+            media.AddRange(mounted.Media);
+            skipped.AddRange(mounted.Skipped);
+            others.AddRange(mounted.Others);
+        }
+
+        if (banks.Count == 0 && media.Count == 0)
+            throw new InvalidDataException(
+                $"{Path.GetFileName(Path.TrimEndingDirectorySeparator(dir))} holds no .bnk files, loose or in a container" +
+                (withMedia ? ", and no .wem files under a WwiseAudio/Media folder" : "") + "." +
+                (skipped.Count > 0
+                    ? $"{Environment.NewLine}{skipped.Count} container(s) could not be opened and " +
+                      $"were skipped: {string.Join(", ", skipped)}"
+                    : ""));
+
+        return new Opened(banks.OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase)
+                               .ThenBy(b => b.MountedAt, StringComparer.OrdinalIgnoreCase).ToList(), skipped)
+        {
+            Others = others,
+            Media = media.OrderBy(m => m.MountedAt, StringComparer.OrdinalIgnoreCase).ToList(),
+        };
+    }
+
+    /// <summary>
+    /// Where a loose file of a mod folder sits in the game: its path from a Marvel/Content folder
+    /// on, the way a pak names it, or null when it sits under none.
+    /// </summary>
+    private static string GamePathOf(string root, string file)
+    {
+        var parts = Path.GetRelativePath(root, file).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        for (var i = 0; i + 1 < parts.Length; i++)
+            if (parts[i].Equals("Marvel", StringComparison.OrdinalIgnoreCase) &&
+                parts[i + 1].Equals("Content", StringComparison.OrdinalIgnoreCase))
+                return string.Join('/', parts[i..]);
+        return null;
+    }
+
     /// <summary>Mount a folder of containers and collect every .bnk in it.</summary>
-    private static Opened FromMount(string dir, string sourceLabel, Settings settings)
+    private static Opened FromMount(string dir, string sourceLabel, Settings settings,
+                                    bool withMedia = false)
+    {
+        var mounted = Mount(dir, sourceLabel, settings, withMedia);
+        if (mounted.Problem is not null) throw new InvalidDataException(mounted.Problem);
+
+        // A mod made only of loose media is still a mod when the caller asked for media,
+        // so it is refused only when there is nothing of either kind.
+        if (mounted.Banks.Count == 0 && mounted.Media.Count == 0)
+            throw new InvalidDataException(
+                $"{Path.GetFileName(sourceLabel)} holds no .bnk files " +
+                $"({mounted.Files:N0} files mounted)." +
+                (mounted.Skipped.Count > 0
+                    ? $"{Environment.NewLine}{mounted.Skipped.Count} container(s) could not be opened and " +
+                      $"were skipped: {string.Join(", ", mounted.Skipped)}"
+                    : ""));
+
+        return new Opened(mounted.Banks.OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ToList(), mounted.Skipped)
+        {
+            Media = mounted.Media.OrderBy(m => m.MountedAt, StringComparer.OrdinalIgnoreCase).ToList(),
+            Others = mounted.Others,
+        };
+    }
+
+    /// <summary>
+    /// What the containers in a folder hold. Only what is inside a container is taken: the
+    /// provider also registers the loose files beside them, which <see cref="FromFolder"/> reads
+    /// from disk with the path the game would give them.
+    /// </summary>
+    /// <param name="Problem">Why nothing at all could be mounted, in words worth showing; null when something was.</param>
+    private sealed record Mounted(List<Bank> Banks, List<LooseMedia> Media, List<string> Skipped, int Files, string Problem)
+    {
+        public List<string> Others { get; init; } = [];
+    }
+
+    private static Mounted Mount(string dir, string sourceLabel, Settings settings, bool withMedia)
     {
         var provider = new DefaultFileProvider(dir, SearchOption.TopDirectoryOnly,
             new VersionContainer(EGame.GAME_MarvelRivals), StringComparer.OrdinalIgnoreCase);
@@ -107,12 +248,16 @@ public static class ModBank
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (provider.Files.Count == 0)
+        // Only what a container holds. The loose files beside the containers are registered as
+        // well, named by the folder they sit in rather than where the game would load them, and
+        // the folder reader takes those from disk with the right path.
+        var contained = provider.Files.Where(kv => kv.Value is VfsEntry).ToList();
+        if (contained.Count == 0)
         {
             // Nothing at all opened -- say which containers were seen and why they
             // refused, rather than a flat "0 files" that gives nothing to act on.
             var present = string.Join(", ", Directory.EnumerateFiles(dir).Select(Path.GetFileName));
-            throw new InvalidDataException(
+            return new Mounted([], [], skipped, 0,
                 $"{Path.GetFileName(sourceLabel)} mounted 0 files." +
                 (skipped.Count > 0
                     ? $"{Environment.NewLine}Could not open: {string.Join(", ", skipped)}"
@@ -122,22 +267,24 @@ public static class ModBank
         }
 
         var banks = new List<Bank>();
-        foreach (var (key, file) in provider.Files)
+        var media = new List<LooseMedia>();
+        var others = new List<string>();
+        foreach (var (key, file) in contained)
         {
-            if (!key.EndsWith(".bnk", StringComparison.OrdinalIgnoreCase)) continue;
-            try { banks.Add(new Bank(Path.GetFileName(key), sourceLabel, file.Read())); }
+            if (withMedia && key.EndsWith(".wem", StringComparison.OrdinalIgnoreCase) &&
+                file.Path.Contains("/WwiseAudio/Media/", StringComparison.OrdinalIgnoreCase))
+            {
+                try { media.Add(new LooseMedia(file.Path, file.Read())); }
+                catch { }
+                continue;
+            }
+            if (!key.EndsWith(".bnk", StringComparison.OrdinalIgnoreCase)) { others.Add(file.Path); continue; }
+            // The file's own path rather than the key, which is what keeps the casing the
+            // game uses and so compares cleanly against the game's paths.
+            try { banks.Add(new Bank(Path.GetFileName(key), sourceLabel, file.Read()) { MountedAt = file.Path }); }
             catch { }
         }
-        if (banks.Count == 0)
-            throw new InvalidDataException(
-                $"{Path.GetFileName(sourceLabel)} holds no .bnk files " +
-                $"({provider.Files.Count:N0} files mounted)." +
-                (skipped.Count > 0
-                    ? $"{Environment.NewLine}{skipped.Count} container(s) could not be opened and " +
-                      $"were skipped: {string.Join(", ", skipped)}"
-                    : ""));
-
-        return new Opened(banks.OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ToList(), skipped);
+        return new Mounted(banks, media, skipped, contained.Count, null) { Others = others };
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -193,7 +340,7 @@ public static class ModBank
         {
             var wem = data.Body.AsSpan((int)e.Offset, (int)e.Size).ToArray();
             var info = BnkBuilder.Inspect(wem);
-            var seconds = Seconds(wem, info);
+            var seconds = BnkBuilder.Seconds(wem);
 
             // What this bank changed. Sounds it left alone are not interesting; these
             // are the reason someone opened it.
@@ -273,7 +420,7 @@ public static class ModBank
         {
             try
             {
-                var didx = BnkBuilder.ReadSections(session.Provider.Files[key].Read())
+                var didx = BnkBuilder.ReadSections(session.Bank(key).Read())
                                      .FirstOrDefault(s => s.Tag == "DIDX");
                 if (didx is null) continue;
                 var overlap = BnkBuilder.ReadDidx(didx.Body).Count(e => ids.Contains(e.Id));
@@ -286,7 +433,7 @@ public static class ModBank
 
         try
         {
-            var raw = session.Provider.Files[best].Read();
+            var raw = session.Bank(best).Read();
             var sections = BnkBuilder.ReadSections(raw);
             var didx = sections.FirstOrDefault(s => s.Tag == "DIDX");
             var data = sections.FirstOrDefault(s => s.Tag == "DATA");
@@ -363,12 +510,24 @@ public static class ModBank
         _index = [];
 
         var m = Regex.Match(stem, @"(\d{7})");
-        if (!m.Success) return _index;
-        var skinId = m.Groups[1].Value;
-        var charId = skinId[..4];
+        var skinId = m.Success ? m.Groups[1].Value : "";
+        var charId = m.Success ? skinId[..4] : "";
 
-        var ch = session.Characters.FirstOrDefault(c => c.CharId == charId);
-        var skin = ch?.Skins.FirstOrDefault(s => s.SkinId == skinId) ?? ch?.Skins.FirstOrDefault();
+        SkinEntry skin;
+        if (m.Success)
+        {
+            var ch = session.Characters.FirstOrDefault(c => c.CharId == charId);
+            skin = ch?.Skins.FirstOrDefault(s => s.SkinId == skinId) ?? ch?.Skins.FirstOrDefault();
+        }
+        else
+        {
+            // A bank belonging to no character is catalogued under its own file name, so
+            // the stem IS the entry to index. Requiring a seven-digit skin id left every
+            // music, ambience, UI and map .bnk someone opened as a list of numbers, with
+            // the same bank's rows named the moment it was browsed instead.
+            skin = session.OtherBanks.SelectMany(g => g.Skins)
+                          .FirstOrDefault(s => s.SkinId.Equals(stem, StringComparison.OrdinalIgnoreCase));
+        }
         if (skin is null) return _index;
 
         try
@@ -380,22 +539,4 @@ public static class ModBank
         return _index;
     }
 
-    private static double? Seconds(byte[] wem, BnkBuilder.WemInfo info)
-    {
-        if (!info.IsRiff || info.SampleRate == 0) return null;
-        var p = 12;
-        while (p + 8 <= wem.Length)
-        {
-            var id = Encoding.ASCII.GetString(wem, p, 4);
-            var sz = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(wem.AsSpan(p + 4, 4));
-            if (sz < 0 || p + 8 + sz > wem.Length) break;
-            if (id == "fmt " && info.FormatTag == 0xFFFF && sz >= 18 + 48)
-                return System.Buffers.Binary.BinaryPrimitives
-                           .ReadUInt32LittleEndian(wem.AsSpan(p + 8 + 18 + 0x06, 4)) / (double)info.SampleRate;
-            if (id == "data" && info.FormatTag != 0xFFFF)
-                return sz / (double)(info.SampleRate * Math.Max((ushort)1, info.Channels) * 2);
-            p += 8 + sz + (sz & 1);
-        }
-        return null;
-    }
 }

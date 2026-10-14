@@ -9,8 +9,16 @@ namespace MRAudioKit;
 /// </summary>
 public static class ModBuilder
 {
+    /// <param name="Retimed">
+    /// Replacements whose bank states a different length for them. A music bank records
+    /// each clip's own duration beside the clip and places it by that figure, and a
+    /// rebuild copies the hierarchy through untouched, so a swap that changes the length
+    /// leaves the bank describing audio that is no longer there. Counted and reported
+    /// rather than refused: which length to ship is the author's call, and a build that
+    /// says nothing about it is the one outcome they cannot act on.
+    /// </param>
     public sealed record Result(int Banks, int Loose, int PrefetchTrimmed, string Log,
-                                List<string> Outputs, int Muted = 0);
+                                List<string> Outputs, int Muted = 0, int Retimed = 0);
 
     /// <param name="prefetchMode">
     /// OFF (default): the full custom clip goes INTO the bank, replacing the original
@@ -48,6 +56,24 @@ public static class ModBuilder
         var trimmed = 0;
         var silenced = 0;
         var placed = new HashSet<uint>();
+        var retimed = new List<string>();
+
+        // What the banks involved in this build state about the length of the clips they
+        // place, kept across the whole build rather than per bank. A music bank times the clips
+        // it STREAMS as well as the ones it embeds, and 575 of this game's 656 music media
+        // are streamed, so a mod that replaces one of those has no DIDX entry to be
+        // checked against and would otherwise be reported on by nothing.
+        var timed = new Dictionary<uint, MusicIndex.Clip>();
+        var noted = new HashSet<uint>();
+
+        void Retimed(uint id, byte[] custom)
+        {
+            if (!timed.TryGetValue(id, out var clip) || !noted.Add(id)) return;
+            if (BnkBuilder.Seconds(custom) is not { } got ||
+                !MusicIndex.Disagrees(clip.Seconds, got)) return;
+            retimed.Add($"media {id}: " +
+                        MusicIndex.LengthNote(clip.Seconds, clip.SegmentSeconds, clip.Trimmed, got));
+        }
 
         foreach (var bankPath in bankPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
@@ -59,6 +85,12 @@ public static class ModBuilder
 
             var perBank = new Dictionary<uint, byte[]>();
             var dataSection = BnkBuilder.ReadSections(orig).FirstOrDefault(s => s.Tag == "DATA");
+
+            // What this bank states about the length of the clips it places. Empty for
+            // every bank that times nothing, which is all of them but the music bank, so
+            // the check below costs one HIRC read and then says nothing.
+            foreach (var (id, clip) in MusicIndex.Timings(orig, Path.GetFileName(bankPath)))
+                timed.TryAdd(id, clip);
             foreach (var entry in BnkBuilder.ReadDidx(didxSection.Body))
             {
                 // Silence first, so a staged file can still override it below.
@@ -80,6 +112,13 @@ public static class ModBuilder
                 }
 
                 if (!payload.TryGetValue(entry.Id, out var custom)) continue;
+
+                // Said before the replacement is reported, so the log reads as the reason
+                // and then the act rather than the other way round.
+                var before = retimed.Count;
+                Retimed(entry.Id, custom);
+                if (retimed.Count > before) log.AppendLine("  LENGTH  " + retimed[^1]);
+
                 if (prefetchMode && session.LooseMedia(entry.Id) is not null)
                 {
                     var n = Math.Min((int)entry.Size, custom.Length);
@@ -112,13 +151,32 @@ public static class ModBuilder
                            $"{orig.Length:N0} B -> {result.Bytes.Length:N0} B");
         }
 
+        // The bank that TIMES a clip is not always one of the banks being rebuilt. A
+        // music bank times the clips it streams exactly as it times the ones it embeds,
+        // and 575 of this game's 656 music media stream, so replacing one of those puts
+        // no bank in the set above -- the window builds that set from the banks that
+        // EMBED a staged id -- and the loop above then reads no timings at all. The skin
+        // the staged rows were read from is what states them, so it is asked directly,
+        // and only for ids nothing has accounted for yet.
+        foreach (var file in skin?.Banks ?? [])
+        {
+            if (payload.Keys.All(timed.ContainsKey)) break;
+            if (bankPaths.Contains(file.Path)) continue;
+            byte[] states;
+            try { states = file.Read(); } catch { continue; }
+            foreach (var (id, clip) in MusicIndex.Timings(states, Path.GetFileName(file.Path)))
+                if (payload.ContainsKey(id)) timed.TryAdd(id, clip);
+        }
+
         // A loose Media/ file is written ONLY when the id has no bank entry to replace
         // (the spreadsheet's "MEDIA SFX" case), or when prefetch mode is on. Otherwise
         // the bank carries the whole clip and shipping Media/ is dead weight.
         var loose = 0;
         foreach (var (id, bytes) in payload)
         {
-            var src = session.LooseMedia(id);
+            // The active language's copy first: the overload alone falls through every language,
+            // and an English line written over the Japanese file leaves the English one as it was.
+            var src = session.LooseMedia(id, session.Language) ?? session.LooseMedia(id);
             if (placed.Contains(id) && !prefetchMode) continue;   // fully in the bank now
             if (src is null && placed.Contains(id)) continue;
 
@@ -134,11 +192,39 @@ public static class ModBuilder
             File.WriteAllBytes(dest, bytes);
             loose++;
             outputs.Add(Path.GetRelativePath(outRoot, dest));
+            // A streamed clip is timed by its bank exactly as an embedded one is, and the
+            // hazard is the same, so it is said here too.
+            var beforeLoose = retimed.Count;
+            Retimed(id, bytes);
+            if (retimed.Count > beforeLoose) log.AppendLine("  LENGTH  " + retimed[^1]);
             var note = pending.FirstOrDefault(p => p.MediaId == id)?.Note;
             log.AppendLine($"AUDIO {id} -> {Path.GetRelativePath(outRoot, dest)}" +
                            (string.IsNullOrWhiteSpace(note) ? "" : $"   [{note}]") +
                            (src is null ? "   [no shipped original — path derived]" : ""));
         }
+
+        // A muted sound no bank holds: silence its loose file, at the game's own path. A staged
+        // file still wins, as it does in a bank.
+        if (muted is not null)
+            foreach (var id in muted.Where(id => !payload.ContainsKey(id) && !placed.Contains(id)).OrderBy(x => x))
+            {
+                var src = session.LooseMedia(id, session.Language) ?? session.LooseMedia(id);
+                if (src is null) continue;
+                byte[] quiet = null;
+                try { quiet = SilentBankBuilder.Like(src.Read()); } catch { }
+                if (quiet is null)
+                {
+                    log.AppendLine($"  media {id}: muted, but its loose file's header could not be read.");
+                    continue;
+                }
+                var dest = Path.Combine(outRoot, src.Path.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.WriteAllBytes(dest, quiet);
+                outputs.Add(Path.GetRelativePath(outRoot, dest));
+                loose++;
+                silenced++;
+                log.AppendLine($"MUTED {id} -> {Path.GetRelativePath(outRoot, dest)}   (loose file, {quiet.Length:N0} B of silence)");
+            }
 
         var header = new StringBuilder();
         // The skin is only a label here. A build driven purely by staged files does not
@@ -146,6 +232,15 @@ public static class ModBuilder
         header.AppendLine($"{skin?.Label ?? "staged files"}   ({pending.Count} custom file(s)" +
                           (silenced > 0 ? $", {silenced} muted" : "") + ")");
         header.AppendLine();
+        if (retimed.Count > 0)
+        {
+            // At the TOP of the log, above the per-media lines. This is the one thing in a
+            // build that leaves the mod internally inconsistent, and the author cannot see
+            // it in the output folder: the .bnk is the right size and every check passes.
+            header.AppendLine($"LENGTH: {retimed.Count} clip(s) are not the length their .bnk states.");
+            foreach (var note in retimed) header.AppendLine("  " + note);
+            header.AppendLine();
+        }
         if (trimmed > 0)
         {
             header.AppendLine("PREFETCH MODE: the bank keeps each sound's vanilla opening fragment and");
@@ -162,6 +257,7 @@ public static class ModBuilder
         header.Append(log);
 
         File.WriteAllText(Path.Combine(outRoot, "build-log.txt"), header.ToString(), new UTF8Encoding(true));
-        return new Result(banksWritten, loose, trimmed, header.ToString(), outputs, silenced);
+        return new Result(banksWritten, loose, trimmed, header.ToString(), outputs, silenced,
+                          retimed.Count);
     }
 }

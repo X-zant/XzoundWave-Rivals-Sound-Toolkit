@@ -25,17 +25,31 @@ public partial class MainWindow
             Hint: "Open .bnk files, or a mod .pak to pick them from. What a mod supplies " +
                   "wins over the game's copy of that .bnk.");
 
+        yield return new ToolButton("Open mod folder…", () => _ = ModOpenFolderAsync(),
+            Hint: "Open an unpacked mod: the .bnk files and loose Media wems under a folder laid out as the " +
+                  "game's (Marvel/Content/WwiseAudio/...).");
+
         yield return new ToolButton("Close mods", () => _ = ModCloseAsync(),
             Hint: "Drop every loaded mod and go back to the game's own .bnk files.");
 
-        yield return new ToolButton("Merge mods…", () => _ = ModMergeAsync(),
-            Hint: "Combine two mods. The priority one wins any sound both of them changed.");
+        yield return new ToolButton("Update mod…", () => _ = ModUpdateAsync(),
+            Hint: "Bring a mod made for an older patch onto the game's current .bnk files, as a .pak: the game's " +
+                  "banks as they are now, carrying only the audio the mod changed, each line placed by its Sound.");
 
-        yield return new ToolButton("Recompress .bnk…", () => _ = ModRecompressAsync(),
-            Hint: "Re-encode a .bnk's PCM audio to Vorbis, the way the game's own entries are.");
+        yield return new ToolButton("Merge mods…", () => _ = ModMergeAsync(),
+            Hint: "Combine two mods into one .pak. The priority one wins any sound both of them changed.");
+
+        yield return new ToolButton("Recompress…", () => _ = ModRecompressAsync(),
+            Hint: "Re-encode PCM audio to Vorbis, the way the game's own is: in .bnk files, loose .wem files, " +
+                  "or a whole mod .pak, which comes back as a .pak of the same name with every file it ships.");
 
         yield return new ToolButton("Extract modded wems…", () => _ = ModExtractAsync(),
-            Hint: "Write out only the sounds a loaded mod actually replaced.");
+            Hint: "Write out the sounds a loaded mod changed, and the game's originals of them beside, " +
+                  "in folders named after the character, skin and .bnk.");
+
+        var onlyChanged = (_settings.HiddenRowClasses ?? [.. RowClasses.HiddenByDefault]).Contains("unchanged");
+        yield return new ToolButton(onlyChanged ? "Showing only changed ✓" : "Show only changed", ToggleOnlyChanged,
+            Hint: "Hide what an opened mod left as the game shipped it. The same switch as Settings > Rows.");
     }
 
     // ---- opening somebody else's bank ---------------------------------------
@@ -62,12 +76,13 @@ public partial class MainWindow
         // is collected and said once, at the end.
         var taken = new List<ModSet.Entry>();
         var displaced = new List<ModSet.Entry>();
+        var takenLoose = new List<ModSet.Loose>();
 
-        foreach (var file in files) await ModOpenOneAsync(file, taken, displaced);
+        foreach (var file in files) await ModOpenOneAsync(file, taken, displaced, takenLoose);
 
         // One file has already said everything there is to say about itself, and a pick
         // that loaded nothing should keep whatever the failure said.
-        if (files.Count == 1 || taken.Count == 0) return;
+        if (files.Count == 1 || taken.Count + takenLoose.Count == 0) return;
 
         // By stem, because two files in one pick can claim the same .bnk and only the
         // last one is still in the set: counting both would double what it changed.
@@ -76,7 +91,7 @@ public partial class MainWindow
 
         // Selecting nothing would empty the list under a line claiming a load, so the
         // last file's selection stands if for any reason these have no node.
-        var nodes = ModNodesFor(stems);
+        var nodes = ModNodesFor(stems.Concat(LooseStems(takenLoose)));
         if (nodes.Count > 0)
         {
             await ModWarmAsync(nodes);
@@ -88,7 +103,8 @@ public partial class MainWindow
         // as "these mods do nothing".
         var compared = live.Any(e => e.Sounds.Rows.Any(r => r.ModTag is not null));
 
-        Say($"loaded {live.Count} .bnk from {files.Count} file(s) — " +
+        Say($"loaded {live.Count} .bnk" + (takenLoose.Count > 0 ? $" and {takenLoose.Count} loose wem(s)" : "") +
+            $" from {files.Count} file(s) — " +
             (compared ? $"{live.Sum(e => e.Changed):N0} sound(s) changed from the shipped .bnk files"
                       : "no shipped .bnk to compare against") +
             (displaced.Count > 0
@@ -105,15 +121,20 @@ public partial class MainWindow
     /// <param name="taken">Collects what this file put into the set, for the caller's report.</param>
     /// <param name="displaced">Collects what that pushed aside, for the same reason.</param>
     private async Task ModOpenOneAsync(string path, List<ModSet.Entry> taken,
-                                       List<ModSet.Entry> displaced)
+                                       List<ModSet.Entry> displaced, List<ModSet.Loose> takenLoose = null)
     {
+        // A picked folder comes back ending in a separator, which leaves it no file name.
+        path = Path.TrimEndingDirectorySeparator(path);
         var name = Path.GetFileName(path);
-        var opened = await Working($"Opening {name}", () => ModBank.Open(path, Config));
+        // With its loose Media files: a mod can be nothing else (the audio of sounds no bank
+        // holds, which the game reads by path), and one that ships banks too was otherwise
+        // shown without half of what it changes.
+        var opened = await Working($"Opening {name}", () => ModBank.Open(path, Config, withMedia: true));
         if (opened is null) return;   // Working has already said why
 
-        if (opened.Banks.Count == 0)
+        if (opened.Banks.Count == 0 && opened.Media.Count == 0)
         {
-            Say($"{name} holds no .bnk files" +
+            Say($"{name} holds no .bnk files and no loose Media wems" +
                 (opened.Skipped.Count > 0
                     ? $" — {opened.Skipped.Count} container(s) could not be opened."
                     : "."));
@@ -121,13 +142,103 @@ public partial class MainWindow
         }
 
         // A .pak usually holds several banks. Guessing which one was meant is how
-        // someone ends up looking at a bank they did not open.
-        var banks = opened.Banks.Count == 1
-            ? opened.Banks
-            : await ModPickBanksAsync(opened.Banks, name);
-        if (banks is null || banks.Count == 0) return;
+        // someone ends up looking at a bank they did not open. Asked before the loose
+        // files are taken, so backing out of it loads nothing at all.
+        List<ModBank.Bank> banks = [];
+        if (opened.Banks.Count > 0)
+        {
+            banks = opened.Banks.Count == 1
+                ? opened.Banks
+                : await ModPickBanksAsync(opened.Banks, name);
+            if (banks is null || banks.Count == 0) return;
+        }
 
-        await ModTakeAsync(banks, path, opened.Skipped, opened.Banks.Count, taken, displaced);
+        var loose = await ModTakeLooseAsync(opened.Media, name);
+        if (loose is null) return;   // Working has already said why
+        takenLoose?.AddRange(loose);
+
+        if (banks.Count > 0)
+            await ModTakeAsync(banks, path, opened.Skipped, opened.Banks.Count, taken, displaced, loose);
+        else
+            await ModShowLooseAsync(loose, name, opened.Skipped);
+    }
+
+    /// <summary>"Open mod folder…": an unpacked mod, read where it sits.</summary>
+    private async Task ModOpenFolderAsync()
+    {
+        if (Session?.Provider is null)
+        {
+            Say("load the game first — a mod's rows are read against the game's own .bnk files.");
+            return;
+        }
+        var folder = await PickFolder("Open an unpacked mod folder");
+        if (folder is null) return;
+        await ModOpenOneAsync(folder, [], []);
+    }
+
+    /// <summary>
+    /// Take a mod's loose Media files into the set, each compared with the game's file at the
+    /// same path and placed under the bank that plays it. Null when the reading failed.
+    /// </summary>
+    private async Task<List<ModSet.Loose>> ModTakeLooseAsync(List<ModBank.LooseMedia> media, string name)
+    {
+        if (media.Count == 0) return [];
+        var session = Session;
+        // Read off this thread -- the first file whose bank is not in the embedded index reads
+        // every bank once to learn which Sound or music track plays what -- and put in the set
+        // on it, where everything that reads the set runs.
+        var read = await Working($"Reading {media.Count} loose wem(s) from {name} and finding the sound each one is", () =>
+            media.Select(m => ModSet.ReadLoose(session, m, name)).Where(l => l is not null).ToList());
+        if (read is null) return null;
+        foreach (var loose in read) Mods.PutLoose(loose, out _);
+        return read;
+    }
+
+    /// <summary>
+    /// A loose-file load in words: what changed, and what of it no row can show -- a file the
+    /// game never reads, one for another language, one nothing in the game plays.
+    /// </summary>
+    private string LooseSummary(IReadOnlyCollection<ModSet.Loose> loose)
+    {
+        if (loose.Count == 0) return "";
+        var language = Session?.Language;
+        var changed = loose.Count(l => l.Changed);
+        var added = loose.Count(l => l.Tag == "NEW" && l.Reaches);
+        var same = loose.Count - changed;
+        var unread = loose.Count(l => l.Changed && !l.Reaches && l.Stem is not null);
+        var foreign = loose.Where(l => l.Changed && l.Reaches && !l.AppliesIn(language)).ToList();
+        var unplayed = loose.Count(l => l.Changed && l.Stem is null);
+        return $"{loose.Count} loose wem(s), {changed} changed from the game's" +
+               (added > 0 ? $" ({added} where the game streams a file it does not ship)" : "") +
+               (same > 0 ? $", {same} the game's own bytes" : "") +
+               (unread > 0 ? $", {unread} at a path the game does not read for that sound, so they change nothing" : "") +
+               (foreign.Count > 0
+                   ? $", {foreign.Count} for {string.Join("/", foreign.Select(l => l.Language ?? "the shared folder").Distinct())}, " +
+                     "which this language does not play -- switch the language in Setup to see them"
+                   : "") +
+               (unplayed > 0 ? $", {unplayed} that nothing in the game plays, so no row shows them" : "");
+    }
+
+    /// <summary>The banks whose rows these loose files change, in the language on screen.</summary>
+    private IEnumerable<string> LooseStems(IEnumerable<ModSet.Loose> loose) =>
+        loose.Where(l => l.AppliesIn(Session?.Language) && l.Stem is not null).Select(l => l.Stem);
+
+    /// <summary>A mod of loose Media files only: mark the banks that play them and show those.</summary>
+    private async Task ModShowLooseAsync(List<ModSet.Loose> loose, string name, List<string> skipped)
+    {
+        ModStandIns();
+        ModMarkTree(expand: true);
+
+        var nodes = ModNodesFor(LooseStems(loose));
+        if (nodes.Count > 0)
+        {
+            await ModWarmAsync(nodes);
+            ModSelect(nodes);
+        }
+
+        Say($"loaded {name}: {(loose.Count == 0 ? "no loose wem named by a media id" : LooseSummary(loose))}" +
+            (skipped is { Count: > 0 } ? $"  —  {skipped.Count} container(s) skipped" : "") +
+            (nodes.Count > 0 ? $".  Showing the {nodes.Count} .bnk that play them." : "."));
     }
 
     /// <summary>
@@ -136,8 +247,10 @@ public partial class MainWindow
     /// </summary>
     private async Task ModTakeAsync(List<ModBank.Bank> banks, string source,
                                     List<string> skipped, int siblings,
-                                    List<ModSet.Entry> taken, List<ModSet.Entry> pushedAside)
+                                    List<ModSet.Entry> taken, List<ModSet.Entry> pushedAside,
+                                    List<ModSet.Loose> loose = null)
     {
+        loose ??= [];
         var read = await Working($"Reading {banks.Count} .bnk from {Path.GetFileName(source)}", () =>
         {
             var empty = new List<string>();
@@ -169,6 +282,12 @@ public partial class MainWindow
         }
         var (empty, loaded, displaced) = read;
 
+        if (loaded.Count == 0 && loose.Count > 0)
+        {
+            // Its banks embed nothing, so its sounds are the loose files: show those.
+            await ModShowLooseAsync(loose, Path.GetFileName(source), skipped);
+            return;
+        }
         if (loaded.Count == 0)
         {
             Say($"nothing to show in {string.Join(", ", empty)} — no embedded media. " +
@@ -187,7 +306,7 @@ public partial class MainWindow
         ModStandIns();
         ModMarkTree(expand: true);
 
-        var nodes = ModNodesFor(loaded.Select(l => l.Stem));
+        var nodes = ModNodesFor(loaded.Select(l => l.Stem).Concat(LooseStems(loose)));
         await ModWarmAsync(nodes);
         ModSelect(nodes);
 
@@ -205,6 +324,7 @@ public partial class MainWindow
                 ? "  —  replaced " + string.Join(", ", displaced.Select(d => $"{d.BankName} from {d.SourceName}"))
                 : "") +
             (empty.Count > 0 ? $"  —  {empty.Count} with no embedded media skipped" : "") +
+            (loose.Count > 0 ? "  —  " + LooseSummary(loose) : "") +
             (skipped is { Count: > 0 } ? $"  —  {skipped.Count} container(s) skipped" : "") +
             ".  Builds now use these as their base.");
 
@@ -338,9 +458,17 @@ public partial class MainWindow
         // nothing, and the tree would disagree with itself.
         foreach (var node in ModTreeNodes()) node.Changed = 0;
 
-        PretendModded(
-            Mods.All.ToDictionary(e => e.Stem, e => e.Changed, StringComparer.OrdinalIgnoreCase),
-            expand);
+        // A bank's own changes and the loose files it streams, added: both are sounds of
+        // that bank a mod changes.
+        // By media id, so a sound a mod changes both ways -- a prefetch stub in the bank and
+        // the whole clip loose -- is one sound.
+        var ids = Mods.LooseChangedByStem(Session?.Language);
+        foreach (var e in Mods.All)
+        {
+            if (!ids.TryGetValue(e.Stem, out var set)) ids[e.Stem] = set = [];
+            set.UnionWith(e.Sounds.Rows.Where(r => r.ModTag is "MODDED" or "NEW").Select(r => r.MediaId));
+        }
+        PretendModded(ids.ToDictionary(kv => kv.Key, kv => kv.Value.Count, StringComparer.OrdinalIgnoreCase), expand);
     }
 
     /// <summary>
@@ -457,6 +585,161 @@ public partial class MainWindow
     /// author actually replaced is carried over, and the priority mod wins any sound
     /// both of them changed.
     /// </summary>
+    /// <summary>"Update mod…", pressed by the render harness: this mod into this folder.</summary>
+    internal Task UpdateForShot(string mod, string outRoot)
+    {
+        MergePicksForShot = [mod, null];
+        BuildFolderForShot = outRoot;
+        return ModUpdateAsync();
+    }
+
+    /// <summary>
+    /// A mod made for an older patch, rebuilt on the game's current banks (ModUpdate, the
+    /// --updatemod verb) and packed: the current banks with only the mod's audio carried
+    /// onto them, the report beside.
+    /// </summary>
+    private async Task ModUpdateAsync()
+    {
+        if (Session?.Provider is null) { Say("load the game first — a mod is brought onto the game's current .bnk files."); return; }
+        if (!Session.BankIndexReady) { Say("still reading .bnk files -- give it a moment, then update."); return; }
+        var mod = MergePicksForShot?[0] ?? await PickFile("Mod to update (.pak, .bnk or .utoc)", "Mod", "*.pak", "*.bnk", "*.utoc");
+        if (mod is null) return;
+        var outRoot = BuildFolderForShot ?? await PickFolder("Output folder for the updated mod");
+        if (outRoot is null) return;
+        Directory.CreateDirectory(outRoot);
+
+        var stem = System.Text.RegularExpressions.Regex.Replace(Path.GetFileNameWithoutExtension(mod), @"_\d+_P$", "",
+                                                                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var outputBase = Path.Combine(outRoot, ModSafeName(stem).Replace(' ', '_') + "_updated_9999999_P");
+        var history = await Working("reading the game's history", () => GameHistory.Load());
+        string madeFor = null;
+        ModUpdate.Result result;
+        while (true)
+        {
+            var work = Path.Combine(Path.GetTempPath(), "XzoundWave", "update-" + Guid.NewGuid().ToString("N"));
+            result = await UpdateOnceAsync(mod, work, outRoot, outputBase, history, madeFor);
+            // The records disagree about some of the mod's files: which version was it made for?
+            if (result is null || result.Versions.Count < 2 || madeFor is not null || MergePicksForShot is not null) break;
+            madeFor = await PickOneAsync("Which version was this mod made for?",
+                $"{Path.GetFileName(mod)} has loose files whose ids meant different sounds in these versions of the game. " +
+                "Pick the one the mod was made for and they are placed by what they were in it.", result.Versions);
+            if (madeFor is null) break;
+        }
+        if (result is null) return;   // Working has already said why
+        await ProgressSettled();
+        Say(result.Outputs.Count == 0
+            ? $"nothing to carry: {result.Refused} sound(s) not carried. Why, line by line, in {ModUpdate.ReportName}." +
+              (result.Unplaced > 0 ? $" The {result.Unplaced} loose file(s) are in {ModUpdate.Result.UnplacedFolder}, to stage by hand." : "")
+            : $"updated: {Path.GetFileName(outputBase)}.pak in {outRoot} -- {result.Banks} .bnk and {result.Loose} loose file(s), " +
+              $"{result.Carried} sound(s) carried, {result.Refused} not" +
+              (result.LooseMoved + result.LooseSame + result.LooseUnverified > 0
+                  ? $" (loose: {result.LooseMoved} moved to their sound's new id, {result.LooseSame} still the same sound, " +
+                    $"{result.LooseUnverified} kept unverified{(result.MadeFor is null ? "" : $", read as made for {result.MadeFor}")})"
+                  : "") +
+              (result.Unplaced > 0 ? $"; {result.Unplaced} in {ModUpdate.Result.UnplacedFolder} to stage by hand" : "") +
+              $". Copy it into ~mods in place of the old mod; details in {ModUpdate.ReportName}.");
+    }
+
+    /// <summary>One run of the update into a work folder, packed into outputBase, the report and the unplaced files beside it.</summary>
+    private async Task<ModUpdate.Result> UpdateOnceAsync(string mod, string work, string outRoot, string outputBase,
+                                                         GameHistory history, string madeFor)
+    {
+        ModUpdate.Result result;
+        try
+        {
+            result = await Working($"updating {Path.GetFileName(mod)}", () =>
+            {
+                var r = ModUpdate.Build(Session, mod, work, Config, m => Dispatcher.UIThread.Post(() => Say(m)),
+                                        history: history, madeFor: madeFor);
+                if (r.Outputs.Count > 0)
+                {
+                    var (ok, message) = ModPackager.PackagePak(work, r.Outputs, outputBase);
+                    if (!ok) throw new InvalidDataException(message);
+                    foreach (var e in new[] { ".utoc", ".ucas" }) if (File.Exists(outputBase + e)) File.Delete(outputBase + e);
+                }
+                foreach (var name in new[] { ModUpdate.ReportName, ModUpdate.EventsName })
+                    if (File.Exists(Path.Combine(work, name))) File.Copy(Path.Combine(work, name), Path.Combine(outRoot, name), true);
+                var spare = Path.Combine(work, ModUpdate.Result.UnplacedFolder);
+                var spareOut = Path.Combine(outRoot, ModUpdate.Result.UnplacedFolder);
+                if (Directory.Exists(spareOut)) Directory.Delete(spareOut, true);
+                if (Directory.Exists(spare))
+                    foreach (var f in Directory.EnumerateFiles(spare, "*", SearchOption.AllDirectories))
+                    {
+                        var to = Path.Combine(spareOut, Path.GetRelativePath(spare, f));
+                        Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                        File.Copy(f, to, true);
+                    }
+                return r;
+            });
+        }
+        finally
+        {
+            try { if (Directory.Exists(work)) Directory.Delete(work, true); }
+            catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        return result;
+    }
+
+    /// <summary>A short list to pick one from; null when backed out of.</summary>
+    private async Task<string> PickOneAsync(string title, string text, IReadOnlyList<string> options)
+    {
+        string answer = null;
+        var list = new ListBox { ItemsSource = options, SelectionMode = SelectionMode.Single, MaxHeight = 260 };
+        var ok = new Button { Content = "Use this version", IsDefault = true };
+        var cancel = new Button { Content = "Cancel", IsCancel = true };
+        var dialog = new Window
+        {
+            Title = title, Width = 520, SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false,
+            Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(16), Spacing = 10,
+                Children =
+                {
+                    new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                    list,
+                    new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { ok, cancel } },
+                },
+            },
+        };
+        ok.Click += (_, _) => { answer = list.SelectedItem as string; dialog.Close(); };
+        cancel.Click += (_, _) => dialog.Close();
+        list.DoubleTapped += (_, _) => { answer = list.SelectedItem as string; dialog.Close(); };
+        await dialog.ShowDialog(this);
+        return answer;
+    }
+
+    /// <summary>"Merge mods…", pressed by the render harness: these two mods into this folder.</summary>
+    internal Task MergeForShot(string priority, string secondary, string outRoot)
+    {
+        MergePicksForShot = [priority, secondary];
+        BuildFolderForShot = outRoot;
+        return ModMergeAsync();
+    }
+    internal string[] MergePicksForShot;
+
+    /// <summary>The render harness: open one mod, close them all, and the set they are in.</summary>
+    internal Task OpenModForShot(string path) => ModOpenOneAsync(path, [], []);
+    internal Task CloseModsForShot() => ModCloseAsync();
+    internal ModSet ModsForShot => Mods;
+
+    /// <summary>The render harness: show the tab of this name (Browse, Test, Build, Mods, Setup).</summary>
+    internal void SelectTabForShot(string name)
+    {
+        var items = Tabs.Items.Cast<object>().ToList();
+        var at = items.FindIndex(i => ((i as ContentControl)?.Content ?? i)?.ToString()?.Equals(name, StringComparison.OrdinalIgnoreCase) == true);
+        if (at >= 0) { Tabs.SelectedIndex = at; Dispatcher.UIThread.RunJobs(); }
+        else Console.WriteLine($"no tab {name}");
+    }
+
+    /// <summary>A mod opened and "Extract modded wems…" pressed, by the render harness.</summary>
+    internal async Task ExtractForShot(string mod, string folder)
+    {
+        await ModOpenOneAsync(mod, [], []);
+        BuildFolderForShot = folder;
+        await ModExtractAsync();
+    }
+
     private async Task ModMergeAsync()
     {
         if (Session?.Provider is null)
@@ -465,35 +748,66 @@ public partial class MainWindow
             return;
         }
 
-        var priority = await PickFile("PRIORITY mod — this one wins any sound both mods changed",
+        var priority = MergePicksForShot?[0] ?? await PickFile("PRIORITY mod — this one wins any sound both mods changed",
                                       "Mod (.bnk or .pak)", "*.bnk", "*.pak", "*.utoc");
         if (priority is null) return;
 
-        var secondary = await PickFile("SECONDARY mod", "Mod (.bnk or .pak)",
+        var secondary = MergePicksForShot?[1] ?? await PickFile("SECONDARY mod", "Mod (.bnk or .pak)",
                                        "*.bnk", "*.pak", "*.utoc");
         if (secondary is null) return;
 
         if (string.Equals(priority, secondary, StringComparison.OrdinalIgnoreCase))
         { Say("those are the same file."); return; }
 
-        var outRoot = await PickFolder("Output folder for the merged mod");
+        var outRoot = BuildFolderForShot ?? await PickFolder("Output folder for the merged mod");
         if (outRoot is null) return;
+        Directory.CreateDirectory(outRoot);
 
-        var result = await Working("Merging", () => ModMerge.Build(
-            Session, priority, secondary, outRoot, Config,
-            Path.Combine(outRoot, "_extracted"),
-            m => Dispatcher.UIThread.Post(() => Say(m))));
+        // Named after both mods, without the patch suffix either may already carry.
+        static string Stem(string path) =>
+            System.Text.RegularExpressions.Regex.Replace(Path.GetFileNameWithoutExtension(path), @"_\d+_P$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var outputBase = Path.Combine(outRoot, ModSafeName($"{Stem(priority)}+{Stem(secondary)}").Replace(' ', '_') + "_9999999_P");
+
+        // The merged banks are written where nothing ships from, and packed: the output folder
+        // gets the .pak, the merge's own logs, and each mod's changed sounds in _extracted.
+        var work = Path.Combine(Path.GetTempPath(), "XzoundWave", "merge-" + Guid.NewGuid().ToString("N"));
+        ModMerge.Result result;
+        try
+        {
+            result = await Working("Merging", () =>
+            {
+                var r = ModMerge.Build(Session, priority, secondary, work, Config,
+                                       Path.Combine(outRoot, "_extracted"),
+                                       m => Dispatcher.UIThread.Post(() => Say(m)));
+                var files = Directory.GetFiles(work, "*", SearchOption.AllDirectories)
+                                     .Select(f => Path.GetRelativePath(work, f)).ToList();
+                var mod = files.Where(f => f.Replace('\\', '/').StartsWith("Marvel/", StringComparison.OrdinalIgnoreCase)).ToList();
+                var (ok, message) = ModPackager.PackagePak(work, mod, outputBase);
+                if (!ok) throw new InvalidDataException(message);
+                foreach (var e in new[] { ".utoc", ".ucas" }) if (File.Exists(outputBase + e)) File.Delete(outputBase + e);
+                foreach (var f in files.Except(mod)) File.Copy(Path.Combine(work, f), Path.Combine(outRoot, f), true);
+                return r;
+            });
+        }
+        finally
+        {
+            try { if (Directory.Exists(work)) Directory.Delete(work, true); }
+            catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
         if (result is null) return;   // Working has already said why
+        await ProgressSettled();
 
-        Say($"merged {result.Banks} .bnk — {result.FromPriority} from priority, " +
+        Say($"merged {result.Banks} .bnk" + (result.Loose > 0 ? $" and {result.Loose} loose wem(s)" : "") +
+            $" — {result.FromPriority} from priority, " +
             $"{result.FromSecondary} from secondary, {result.Collisions.Count} collision(s)" +
             (result.Skipped is { Count: > 0 } ? $", {result.Skipped.Count} container(s) skipped" : "") +
-            $".  Written to {outRoot}, each mod's own changed sounds in _extracted.");
+            $".  {Path.GetFileName(outputBase)}.pak in {outRoot} -- copy it into ~mods; each mod's own changed sounds in _extracted.");
 
         // The collisions are the only part of a merge that is a judgement call: they
         // are the sounds where the two authors disagreed and one was overruled. Worth
-        // a list someone reads rather than a number they scroll past.
-        if (result.Collisions.Count == 0) return;
+        // a list someone reads rather than a number they scroll past. (Not in a render,
+        // where nobody is there to close it: merge-collisions.csv holds the same list.)
+        if (result.Collisions.Count == 0 || MergePicksForShot is not null) return;
 
         var lines = result.Collisions.Take(25)
             .Select(c => $"{c.Bank}  {c.MediaId}  {c.Events}".TrimEnd());
@@ -512,62 +826,55 @@ public partial class MainWindow
     // ---- recompressing -------------------------------------------------------
 
     /// <summary>
-    /// Re-encode a .bnk's PCM audio to Vorbis. Handy after building a mod by hand, or
-    /// with tools that embed uncompressed audio: the game's own entries are Vorbis and
-    /// a PCM voice pack runs to hundreds of megabytes for the same sound.
+    /// Re-encode PCM audio to Vorbis: in .bnk files, loose .wem files, or a whole mod .pak. Handy
+    /// after building a mod by hand, or with tools that write uncompressed audio: the game's own
+    /// is Vorbis, and a PCM voice pack runs to hundreds of megabytes for the same sound.
     /// </summary>
     private async Task ModRecompressAsync()
     {
-        var source = await PickFile("Pick a .bnk to recompress", "Soundbank", "*.bnk");
-        if (source is null) return;
+        var picked = RecompressPicksForShot ?? await PickFiles("Pick .bnk files, loose .wem files, or a mod .pak to recompress",
+                                                               ".bnk, .wem or mod .pak", "*.bnk", "*.wem", "*.pak", "*.utoc");
+        if (picked is null || picked.Count == 0) return;
 
-        var folder = await PickFolder("Where to write the recompressed .bnk");
+        var folder = BuildFolderForShot ?? await PickFolder("Where to write the recompressed files");
         if (folder is null) return;
-
-        var dest = Path.Combine(folder, Path.GetFileName(source));
-        // Compare what the file system would resolve, not the two strings two different
-        // pickers happened to hand back for the same place.
-        if (string.Equals(Path.GetFullPath(dest), Path.GetFullPath(source),
-                          StringComparison.OrdinalIgnoreCase))
+        // Writing over an input would leave nothing to fall back on when the conversion is not
+        // what the author wanted. Compared as the file system resolves them, by this host's rule.
+        if (picked.FirstOrDefault(p => AppPaths.SamePath(Path.Combine(folder, Path.GetFileName(ModBank.IsPak(p) ? Path.ChangeExtension(p, ".pak") : p)),
+                                                          ModBank.IsPak(p) ? Path.ChangeExtension(p, ".pak") : p)) is { } clash)
         {
-            // Writing over the input would leave nothing to fall back on when the
-            // conversion is not what the author wanted.
-            Say("pick a different folder — that would overwrite the .bnk you chose.");
+            Say($"pick a different folder — that would overwrite {Path.GetFileName(clash)}.");
             return;
         }
 
-        var done = await Working($"Recompressing {Path.GetFileName(source)}", () =>
-        {
-            var original = File.ReadAllBytes(source);
-            var r = BankRecompress.Run(original, m => Dispatcher.UIThread.Post(() => Say(m)));
-            if (r.Converted == 0) return (r, original.LongLength, written: false);
+        var config = Config;
+        var r = await Working($"Recompressing {picked.Count} file(s)", () =>
+            BankRecompress.RunPicked(picked, config, folder, m => Dispatcher.UIThread.Post(() => Say(m))));
+        if (r is null) return;   // Working has already said why
+        await ProgressSettled();
 
-            Directory.CreateDirectory(folder);
-            File.WriteAllBytes(dest, r.Bytes);
-            return (r, original.LongLength, written: true);
-        });
-
-        if (done.r is null) return;   // Working has already said why
-        var (result, before, written) = done;
-
-        if (!written)
-        {
-            Say($"nothing to convert in {Path.GetFileName(source)} — " +
-                string.Join("; ", result.Notes.DefaultIfEmpty("every entry is already compressed")) + ".");
-            return;
-        }
-
-        var saved = before - result.Bytes.LongLength;
-        var factor = result.MediaAfter > 0 ? (double)result.MediaBefore / result.MediaAfter : 0;
-        Say($"recompressed {result.Converted} entry(s) to Vorbis" +
-            (result.Skipped > 0 ? $", {result.Skipped} already compressed" : "") +
-            (result.Failed > 0 ? $", {result.Failed} left as PCM" : "") +
-            $" — {before:N0} B -> {result.Bytes.LongLength:N0} B" +
-            (saved > 0
-                ? $" ({saved:N0} B smaller" + (factor > 1 ? $", audio {factor:0.0}x" : "") + ")"
-                : "") +
-            $".  Written to {dest}.");
+        var saved = r.Before - r.After;
+        Say(r.Written.Count == 0
+            ? "nothing written — " + string.Join("; ", r.Lines.DefaultIfEmpty("no PCM audio in what was picked")) + "."
+            : $"recompressed {r.Converted} PCM sound(s) to Vorbis" +
+              (r.Kept > 0 ? $", {r.Kept} already compressed" : "") +
+              (r.Failed > 0 ? $", {r.Failed} left as they were" : "") +
+              $" — {r.Before:N0} B -> {r.After:N0} B" + (saved > 0 ? $" ({saved:N0} B smaller)" : "") +
+              $".  {r.Written.Count} file(s) written to {folder}: " +
+              string.Join(", ", r.Written.Take(4).Select(Path.GetFileName)) + (r.Written.Count > 4 ? ", …" : "") +
+              (r.Lines.Any(l => l.Contains("not audio") || l.Contains("would not open"))
+                  ? ".  Not done: " + string.Join("; ", r.Lines.Where(l => l.Contains("not audio") || l.Contains("would not open"))) : "") +
+              ".");
     }
+
+    /// <summary>"Recompress…", pressed by the render harness: these inputs into this folder.</summary>
+    internal Task RecompressForShot(IReadOnlyList<string> picks, string folder)
+    {
+        RecompressPicksForShot = [.. picks];
+        BuildFolderForShot = folder;
+        return ModRecompressAsync();
+    }
+    internal List<string> RecompressPicksForShot;
 
     // ---- extracting what a mod changed ---------------------------------------
 
@@ -576,64 +883,154 @@ public partial class MainWindow
     /// alone is the game's own audio and is not worth extracting. With several mods
     /// loaded this covers every one of them the selection is showing.
     /// </summary>
+    /// <summary>Hide or show the rows an opened mod left alone (the "unchanged" row kind).</summary>
+    private void ToggleOnlyChanged()
+    {
+        var hidden = _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault];
+        if (!hidden.Remove("unchanged")) hidden.Add("unchanged");
+        _settings.Save();
+        ShowRows();
+        ShowToolbar();
+    }
+
+    /// <summary>
+    /// The game's bank an opened one replaces, language folder included: where the mod put
+    /// it, or, for a bare .bnk that never said, the active language's (the regular build's rule).
+    /// </summary>
+    private string GameBankPathFor(string bank)
+    {
+        var stem = Path.GetFileNameWithoutExtension(bank ?? "");
+        return Mods.Get(stem)?.Bank.MountedAt ?? BuildGamePathForStem(stem);
+    }
+
+    /// <summary>
+    /// A folder name a person can read for a bank: character, skin, then the bank, as in
+    /// "Hela-Default-bnk_vo_1024001". A bank that belongs to no skin keeps its own name.
+    /// </summary>
+    private string ReadableBankFolder(string bank)
+    {
+        var stem = Path.GetFileNameWithoutExtension(bank ?? "");
+        var skin = System.Text.RegularExpressions.Regex.Matches(stem, @"\d{7}").LastOrDefault()?.Value;
+        if (skin is null) return ModSafeName(stem);
+        var hero = skin[..4];
+        var heroName = Session.HeroName(hero);
+        var skinName = Session.SkinName(hero, skin);
+        return ModSafeName($"{(heroName == hero ? hero : heroName)}-{(skinName == skin ? skin : skinName)}-{stem}").Replace(' ', '_');
+    }
+
     private async Task ModExtractAsync()
     {
-        if (!Mods.Any || Sounds is null)
+        if (!Mods.Any)
         {
             Say("open a .bnk or a mod .pak first — what a mod changed is only known " +
                 "once it has been compared with the game's own.");
             return;
         }
 
-        // One row per media id: a sound several events reach is still one file.
-        var changed = Sounds.Rows
+        // One row per media id: a sound several events reach is still one file. A loose file
+        // a mod ships is the bank row's audio when that row is on screen, and is written below
+        // with the others when it is not.
+        var changed = (Sounds?.Rows ?? [])
             .Where(r => r.ModTag is "MODDED" or "NEW")
             .GroupBy(r => r.MediaId)
             .Select(g => g.First())
             .ToList();
-        if (changed.Count == 0)
+        var language = Session?.Language;
+        var onScreen = changed.Select(r => Mods.LooseFor(r.MediaId, language)).Where(l => l is not null).ToHashSet();
+        var looseLeft = Mods.LooseFiles.Where(l => l.Changed && !onScreen.Contains(l)).ToList();
+        if (changed.Count == 0 && looseLeft.Count == 0)
         {
             Say("nothing on screen differs from the shipped .bnk files.");
             return;
         }
 
-        var folder = await PickFolder($"Where to put {changed.Count} changed sound(s)");
+        var folder = BuildFolderForShot ?? await PickFolder($"Where to put {changed.Count + looseLeft.Count} changed sound(s)");
         if (folder is null) return;
 
-        // One folder named after the .bnk when there is only one, so the single-mod
-        // output is what it always was; a name covering the set when there are several.
-        var stems = changed.Select(r => r.Bank).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var dir = Path.Combine(folder,
-            stems.Count == 1 ? ModSafeName(stems[0]) : $"{stems.Count}-bnk-modded");
-
+        // Modded\<Character>-<Skin>-<bank>\ holds the mod's sounds and Original\ the same names
+        // with the game's, so the two can be compared file by file. Worked out here, on this
+        // thread: the names come from the session and the paths from the opened mods.
+        var plan = changed.GroupBy(r => r.Bank, StringComparer.OrdinalIgnoreCase)
+                          .Select(g => (Folder: ReadableBankFolder(g.Key), GamePath: GameBankPathFor(g.Key), Rows: g.ToList()))
+                          .ToList();
+        // Under the bank that plays each one; one nothing in the game plays keeps the Media
+        // folder it came from. Another language's copy gets a folder of its own, so two
+        // languages of one line never write to one name.
+        var loosePlan = looseLeft.Select(l => (Folder: (l.Stem is null ? "Media" : ReadableBankFolder(l.Stem)) +
+                                                       (l.Language is null || l.Language.Equals(language, StringComparison.OrdinalIgnoreCase)
+                                                           ? "" : "-" + ModSafeName(l.Language)),
+                                               Loose: l))
+                                 .ToList();
         var sounds = Sounds;
+        var session = Session;
         var done = await Working($"Extracting {changed.Count} changed sound(s)", () =>
         {
-            Directory.CreateDirectory(dir);
-            int written = 0, failed = 0;
-            foreach (var row in changed)
+            int written = 0, originals = 0, failed = 0;
+            foreach (var (bankFolder, gamePath, rows) in plan)
             {
-                if (!sounds.Raw.TryGetValue(row.MediaId, out var bytes)) { failed++; continue; }
+                var modded = Directory.CreateDirectory(Path.Combine(folder, "Modded", bankFolder)).FullName;
+                string original = null;
+                foreach (var row in rows)
+                {
+                    if (!sounds.Raw.TryGetValue(row.MediaId, out var bytes)) { failed++; continue; }
 
-                // {mediaId}-{note} is what the staging pane reads back: the id is what
-                // lands the file on the right sound again.
-                var note = ModSafeName(row.Display);
-                var file = string.IsNullOrEmpty(note) ? $"{row.MediaId}.wem" : $"{row.MediaId}-{note}.wem";
-                // One unwritable name must not stop the other two hundred.
-                try { File.WriteAllBytes(Path.Combine(dir, file), bytes); written++; }
+                    // {mediaId}-{note} is what the staging pane reads back: the id is what
+                    // lands the file on the right sound again.
+                    var note = ModSafeName(row.Display);
+                    var file = string.IsNullOrEmpty(note) ? $"{row.MediaId}.wem" : $"{row.MediaId}-{note}.wem";
+                    // One unwritable name must not stop the other two hundred.
+                    try { File.WriteAllBytes(Path.Combine(modded, file), bytes); written++; }
+                    catch { failed++; continue; }
+
+                    // A sound the mod added has no original to set beside it.
+                    if (row.ModTag != "MODDED" || AudioPreview.GameBytes(session, row, gamePath) is not { } stock) continue;
+                    original ??= Directory.CreateDirectory(Path.Combine(folder, "Original", bankFolder)).FullName;
+                    try { File.WriteAllBytes(Path.Combine(original, file), stock); originals++; }
+                    catch { failed++; }
+                }
+            }
+            foreach (var (bankFolder, l) in loosePlan)
+            {
+                var file = $"{l.Id}.wem";
+                try
+                {
+                    File.WriteAllBytes(Path.Combine(Directory.CreateDirectory(Path.Combine(folder, "Modded", bankFolder)).FullName, file), l.Bytes);
+                    written++;
+                }
+                catch { failed++; continue; }
+                // The game's file at the very path the mod's replaces.
+                byte[] stock = null;
+                try { stock = session.GameFileAt(l.MountedAt)?.Read(); } catch { }
+                if (stock is null) continue;
+                try
+                {
+                    File.WriteAllBytes(Path.Combine(Directory.CreateDirectory(Path.Combine(folder, "Original", bankFolder)).FullName, file), stock);
+                    originals++;
+                }
                 catch { failed++; }
             }
-            return (written, failed);
+            return (written, originals, failed);
         });
 
         // Every row either writes or fails, so nothing at all means the run itself
         // fell over and Working has already said why.
         if (done.written == 0 && done.failed == 0) return;
 
-        Say($"extracted {done.written} changed sound(s) to {dir}" +
+        Say($"extracted {done.written} changed sound(s) to {Path.Combine(folder, "Modded")} and " +
+            $"{done.originals} of the game's originals to {Path.Combine(folder, "Original")}" +
             (done.failed > 0 ? $", {done.failed} failed" : "") +
-            ". Named MediaID-event, so they drop straight back in.");
+            $" ({string.Join(", ", plan.Select(p => p.Folder).Concat(loosePlan.Select(p => p.Folder)).Distinct())})." +
+            " Named by media id, so they drop straight back in.");
     }
+
+    /// <summary>
+    /// Let the progress lines a worker posted land before the result is said. Posted lines queue
+    /// behind the await that ends the work, so when the last step after them is short -- a merge
+    /// of loose files only -- one arrived after the result and the status line ended on
+    /// "reading the secondary mod…" over a merge that had finished.
+    /// </summary>
+    private static async Task ProgressSettled() =>
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
 
     /// <summary>A name a file system will take.</summary>
     private static string ModSafeName(string name)

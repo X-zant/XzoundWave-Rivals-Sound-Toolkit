@@ -11,6 +11,7 @@ using CUE4Parse.UE4.Assets.Exports.Engine;
 using CUE4Parse.UE4.Objects.Core.i18N;
 using CUE4Parse.UE4.Objects.Core.Misc;
 using CUE4Parse.UE4.Versions;
+using CUE4Parse.UE4.VirtualFileSystem;
 using CUE4Parse.UE4.Wwise;
 
 namespace MRAudioKit;
@@ -40,6 +41,10 @@ public sealed class GameSession
     private readonly Dictionary<(string, string), string> _loc = new();
     private readonly Dictionary<string, string> _tableNamespace = new();
 
+    // Every .bnk path, resolved to the one copy the engine would load. Built once per
+    // mount because three separate walks used to settle the same question their own way.
+    private readonly Dictionary<string, GameFile> _bankByPath = new(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyList<CharacterEntry> Characters { get; private set; } = [];
 
     /// <summary>
@@ -68,10 +73,153 @@ public sealed class GameSession
     /// </summary>
     public int Generation { get; private set; }
 
+    // media id -> the bank whose Sound streams it, and the bank whose music track plays it.
+    // Built together on first use (one pass over every bank's objects), and dropped by a
+    // mount, which is another game.
+    private Dictionary<uint, string> _streamedBy, _trackedBy;
+    private readonly object _streamedGate = new();
+    // Every Sound and music track that plays each medium, from the same pass: what a snapshot
+    // of this version is made of.
+    private Dictionary<uint, List<GameSnapshot.Player>> _players;
+    private List<string> _playerBanks;
+    private GameSnapshot _snapshot;
+
+    /// <summary>Banks the last walk for <see cref="Snapshot"/> could not read; a snapshot with any is not kept.</summary>
+    public int SnapshotFailures { get; private set; }
+
+    /// <summary>The Paks folder this session mounted.</summary>
+    public string PaksDir { get; private set; }
+
+    /// <summary>Every bank path the engine would load, one each.</summary>
+    public IEnumerable<string> BankPaths => _bankByPath.Keys;
+
+    /// <summary>The bank set as a short hash, which names this version when the install has no version.json.</summary>
+    public string BankFingerprint() => GameSnapshot.FingerprintOf(_bankByPath.Select(kv => (kv.Key, kv.Value.Size)));
+
+    /// <summary>
+    /// Which Sound or music track plays every medium in this version, with its version and bank
+    /// fingerprint. Reads every bank the first time (shared with the lookups above).
+    /// </summary>
+    public GameSnapshot Snapshot(string source = "this install")
+    {
+        lock (_streamedGate)
+        {
+            IndexPlayers();
+            if (_snapshot is not null) return _snapshot;
+            var (version, changelist) = GameSnapshot.VersionOf(PaksDir);
+            return _snapshot = new GameSnapshot
+            {
+                Version = version, Changelist = changelist, Fingerprint = BankFingerprint(),
+                Taken = DateTime.UtcNow, Source = source, Banks = _playerBanks,
+                Media = _players.ToDictionary(kv => kv.Key, kv => kv.Value.ToArray()),
+            };
+        }
+    }
+
+    /// <summary>
+    /// The bank whose Sound plays this medium, for a medium no bank embeds (a loose Media/
+    /// file): its map, menu or skin, which nothing else about the file says. Null for one
+    /// no Sound plays, which in this game is a music track's (see <see cref="MusicBank"/>).
+    /// </summary>
+    public string StreamingBank(uint mediaId)
+    {
+        lock (_streamedGate)
+        {
+            IndexPlayers();
+            return _streamedBy.GetValueOrDefault(mediaId);
+        }
+    }
+
+    /// <summary>The bank whose music track plays this medium, or null when no track does.</summary>
+    public string MusicBank(uint mediaId)
+    {
+        lock (_streamedGate)
+        {
+            IndexPlayers();
+            return _trackedBy.GetValueOrDefault(mediaId);
+        }
+    }
+
+    /// <summary>
+    /// The bank that plays a medium, however it does: embeds it, streams it from a loose file,
+    /// or places it on a music track. Null for one nothing in the game plays. The first call
+    /// that gets past the embedded index reads every bank once.
+    /// </summary>
+    public string PlayingBank(uint mediaId) =>
+        BanksForMedia(mediaId).FirstOrDefault() ?? StreamingBank(mediaId) ?? MusicBank(mediaId);
+
+    private void IndexPlayers()
+    {
+        if (_streamedBy is not null) return;
+        var streamed = new Dictionary<uint, string>();
+        var tracked = new Dictionary<uint, string>();
+        var players = new Dictionary<uint, List<GameSnapshot.Player>>();
+        var banks = new List<string>();
+        void Add(uint media, GameSnapshot.Player p)
+        {
+            if (!players.TryGetValue(media, out var list)) players[media] = list = [];
+            list.Add(p);
+        }
+        // In path order, so every install of one version records the same thing in the same order.
+        var failures = 0;
+        foreach (var (path, file) in _bankByPath.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            // A bank's players are gathered on their own and taken only once the whole bank has
+            // read, so one that fails part-way leaves nothing behind under another bank's index.
+            var sounds = new List<(uint Media, uint Sound)>();
+            var tracks = new List<(uint Media, uint Track)>();
+            try
+            {
+                var bytes = file.Read();
+                var shape = ModUpdate.ReadStructure(bytes);
+                foreach (var (sound, media) in shape.SoundSource)
+                    if (shape.SoundBodies.TryGetValue(sound, out var body) && body.PlaysMedia) sounds.Add((media, sound));
+                // A track's sources are not in the structure walk; the full parse is paid only
+                // by the banks that have tracks at all.
+                if (shape.MusicTracks > 0)
+                    foreach (var (track, media) in ModUpdate.Lines.Of(bytes, path).TrackMedia)
+                        foreach (var m in media) tracks.Add((m, track));
+            }
+            catch { failures++; continue; /* one unreadable bank must not stop the rest */ }
+            if (sounds.Count + tracks.Count == 0) continue;
+            var at = banks.Count;
+            banks.Add(path);
+            foreach (var (media, sound) in sounds)
+            {
+                Prefer(streamed, media, path);
+                Add(media, new GameSnapshot.Player(at, GameSnapshot.Sound, sound));
+            }
+            foreach (var (media, track) in tracks)
+            {
+                Prefer(tracked, media, path);
+                Add(media, new GameSnapshot.Player(at, GameSnapshot.Track, track));
+            }
+        }
+        SnapshotFailures = failures;
+        _players = players;
+        _playerBanks = banks;
+        _trackedBy = tracked;
+        _streamedBy = streamed;
+    }
+
+    // The first bank found keeps a medium, unless it is another language's and this one is the
+    // active language's or none: the tree lists the active language's banks, and a row is found
+    // under the bank named here.
+    private void Prefer(Dictionary<uint, string> map, uint media, string path)
+    {
+        if (!map.TryGetValue(media, out var had)) { map[media] = path; return; }
+        if (Foreign(had) && !Foreign(path)) map[media] = path;
+    }
+
+    private bool Foreign(string path) =>
+        LanguageOf(path) is { } l && !l.Equals(Language, StringComparison.OrdinalIgnoreCase);
+
     public void Mount(Settings s, Action<string> progress)
     {
         Generation++;
+        lock (_streamedGate) { _streamedBy = null; _trackedBy = null; _players = null; _playerBanks = null; _snapshot = null; }
         Language = s.Language;
+        PaksDir = s.PaksDir;
 
         progress("Mounting paks...");
         Provider = new DefaultFileProvider(s.PaksDir, SearchOption.TopDirectoryOnly,
@@ -88,6 +236,10 @@ public sealed class GameSession
                 "Mounted 0 files. Check the Paks folder and the AES key.");
 
         progress($"Mounted {Provider.Files.Count:N0} files. Indexing media...");
+        IndexBankPaths();
+        // Again, now the banks are this game's: a walk that ran while the mount was under way
+        // would otherwise answer for the previous one until the next mount.
+        lock (_streamedGate) { _streamedBy = null; _trackedBy = null; _players = null; _playerBanks = null; _snapshot = null; }
         IndexMedia();
 
         progress("Reading event names...");
@@ -103,6 +255,51 @@ public sealed class GameSession
                  $"{_mediaByLangId.Count + _mediaNeutral.Count:N0} media files.");
     }
 
+    /// <summary>
+    /// Which copy of a file the engine would load, when several containers ship the same
+    /// path. Higher read order first, which is how the parser already separates a patch
+    /// (103) from a base chunk (3); then the higher container name, because containers of
+    /// equal order are mounted in name order and the last one mounted is the one in play.
+    ///
+    /// The tie is not hypothetical. The game ships TWO patch paks at read order 103, and
+    /// four .bnk paths sit in both of them, so the aggregated provider hands back whichever
+    /// registered first and that is a race between mounts. music_formal.bnk is one of the
+    /// four: the older patch's hierarchy times 627 media and the newer one times 655, the
+    /// newer being a strict superset, so losing the race hid 28 pieces of music the game
+    /// plays and would have built a mod on a hierarchy 21,808 bytes out of date. The same
+    /// four differ by a few kilobytes of Init, ambience and display banks.
+    /// </summary>
+    private static GameFile Engine(GameFile a, GameFile b)
+    {
+        if (a is null) return b;
+        if (b is null) return a;
+        var byOrder = Order(a).CompareTo(Order(b));
+        if (byOrder != 0) return byOrder > 0 ? a : b;
+        return string.CompareOrdinal(Container(a), Container(b)) >= 0 ? a : b;
+
+        static long Order(GameFile f) => (f as VfsEntry)?.Vfs?.ReadOrder ?? 0;
+        static string Container(GameFile f) => (f as VfsEntry)?.Vfs?.Name ?? "";
+    }
+
+    /// <summary>
+    /// One entry per .bnk path, so every walk that needs a bank asks the same question
+    /// once. The catalogue, the media index and the builder each used to deduplicate the
+    /// provider's repeated paths on their own and each kept whichever copy it met first,
+    /// which meant they could disagree about what "the bank" was within one mount.
+    /// </summary>
+    private void IndexBankPaths()
+    {
+        _bankByPath.Clear();
+        foreach (var (path, file) in Provider.Files)
+        {
+            if (!path.EndsWith(".bnk", StringComparison.OrdinalIgnoreCase)) continue;
+            _bankByPath[path] = Engine(file, _bankByPath.GetValueOrDefault(path));
+        }
+    }
+
+    /// <summary>The copy of a bank the game would load, or null when no container has it.</summary>
+    public GameFile Bank(string path) => _bankByPath.GetValueOrDefault(path);
+
     private void IndexMedia()
     {
         const string root = "Marvel/Content/WwiseAudio/Media/";
@@ -117,8 +314,14 @@ public sealed class GameSession
             if (!uint.TryParse(Path.GetFileNameWithoutExtension(leaf), out var id)) continue;
 
             // Media/<lang>/<bucket>/<id>.wem  vs  Media/<bucket>/<id>.wem
-            if (rest.Length == 3) _mediaByLangId[$"{rest[0]}|{id}"] = file;
-            else _mediaNeutral[id] = file;
+            // Resolved the same way a bank is, because one loose media path is shipped by
+            // two containers as well and last-wins would pick by mount order.
+            if (rest.Length == 3)
+            {
+                var key = $"{rest[0]}|{id}";
+                _mediaByLangId[key] = Engine(file, _mediaByLangId.GetValueOrDefault(key));
+            }
+            else _mediaNeutral[id] = Engine(file, _mediaNeutral.GetValueOrDefault(id));
         }
     }
 
@@ -126,7 +329,19 @@ public sealed class GameSession
     {
         foreach (var path in Provider.Files.Keys)
         {
-            if (path.IndexOf("/WwiseEvents/", StringComparison.OrdinalIgnoreCase) < 0) continue;
+            // Every asset under the Wwise asset root is named after the Wwise object it
+            // stands for, which is what makes its stem the plaintext a hash was made from.
+            // Reading only WwiseEvents/ was one folder away from the truth: the root holds
+            // WwiseEvents (41,097 assets), Events (261), Effects (48) and WwiseBus (19),
+            // and the game's MUSIC events live in Events/Music/music_new/event/. None of
+            // music_formal.bnk's 61 events resolved because of that, so no music row could
+            // be named. Widening to the root adds 322 hashes, changes none of the names
+            // the narrower scope already produced, collides with none of them, and names
+            // 50 of those 61 events.
+            //
+            // The root and not the whole pak: outside it a stem like Dead belongs to an
+            // animation asset, and hashing that would let an unrelated file name a sound.
+            if (path.IndexOf("/Wwise/Assets/", StringComparison.OrdinalIgnoreCase) < 0) continue;
             if (!path.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase)) continue;
             var name = Path.GetFileNameWithoutExtension(path);
             _nameByHash[WwiseFnv.GetHash(name)] = name;
@@ -242,6 +457,41 @@ public sealed class GameSession
         return _mediaNeutral.GetValueOrDefault(id);
     }
 
+    /// <summary>
+    /// Loose streamed copy of a media id as ONE bank would stream it: from its own
+    /// language's folder, then the neutral one, and never another language's.
+    ///
+    /// The overload above falls through every language because a row only needs some
+    /// copy to play. Something that writes a file for a particular bank cannot do that:
+    /// an English bank's line written over the Japanese copy is a change to a bank the
+    /// mod never touched, and the English one is left playing the old audio.
+    /// </summary>
+    /// <param name="language">The bank's language folder, or null for a bank that has none.</param>
+    public GameFile LooseMedia(uint id, string language)
+    {
+        if (language is not null && _mediaByLangId.TryGetValue($"{language}|{id}", out var f)) return f;
+        return _mediaNeutral.GetValueOrDefault(id);
+    }
+
+    /// <summary>
+    /// The game's file at exactly this path, as the engine loads it: the copy the media index
+    /// chose when two containers ship one path, else whatever the provider holds there. Null
+    /// when the game ships nothing at that path.
+    /// </summary>
+    public GameFile GameFileAt(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        if (uint.TryParse(Path.GetFileNameWithoutExtension(path), out var id) &&
+            LooseMedia(id, LanguageOf(path)) is { } loose && loose.Path.Equals(path, StringComparison.OrdinalIgnoreCase))
+            return loose;
+        return Provider?.Files.TryGetValue(path, out var file) == true ? file : null;
+    }
+
+    /// <summary>The language folder a game path sits in, or null when it sits in none.</summary>
+    public static string LanguageOf(string path) =>
+        path is null ? null
+        : Languages.FirstOrDefault(l => path.Contains($"/{l}/", StringComparison.OrdinalIgnoreCase));
+
     // media id -> the pak path of the bank that embeds it, across EVERY bank in the
     // game. Without this the tool can only name a bank once you have opened its skin,
     // which is backwards: you stage a file precisely because you don't know yet.
@@ -276,11 +526,7 @@ public sealed class GameSession
     /// </summary>
     public void IndexBanks(Action<string> progress)
     {
-        var banks = Provider.Files
-            .Where(kv => kv.Key.EndsWith(".bnk", StringComparison.OrdinalIgnoreCase))
-            .Select(kv => kv.Value)
-            .GroupBy(f => f.Path, StringComparer.OrdinalIgnoreCase).Select(g => g.First())
-            .ToList();
+        var banks = _bankByPath.Values.ToList();
 
         var n = 0;
         foreach (var b in banks)
@@ -307,12 +553,23 @@ public sealed class GameSession
 
     private static readonly Regex BankId = new(@"(\d{7})", RegexOptions.Compiled);
 
+    /// <summary>A hero's name in the active language, or the id when the game names it nowhere.</summary>
+    public string HeroName(string charId) =>
+        Loc($"601_HeroUIAsset_{charId}_ST", $"UIHeroTable_{charId}0_HeroBasic_TName") ??
+        Loc($"123_Customize_{charId}_ST", $"MarvelItemTable_{charId}_ItemName") ??
+        charId;
+
+    /// <summary>A skin's name in the active language (skin id as in 1024001), or the id.</summary>
+    public string SkinName(string charId, string skinId) =>
+        Loc($"123_Customize_{charId}_ST", $"MarvelItemTable_{skinId}_ItemName") ??
+        Loc($"601_HeroUIAsset_{charId}_ST", $"UISkinTable_{skinId}0_SkinBasic_SkinName") ??
+        skinId;
+
     private void BuildCatalog()
     {
         var bySkin = new Dictionary<string, List<GameFile>>();
-        foreach (var (path, file) in Provider.Files)
+        foreach (var (path, file) in _bankByPath)
         {
-            if (!path.EndsWith(".bnk", StringComparison.OrdinalIgnoreCase)) continue;
             var name = Path.GetFileNameWithoutExtension(path);
             var m = BankId.Matches(name);
             if (m.Count == 0) continue;
@@ -325,30 +582,20 @@ public sealed class GameSession
                 continue;
 
             if (!bySkin.TryGetValue(skinId, out var list)) bySkin[skinId] = list = [];
-            // The aggregated provider can surface the same bank path more than once
-            // (base pak + patch pak). Parsing it twice doubles the load for nothing.
-            if (!list.Any(b => b.Path.Equals(file.Path, StringComparison.OrdinalIgnoreCase)))
-                list.Add(file);
+            list.Add(file);
         }
 
         var chars = new List<CharacterEntry>();
         foreach (var group in bySkin.GroupBy(kv => kv.Key[..4]).OrderBy(g => g.Key))
         {
             var charId = group.Key;
-            var heroName =
-                Loc($"601_HeroUIAsset_{charId}_ST", $"UIHeroTable_{charId}0_HeroBasic_TName") ??
-                Loc($"123_Customize_{charId}_ST", $"MarvelItemTable_{charId}_ItemName") ??
-                charId;
+            var heroName = HeroName(charId);
 
             var skins = new List<SkinEntry>();
             foreach (var kv in group.OrderBy(k => k.Key))
             {
                 var skinId = kv.Key;
-                var label =
-                    Loc($"123_Customize_{charId}_ST", $"MarvelItemTable_{skinId}_ItemName") ??
-                    Loc($"601_HeroUIAsset_{charId}_ST", $"UISkinTable_{skinId}0_SkinBasic_SkinName") ??
-                    skinId;
-                skins.Add(new SkinEntry(skinId, $"{skinId}  {label}", kv.Value));
+                skins.Add(new SkinEntry(skinId, $"{skinId}  {SkinName(charId, skinId)}", kv.Value));
             }
             chars.Add(new CharacterEntry(charId, $"{charId}  {heroName}", skins));
         }
@@ -367,9 +614,8 @@ public sealed class GameSession
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var byGroup = new Dictionary<string, List<GameFile>>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (path, file) in Provider.Files)
+        foreach (var (path, file) in _bankByPath)
         {
-            if (!path.EndsWith(".bnk", StringComparison.OrdinalIgnoreCase)) continue;
             var name = Path.GetFileNameWithoutExtension(path);
             if (BankId.IsMatch(name)) continue;          // a character's, already listed
 
@@ -403,7 +649,9 @@ public sealed class GameSession
     private static string GroupOf(string bankName)
     {
         var n = bankName.ToLowerInvariant();
-        if (n.StartsWith("bnk_")) n = n[4..];
+        // The prefix is the game's own naming, not a word in anyone's language, so it
+        // is matched literally rather than through the machine's collation.
+        if (n.StartsWith("bnk_", StringComparison.Ordinal)) n = n[4..];
         var cut = n.IndexOf('_');
         var head = cut > 0 ? n[..cut] : n;
         return head switch

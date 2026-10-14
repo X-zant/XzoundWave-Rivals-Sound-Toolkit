@@ -9,10 +9,15 @@ namespace MRAudioKit;
 /// A word on the .NET runtime, because the obvious check is impossible: if the
 /// runtime is absent, nothing in this file ever runs. Windows shows the launcher's
 /// own "you must install .NET Desktop Runtime" dialog before a single line of managed
-/// code executes. What is checkable from in here is everything *after* that — the
-/// runtime being older than the app was built for, the wrong architecture, and Media
-/// Foundation missing, which is real on Windows N editions and shows up as mp3 and m4a
-/// imports failing with nothing obviously wrong.
+/// code executes. What is checkable from in here is everything *after* that: the
+/// runtime being older than the app was built for, the wrong architecture, and
+/// vgmstream not unpacking or not starting, which is what importing anything other than
+/// wav or ogg now depends on.
+///
+/// Media Foundation used to be checked here as well, because it decoded mp3, m4a, aac
+/// and wma and is genuinely absent from Windows N editions. Nothing in the tool asks it
+/// for anything any more, so the check went with the dependency rather than being left
+/// to warn about a feature no build uses.
 /// </summary>
 public static class EnvCheck
 {
@@ -62,66 +67,38 @@ public static class EnvCheck
 
         // vgmstream is a native binary we unpack and run. Existing is not enough: a
         // missing Visual C++ runtime or an antivirus quarantine leaves the file sitting
-        // there and playback silently doing nothing.
+        // there and playback silently doing nothing. It also decodes every import that
+        // is not a wav or an ogg, so its absence costs more than sound now.
         var vgm = Bundled.EnsureVgmstream(out var unpackError);
         if (vgm is null)
             problems.Add(new Problem(
-                "Audio playback is unavailable",
+                "Audio playback and most imports are unavailable",
                 "vgmstream could not be unpacked, so nothing can be played, measured or " +
-                "volume-scaled.\n\n" + (unpackError ?? "unknown reason") +
+                "volume-scaled, and only wav and ogg files can be imported.\n\n" +
+                (unpackError ?? "unknown reason") +
                 "\n\nSettings > Tools can point at your own copy of vgmstream-cli.exe.",
                 Fatal: false));
         else if (AudioPreview.LaunchProblem(vgm) is { } why)
             problems.Add(new Problem(
-                "Audio playback is unavailable",
+                "Audio playback and most imports are unavailable",
                 "vgmstream is unpacked but will not run on this machine, so nothing can " +
-                "be played, measured or volume-scaled.\n\n" + why +
+                "be played, measured or volume-scaled, and only wav and ogg files can be " +
+                "imported.\n\n" + why +
                 "\n\nIt lives in:\n" + Bundled.ToolsDir,
                 Fatal: false));
 
         if (AudioPreview.OutputProblem() is { } outErr)
             problems.Add(new Problem(
                 "No audio output",
-                "Nothing can be heard because Windows reports no playback device.\n\n" +
+                // No operating system named here. The reason came from whichever audio
+                // backend this build has, and it already says which one and why -- the
+                // sentence used to blame Windows, which on Linux was both wrong and the
+                // only thing in the whole report that gave the port away.
+                "Nothing can be heard: no playback device is available.\n\n" +
                 outErr + "\n\nEverything else in the tool still works.",
                 Fatal: false));
 
-        if (!MediaFoundationWorks(out var mfError))
-            problems.Add(new Problem(
-                "Windows Media Foundation is not available",
-                "mp3, m4a, aac and wma files cannot be imported without it. wav, ogg, " +
-                "flac and wem still work, and so does everything else.\n\n" +
-                "This usually means a Windows 'N' edition without the Media Feature " +
-                "Pack.\n\n" + mfError,
-                Fatal: false));
-
         return problems;
-    }
-
-    /// <summary>
-    /// Ask Media Foundation to open something, rather than asking Windows whether it
-    /// is installed. A feature that is present but broken fails the same way for us.
-    /// </summary>
-    private static bool MediaFoundationWorks(out string error)
-    {
-        error = null;
-#if WINDOWS
-        try
-        {
-            NAudio.MediaFoundation.MediaFoundationApi.Startup();
-            NAudio.MediaFoundation.MediaFoundationApi.Shutdown();
-            return true;
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-#else
-        // Nothing to report: a build that never asks Media Foundation for anything
-        // cannot be let down by it.
-        return true;
-#endif
     }
 
     /// <summary>
@@ -142,7 +119,7 @@ public static class EnvCheck
     }
 
     /// <summary>
-    /// XzoundWave.exe --playtest &lt;mediaId&gt; — decode one sound and actually play it.
+    /// XzoundWave.exe --playtest &lt;mediaId&gt;: decode one sound and actually play it.
     ///
     /// The decode and the playback are separate failures with the same symptom, and a
     /// tester whose machine reported no problems at all still heard nothing. This runs
@@ -219,13 +196,13 @@ public static class EnvCheck
         W($"  app data      {Settings.AppDataDir}");
 
         var vgmPath = Bundled.EnsureVgmstream(out var vgmError);
-        W($"  vgmstream     {(vgmPath is not null ? vgmPath : "NOT AVAILABLE — " + vgmError)}");
+        W($"  vgmstream     {(vgmPath is not null ? vgmPath : "NOT AVAILABLE: " + vgmError)}");
         if (vgmPath is not null)
         {
             W($"                {(File.Exists(vgmPath) ? new FileInfo(vgmPath).Length.ToString("N0") + " B, unpacked from the exe" : "missing")}");
             // The question that matters is whether it RUNS, not whether it is there.
             var why = AudioPreview.LaunchProblem(vgmPath);
-            W($"                {(why is null ? "runs: yes" : "RUNS: NO — " + why)}");
+            W($"                {(why is null ? "runs: yes" : "RUNS: NO, " + why)}");
             if (why is null)
             {
                 var dlls = Directory.Exists(Bundled.ToolsDir)
@@ -234,6 +211,12 @@ public static class EnvCheck
             }
         }
 
+        // Which revision, on the record. The payload is a per-platform download and
+        // two revisions of it decode the same lossy file to within a bit of each other
+        // rather than identically, so a report that two machines produced the same wem
+        // is only worth reading beside the revision each of them ran.
+        W($"  decoder       {AudioDecode.DecoderRevision ?? "unknown revision"}" +
+          $", reading {AudioDecode.Extensions.Length} extension(s)");
         W($"  audio out     {AudioPreview.OutputSummary()}");
         W($"  licences      {(Bundled.Licence is not null && Bundled.Notices is not null ? "embedded" : "MISSING")}");
 
@@ -250,7 +233,7 @@ public static class EnvCheck
 
     /// <summary>
     /// XzoundWave.exe --doctor. Prints when there is a console, and shows a window when
-    /// there is not — the double-click case. It also always saves a copy, because "I
+    /// there is not, which is the double-click case. It also always saves a copy, because "I
     /// ran it and nothing happened" is the least useful bug report there is, and that
     /// is exactly what a windowed program printing to a console it does not have looks
     /// like from the outside.

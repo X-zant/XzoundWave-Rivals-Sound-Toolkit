@@ -66,11 +66,13 @@ public static class RowClasses
     ];
 
     /// <summary>
-    /// Off on a first run, matching the "show unnamed" box this replaces. Null in
-    /// settings means "never chosen", which is why this is a separate list rather
-    /// than a default on each entry.
+    /// Hidden on a first run: nothing. Unnamed events used to be, matching the "show unnamed"
+    /// box this replaced, and that hid real sounds -- every streamed ambience sound whose file
+    /// the game does not ship is unnamed, and so is every change a mod makes to a sound the game
+    /// never named. Null in settings means "never chosen", which is why this is a separate list
+    /// rather than a default on each entry.
     /// </summary>
-    public static readonly string[] HiddenByDefault = ["unnamed"];
+    public static readonly string[] HiddenByDefault = [];
 
     public static RowClass Find(string key) =>
         All.FirstOrDefault(c => c.Key.Equals(key, StringComparison.OrdinalIgnoreCase));

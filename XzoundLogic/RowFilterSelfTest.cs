@@ -56,9 +56,11 @@ public static class RowFilterSelfTest
         // The counts beside the filter box are worked out from this, and a row that
         // vanished without being counted is the failure it is there to prevent: a mod
         // that replaced sounds the game never named has every change dropped by the
-        // unnamed filter, which is on by default.
+        // unnamed filter, once someone turns it on.
         var changed = rows.Where(r => r.ModTag is "MODDED" or "NEW").ToList();
-        var firstRun = RowClasses.HiddenByDefault;
+        Check("unnamed events are shown on a first run",
+              !RowClasses.HiddenByDefault.Contains("unnamed"), string.Join(",", RowClasses.HiddenByDefault));
+        string[] firstRun = ["unnamed"];
 
         var gone = rows.Where(r => RowClasses.IsHidden(r, firstRun)).ToList();
         var shown = RowClasses.Apply(rows, firstRun).ToList();
@@ -119,9 +121,17 @@ public static class RowFilterSelfTest
         W("");
         W("settings");
         var s = new Settings();
-        Check("never chosen means the default set, not empty",
-            (s.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault]) is ["unnamed"],
+        Check("never chosen means the default set, which hides nothing",
+            (s.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault]) is [],
             string.Join(",", s.HiddenRowClasses));
+        var old = new Settings { HiddenRowClasses = ["unnamed"] };
+        Check("a file still on the old default shows unnamed events after the migration",
+            old.MigrateRowDefaults() && old.HiddenRowClasses is null && old.RowDefaults == 1);
+        var chose = new Settings { HiddenRowClasses = ["unnamed", "muted"] };
+        Check("...and a list someone chose is kept",
+            chose.MigrateRowDefaults() && chose.HiddenRowClasses is ["unnamed", "muted"]);
+        Check("...and the migration runs once",
+            !old.MigrateRowDefaults() && !new Settings { RowDefaults = 1, HiddenRowClasses = ["unnamed"] }.MigrateRowDefaults());
         Check("every default names a real kind",
             RowClasses.HiddenByDefault.All(k => RowClasses.Find(k) is not null));
         Check("keys are unique",

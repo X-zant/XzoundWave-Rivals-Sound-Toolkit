@@ -37,7 +37,12 @@ public sealed class BankBase
         if (_byStem.TryGetValue(Path.GetFileNameWithoutExtension(bankPath), out var modded))
             return modded;
         if (session?.Provider is null) return null;
-        if (!session.Provider.Files.TryGetValue(bankPath, out var file)) return null;
+        // Through the session, which resolves a path several containers ship to the copy
+        // the engine loads. Asking the provider directly returns whichever container
+        // registered the path first, so a build could rewrite a different copy of a bank
+        // than the one whose rows the author was reading.
+        var file = session.Bank(bankPath);
+        if (file is null && !session.Provider.Files.TryGetValue(bankPath, out file)) return null;
         try { return file.Read(); } catch { return null; }
     }
 

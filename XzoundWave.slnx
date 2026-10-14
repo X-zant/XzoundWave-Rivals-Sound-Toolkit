@@ -1,0 +1,22 @@
+<Solution>
+
+  <!-- Every project, so that the one documented build command builds all of them.
+
+       Without this file "dotnet build" at the repo root resolved to the single csproj
+       beside it, which is the old WPF window, and XzoundUI and XzoundCli were never
+       built at all. That is not a tidiness problem: both window heads emit an assembly
+       named XzoundWave, so the newest XzoundWave.exe in the tree was the WPF one, and
+       anybody who built and then ran what they had just built was running the other
+       window and wondering why their change had not appeared. It cost a real afternoon.
+
+       XzoundWave.csproj, the WPF window, stays in the list because it is what the root
+       build has always produced and dropping it here would silently stop producing it.
+       It is reference only now; XzoundUI is the window under development. -->
+
+  <Project Path="XzoundCore/XzoundCore.csproj" />
+  <Project Path="XzoundLogic/XzoundLogic.csproj" />
+  <Project Path="XzoundCli/XzoundCli.csproj" />
+  <Project Path="XzoundUI/XzoundUI.csproj" />
+  <Project Path="XzoundWave.csproj" />
+
+</Solution>

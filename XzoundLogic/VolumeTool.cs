@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using Xzound;
@@ -55,6 +56,11 @@ public static class VolumeTool
     /// <summary>
     /// wem -> 16-bit PCM. A PCM wem is read directly; Vorbis needs vgmstream, the same
     /// decoder the preview already uses.
+    ///
+    /// With <see cref="AudioDecode.NoLoop"/>, for the reason given there and because this
+    /// one SHIPS what it decodes. Levelling media 972121045 without it replaced 44.333 s
+    /// of music with 77.937 s carrying a repeat of the loop and vgmstream's ten second
+    /// fade baked into the audio, at nearly twice the size of what it was given.
     /// </summary>
     private static WwiseWem.WavData Decode(byte[] wem, string vgmstreamPath)
     {
@@ -80,6 +86,7 @@ public static class VolumeTool
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
+            psi.ArgumentList.Add(AudioDecode.NoLoop);
             psi.ArgumentList.Add("-o");
             psi.ArgumentList.Add(dst);
             psi.ArgumentList.Add(src);
@@ -113,6 +120,14 @@ public static class VolumeTool
     /// <summary>
     /// A suffix for the output folder or pak, so exports at different levels do not
     /// overwrite each other: 1 -> "Vol-1.0", 0.8 -> "Vol-0.8".
+    ///
+    /// Formatted with the invariant culture because this becomes a directory name. The
+    /// machine's own culture decides what a decimal separator looks like, so a German
+    /// locale wrote "Vol-0,8" and the same export made on two machines landed in two
+    /// differently spelled folders. Swapping the comma back afterwards -- which is what
+    /// this did -- only ever knew about that one separator, and said nothing about
+    /// group separators or any of the other punctuation a locale is free to pick.
     /// </summary>
-    public static string Label(double gain) => $"Vol-{gain:0.0#}".Replace(',', '.');
+    public static string Label(double gain) =>
+        "Vol-" + gain.ToString("0.0#", CultureInfo.InvariantCulture);
 }

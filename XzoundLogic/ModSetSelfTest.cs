@@ -28,6 +28,13 @@ public static class ModSetSelfTest
             if (!ok) fails++;
         }
 
+        // Built for this host, so the test exercises the logic rather than whichever
+        // separator the machine happens to use. The rule that a name survives the OTHER
+        // platform's separators is ModSet's own and is checked below.
+        var first = Path.Combine("mods", "first.pak");
+        var second = Path.Combine("mods", "second.pak");
+        var third = Path.Combine("mods", "third.pak");
+
         const string StemA = "bnk_test_9999001";
         const string StemB = "bnk_test_9999002";
 
@@ -54,6 +61,15 @@ public static class ModSetSelfTest
               mods.Get(StemA)?.SourceName ?? "(none)");
         Check("sources are listed once each", mods.Sources.Count() == 2,
               string.Join(", ", mods.Sources));
+
+        // A path spelled for the OTHER platform, which is what a project file shared
+        // between two people carries. The name still has to come out of it.
+        var foreign = "C:" + "\\" + "Users" + "\\" + "someone" + "\\" + "ported.pak";
+        mods.Add(null, new ModBank.Bank($"{StemB}.bnk", foreign, other), foreign, out _);
+        Check("a name survives a path spelled for another platform",
+              mods.Get(StemB)?.SourceName == "ported.pak",
+              mods.Get(StemB)?.SourceName ?? "(none)");
+        mods.Add(null, new ModBank.Bank($"{StemB}.bnk", second, other), second, out _);
 
         // The .bnk a media lives in is read back by the tree's media count and by the
         // "lands in" column for a staged file, and both compare against a FILE NAME.

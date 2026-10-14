@@ -4,7 +4,8 @@ namespace MRAudioKit;
 
 /// <summary>
 /// Checks that remembering a conversion actually saves the work and returns the same
-/// bytes, and that the destructive replace-the-source option is safe when it fires.
+/// bytes, that a conversion is never reused across a change of decoder, and that the
+/// destructive replace-the-source option is safe when it fires.
 /// </summary>
 public static class CacheSelfTest
 {
@@ -89,6 +90,66 @@ public static class CacheSelfTest
             var cleared = ConvertedCache.Clear(options);
             Check("clearing empties it", cleared > 0 && ConvertedCache.Stats(options).Files == 0,
                   $"removed {cleared}");
+
+            // ---- a change of decoder --------------------------------------------
+            //
+            // The scenario, in the order it happened: a file is imported, the decoder
+            // that imported it is replaced, the same file is imported again. Keyed on the
+            // file's contents alone the second import returned the first decoder's bytes,
+            // for ever, and only on a machine that had the first entry -- so one reader's
+            // mod and a fresh install of the same build shipped different audio, with
+            // nothing on either side to say which was which.
+            //
+            // Proved with bytes no encoder would ever produce, in two steps. First that
+            // the plant IS served, because a check that cannot tell a hit from a miss
+            // would pass just as well against a cache that had stopped working. Then that
+            // it is NOT served once the decoder is a different one.
+            W("");
+            W("a change of decoder");
+            var hash = ConvertedCache.HashOf(input);
+            var wasDecoder = AudioDecode.DecoderIdentity;
+            byte[] planted = [.. "PLANTED"u8, .. first];
+            ConvertedCache.Put(options, hash, wasDecoder, planted);
+            var served = PendingWem.ToWemBytes(input, out _);
+            Check("an entry this decoder wrote is served",
+                  served is not null && served.AsSpan().SequenceEqual(planted));
+
+            // Taking the decoder away is the one identity change that can be made from
+            // here: a second real revision would have to be downloaded. Cleared rather
+            // than pointed somewhere else, because a path that does not exist is
+            // discarded and re-resolved to the bundled payload, and because clearing it
+            // is what a host does when the reader empties the box in Settings > Tools.
+            var vgmWas = AudioDecode.VgmstreamPath;
+            if (string.IsNullOrWhiteSpace(vgmWas) || !File.Exists(vgmWas))
+                W("  --    the old bytes are not served to a different decoder   " +
+                  "skipped: there is no decoder on this host to take away, so a second " +
+                  "identity cannot be produced");
+            else
+                try
+                {
+                    AudioDecode.VgmstreamPath = null;
+                    Check("taking the decoder away is a different identity",
+                          AudioDecode.DecoderIdentity != wasDecoder,
+                          AudioDecode.DecoderIdentity);
+                    var after = PendingWem.ToWemBytes(input, out var whyAfter);
+                    Check("and the old bytes are not served to a different decoder",
+                          after is null || !after.AsSpan().SequenceEqual(planted),
+                          after is null ? whyAfter
+                          : after.AsSpan().SequenceEqual(planted)
+                              ? $"the planted {planted.Length:N0} B came straight back"
+                              : $"re-encoded, {after.Length:N0} B");
+                }
+                finally { AudioDecode.VgmstreamPath = vgmWas; }
+
+            // Keyed alongside rather than invalidated: the entry was never asked for, not
+            // destroyed, so the decoder that wrote it still has it. That is what makes a
+            // reader who points Settings > Tools at their own copy and back again pay for
+            // one encode each way instead of one per switch, and it is why a delete that
+            // silently failed could not leave a stale entry to be served here.
+            Check("while the decoder that wrote it still has its own entry",
+                  PendingWem.ToWemBytes(input, out _) is { } back
+                  && back.AsSpan().SequenceEqual(planted));
+            ConvertedCache.Clear(options);
 
             // ---- the destructive option -------------------------------------
             W("");
