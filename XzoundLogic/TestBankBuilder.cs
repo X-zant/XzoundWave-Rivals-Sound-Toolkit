@@ -100,7 +100,8 @@ public static class TestBankBuilder
                                IReadOnlySet<uint> only = null,
                                IReadOnlySet<uint> muted = null,
                                IReadOnlyDictionary<uint, int> keepNumbers = null,
-                               BankBase baseBanks = null)
+                               BankBase baseBanks = null,
+                               IReadOnlyCollection<uint> loose = null)
     {
         var log = new StringBuilder();
         var legend = new List<Row>();
@@ -217,6 +218,55 @@ public static class TestBankBuilder
             banks++;
             log.AppendLine($"{bankName}: {built.Replaced} of {BnkBuilder.ReadDidx(didx.Body).Count} " +
                            $"media replaced, {orig.Length:N0} B -> {built.Bytes.Length:N0} B");
+        }
+
+        // Sounds no bank holds: the loose file is what plays, so it is what gets the number or the
+        // silence, written at the game's own path. After the banks, in media-id order, so the
+        // numbering is reproducible; "restart per bank" counts the loose files as one more.
+        var looseWritten = 0;
+        if (loose is { Count: > 0 })
+        {
+            if (restartPerBank) next = startAt;
+            foreach (var id in loose.Distinct().OrderBy(x => x))
+            {
+                if (only is not null && !only.Contains(id)) continue;
+                var src = session.LooseMedia(id, session.Language) ?? session.LooseMedia(id);
+                if (src is null) continue;
+                var rowsFor = context?.Rows.Where(r => r.MediaId == id).ToList() ?? [];
+                var bankLabel = (rowsFor.FirstOrDefault()?.Bank ?? Path.GetFileNameWithoutExtension(src.Path)) + " (loose file)";
+                Row LegendRow(int number, string notePrefix = "") => new(number, id, bankLabel,
+                    string.Join(" | ", rowsFor.Select(r => r.Display).Distinct()),
+                    rowsFor.FirstOrDefault()?.Category ?? "", rowsFor.FirstOrDefault()?.Subtitle ?? "",
+                    notePrefix + (rowsFor.FirstOrDefault()?.Notes ?? ""), rowsFor.FirstOrDefault()?.Seconds);
+
+                byte[] bytes;
+                if (muted is not null && muted.Contains(id))
+                {
+                    try { bytes = SilentBankBuilder.Like(src.Read()); } catch { bytes = null; }
+                    if (bytes is null) { log.AppendLine($"loose {id}: muted, but its header could not be read."); continue; }
+                    silenced++;
+                    if (keepNumbers is not null && keepNumbers.TryGetValue(id, out var had)) legend.Add(LegendRow(had, "(muted) "));
+                }
+                else
+                {
+                    var assigned = keepNumbers is not null && keepNumbers.TryGetValue(id, out var prior) ? prior : NextFree();
+                    if (wems.ByNumber.TryGetValue(assigned, out var clip))
+                    {
+                        bytes = Load(clip);
+                        legend.Add(LegendRow(assigned));
+                        numbered++;
+                        taken.Add(assigned);
+                        if (assigned == next) next++;
+                    }
+                    else if (silenceOverflow && wems.SilentPath is not null) { bytes = Load(wems.SilentPath); silenced++; }
+                    else { unassigned++; continue; }
+                }
+                var dest = Path.Combine(outRoot, src.Path.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.WriteAllBytes(dest, bytes);
+                looseWritten++;
+            }
+            if (looseWritten > 0) log.AppendLine($"{looseWritten} loose file(s) written for sounds no bank holds.");
         }
 
         Directory.CreateDirectory(outRoot);

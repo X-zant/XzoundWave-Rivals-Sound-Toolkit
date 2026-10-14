@@ -404,6 +404,105 @@ public static class Shot
         }
     }
 
+    /// <summary>
+    /// XzoundWave --shot-paklist &lt;out&gt; &lt;0-PAK-NAME-LIST.txt&gt; &lt;audio&gt; &lt;mediaId&gt;...: one file staged on each
+    /// media id, Build mod with the list, and what each mod it wrote holds.
+    /// </summary>
+    public static int TakePakList(string outDir, string list, string audio, IReadOnlyList<string> ids)
+    {
+        try
+        {
+            AppBuilder.Configure<App>().UseSkia()
+                      .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
+            var main = new MainWindow { Width = 1440, Height = 840 };
+            main.Show();
+            main.LoadGameSync();
+            Dispatcher.UIThread.RunJobs();
+            if (!main.CurrentSession.BankIndexReady) main.CurrentSession.IndexBanks(_ => { });
+            var stage = Path.Combine(outDir + "-staged");
+            Directory.CreateDirectory(stage);
+            var staged = ids.Select(id => { var f = Path.Combine(stage, $"{id}-test{Path.GetExtension(audio)}"); File.Copy(audio, f, true); return f; }).ToList();
+            main.StageSync(staged);
+            main.PakNameListForShot = list;
+            var run = main.BuildForShot(outDir);
+            while (!run.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); }
+            Dispatcher.UIThread.RunJobs();
+            Console.WriteLine("BUILD: " + main.Status.Text);
+            var settings = Settings.Load();
+            settings.AutoDetect();
+            foreach (var pak in Directory.GetFiles(outDir, "*.pak", SearchOption.AllDirectories).OrderBy(p => p))
+            {
+                var o = ModBank.Open(pak, settings, withMedia: true);
+                Console.WriteLine($"  {Path.GetRelativePath(outDir, pak)}: " +
+                                  string.Join(", ", o.Banks.Select(b => b.Name).Concat(o.Media.Select(m => Path.GetFileName(m.MountedAt)))));
+            }
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("could not run the pak-list test: " + ex);
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// XzoundWave --shot-testbuild &lt;out&gt;: the Test tab on a map's ambience bank, where some sounds live in the
+    /// bank and some only in loose files -- Test the selection, Test only the selection and Silent .bnk on one
+    /// of each, and what each .pak holds.
+    /// </summary>
+    public static int TakeTestBuild(string outDir)
+    {
+        try
+        {
+            AppBuilder.Configure<App>().UseSkia()
+                      .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
+            var main = new MainWindow { Width = 1440, Height = 840 };
+            main.Show();
+            main.LoadGameSync();
+            Dispatcher.UIThread.RunJobs();
+            var session = main.CurrentSession;
+            if (!session.BankIndexReady) session.IndexBanks(_ => { });
+            void Pump(Task t) { while (!t.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); } Dispatcher.UIThread.RunJobs(); }
+            var settings = Settings.Load(); settings.AutoDetect();
+            void Show(string dir)
+            {
+                foreach (var pak in Directory.GetFiles(dir, "*.pak"))
+                {
+                    var o = ModBank.Open(pak, settings, withMedia: true);
+                    Console.WriteLine($"  {Path.GetFileName(pak)}: banks {string.Join(", ", o.Banks.Select(b => b.Name))}; loose " +
+                                      string.Join(", ", o.Media.Select(m => $"{Path.GetFileName(m.MountedAt)} {m.Bytes.Length:N0} B")));
+                }
+                Console.WriteLine("  beside it: " + string.Join(", ", Directory.GetFiles(dir).Where(f => !f.EndsWith(".pak")).Select(Path.GetFileName)));
+            }
+
+            main.ShowSkinSync("bnk_amb_asgarde01");
+            Dispatcher.UIThread.RunJobs();
+            var rows = main.SoundsForShot.Rows;
+            var loose = rows.First(r => !session.MediaBank.ContainsKey(r.MediaId) && session.LooseMedia(r.MediaId) is not null).MediaId;
+            var inBank = rows.First(r => session.MediaBank.ContainsKey(r.MediaId)).MediaId;
+            Console.WriteLine($"rows {rows.Count}; loose-only {loose}, in a bank {inBank}");
+            main.TestClipDirForShot = Path.Combine(outDir, "clips");
+
+            foreach (var (name, run) in new (string, Func<Task>)[]
+                     { ("selection", main.TestSelectionForShot), ("only-selection", main.TestOnlySelectionForShot), ("silent", main.TestSilentForShot) })
+            {
+                var dir = Path.Combine(outDir, name);
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+                main.BuildFolderForShot = dir;
+                Console.WriteLine($"{name.ToUpperInvariant()}: selected {main.SelectMediaForShot(loose, inBank)}");
+                Pump(run());
+                Console.WriteLine("  status: " + main.Status.Text);
+                if (Directory.Exists(dir)) Show(dir);
+            }
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("could not run the test-build check: " + ex);
+            return 1;
+        }
+    }
+
     /// <summary>XzoundWave --shot-coldrag: what is under a column header's edge, and what a drag there does.</summary>
     public static int TakeColumnDrag()
     {

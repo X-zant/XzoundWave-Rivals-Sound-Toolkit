@@ -43,6 +43,11 @@ public partial class MainWindow
             Hint: "Re-encode PCM audio to Vorbis, the way the game's own is: in .bnk files, loose .wem files, " +
                   "or a whole mod .pak, which comes back as a .pak of the same name with every file it ships.");
 
+        yield return new ToolButton("Organize wems…", () => _ = ModOrganizeAsync(),
+            Hint: "Copy a folder of finished wems into one folder per mod: by a SoundKit rule list " +
+                  "(0-WEM-FOLDER-NAME-LIST.txt), matched against what the game says plays each wem, or by the " +
+                  "character, skin and bank that play it. Nothing is moved or deleted.");
+
         yield return new ToolButton("Extract modded wems…", () => _ = ModExtractAsync(),
             Hint: "Write out the sounds a loaded mod changed, and the game's originals of them beside, " +
                   "in folders named after the character, skin and .bnk.");
@@ -1031,6 +1036,51 @@ public partial class MainWindow
     /// </summary>
     private static async Task ProgressSettled() =>
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+
+    /// <summary>
+    /// SoundKit's WEM Auto-Organizer, read the same way and matched with what the game says: a folder of
+    /// wems (numbered folders 1, 2, 3 ... inside it kept apart) copied into one folder per mod.
+    /// </summary>
+    private async Task ModOrganizeAsync()
+    {
+        if (Session?.Provider is null) { Say("load the game first — wems are sorted by what the game says plays them."); return; }
+        var input = OrganizePicksForShot?[0] ?? await PickFolder("The folder of wems to organize (numbered folders 1, 2, 3 ... inside it are kept apart)");
+        if (input is null) return;
+        string rules = OrganizePicksForShot?[1];
+        if (OrganizePicksForShot is null &&
+            await Ask("Organize wems",
+                      "Sort them by a SoundKit rule list (0-WEM-FOLDER-NAME-LIST.txt), or into a folder for the character, " +
+                      "skin and bank that play each one?", "Use a rule list", "By character"))
+        {
+            rules = await PickFile("SoundKit's 0-WEM-FOLDER-NAME-LIST.txt", "Rule list", "*.txt");
+            if (rules is null) return;
+        }
+        var output = BuildFolderForShot ?? await PickFolder("Where to put the organized copies");
+        if (output is null) return;
+        var inside = Path.GetRelativePath(Path.GetFullPath(input), Path.GetFullPath(output));
+        if (AppPaths.SamePath(input, output) || !inside.StartsWith(".."))
+        { Say("pick an output folder outside the one being organized."); return; }
+
+        var session = Session;
+        var r = await Working("organizing the wems", () =>
+            WemOrganizer.Run(session, input, rules, output, m => Dispatcher.UIThread.Post(() => Say(m))));
+        if (r is null) return;   // Working has already said why
+        await ProgressSettled();
+        Say($"organized: {r.Copied} wem(s) copied into {output}" +
+            (r.LeftOut > 0 ? $", {r.LeftOut} left out by [DELETE] rules" : "") +
+            (r.Unmatched > 0 ? $", {r.Unmatched} no rule matched (in _unmatched)" : "") +
+            (r.Unknown > 0 ? $", {r.Unknown} the game does not play (in _unknown)" : "") +
+            ". What went where is in organize-report.txt.");
+    }
+
+    /// <summary>"Organize wems…", pressed by the render harness: input folder, rule list (or null), output folder.</summary>
+    internal Task OrganizeForShot(string input, string rules, string output)
+    {
+        OrganizePicksForShot = [input, rules];
+        BuildFolderForShot = output;
+        return ModOrganizeAsync();
+    }
+    internal string[] OrganizePicksForShot;
 
     /// <summary>A name a file system will take.</summary>
     private static string ModSafeName(string name)

@@ -77,7 +77,8 @@ public partial class MainWindow
         int Required,
         bool SilenceOverflow = false,
         bool RestartPerBank = false,
-        bool ShortfallOk = false);
+        bool ShortfallOk = false,
+        IReadOnlyCollection<uint> Loose = null);
 
     /// <summary>
     /// Resolve the clips, ask the last question, pick the output folder, build, and
@@ -91,27 +92,47 @@ public partial class MainWindow
     /// </param>
     private async Task TestRun(TestPlan plan, Func<TestBankBuilder.NumberedWems, string> confirm = null)
     {
-        if (plan.Banks.Count == 0) { Say("none of those sounds live in a .bnk we can find."); return; }
+        if (plan.Banks.Count == 0 && (plan.Loose?.Count ?? 0) == 0) { Say("none of those sounds live in a .bnk or a loose file we can find."); return; }
 
         var wems = await TestClips(plan.Required, plan.ShortfallOk);
         if (wems is null) return;
 
-        if (confirm is not null &&
+        if (confirm is not null && TestClipDirForShot is null &&
             !await Ask("Numbered test .bnk", confirm(wems), "Build it", "Cancel"))
         {
             Say("nothing built.");
             return;
         }
 
-        var outRoot = await PickFolder($"Output folder for the {plan.What}");
+        var outRoot = BuildFolderForShot ?? await PickFolder($"Output folder for the {plan.What}");
         if (outRoot is null) { Say("no output folder, nothing built."); return; }
 
         var lowest = wems.ByNumber.Keys.Min();
-        var result = await Working($"Building the {plan.What}", () =>
-            TestBankBuilder.Build(Session, plan.Banks, wems, outRoot, lowest,
-                                  plan.SilenceOverflow, Sounds, plan.RestartPerBank, 0,
-                                  plan.Only, plan.Muted, plan.Keep, TestModBase()));
-        if (result is null) return;   // Working has already said why.
+        var name = ModBaseName("Test");
+        var work = Path.Combine(Path.GetTempPath(), "XzoundWave", "test-" + Guid.NewGuid().ToString("N"));
+        (TestBankBuilder.Result Built, string Pak, string Problem) made;
+        try
+        {
+            made = await Working($"Building the {plan.What}", () =>
+            {
+                var r = TestBankBuilder.Build(Session, plan.Banks, wems, work, lowest,
+                                              plan.SilenceOverflow, Sounds, plan.RestartPerBank, 0,
+                                              plan.Only, plan.Muted, plan.Keep, TestModBase(), plan.Loose);
+                var (ok, message, pak) = TestPack(work, outRoot, name);
+                return (r, ok ? pak : null, ok ? null : message);
+            });
+        }
+        finally
+        {
+            try { if (Directory.Exists(work)) Directory.Delete(work, true); }
+            catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        if (made.Built is null) return;   // Working has already said why.
+        if (made.Problem is not null) { Say($"{plan.What}: nothing to pack ({made.Problem})."); return; }
+        var result = made.Built;
+        _lastBuilt.Clear();
+        _lastBuilt.Add(made.Pak);
+        _lastBuiltRoot = outRoot;
 
         var tagged = TestNumbersOnto(result.Legend);
         Refresh();
@@ -128,9 +149,54 @@ public partial class MainWindow
 
         Say($"{plan.What}: {result.Numbered} numbered, {result.Silenced} silenced, " +
             (result.Unassigned > 0 ? $"{result.Unassigned} left as shipped, " : "") +
-            $"{result.Banks} .bnk(s) written to {outRoot} — legend in test-bank-legend.csv" +
+            $"{Path.GetFileName(made.Pak)} in {outRoot} -- copy it into ~mods, or Install to ~mods; legend in test-bank-legend.csv" +
             (also.Count > 0 ? "; " + string.Join("; ", also) + "." : "."));
     }
+
+    /// <summary>The render harness: the Test tab's buttons, with its own clip folder and output folder.</summary>
+    internal string TestClipDirForShot;
+    internal Task TestEverythingForShot() => TestEverythingAsync();
+    internal Task TestSelectionForShot() => TestSelectionAsync();
+    internal Task TestOnlySelectionForShot() => TestOnlySelectionAsync();
+    internal Task TestSilentForShot() => TestSilentSelectionAsync();
+
+    /// <summary>The render harness: select exactly the rows of these media ids.</summary>
+    internal int SelectMediaForShot(params uint[] ids)
+    {
+        Grid_.SelectedItems.Clear();
+        foreach (var row in (Grid_.ItemsSource as IEnumerable<SoundRow>)?.Where(r => ids.Contains(r.MediaId)).GroupBy(r => r.MediaId).Select(g => g.First()) ?? [])
+            Grid_.SelectedItems.Add(row);
+        return Grid_.SelectedItems.Count;
+    }
+
+    /// <summary>
+    /// A test build's files packed into one .pak in outRoot, the way every build ships, with its
+    /// legend and log beside the pak rather than in it.
+    /// </summary>
+    private static (bool Ok, string Message, string Pak) TestPack(string work, string outRoot, string name)
+    {
+        Directory.CreateDirectory(outRoot);
+        if (!Directory.Exists(work)) return (false, "nothing was written", null);
+        var files = Directory.GetFiles(work, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(work, f)).ToList();
+        var mod = files.Where(f => f.Replace('\\', '/').StartsWith("Marvel/", StringComparison.OrdinalIgnoreCase)).ToList();
+        foreach (var f in files.Except(mod)) File.Copy(Path.Combine(work, f), Path.Combine(outRoot, Path.GetFileName(f)), true);
+        if (mod.Count == 0) return (false, "no sound was changed", null);
+        var outBase = Path.Combine(outRoot, name);
+        var (ok, message) = ModPackager.PackagePak(work, mod, outBase);
+        // A bundle under this name from an earlier build would load beside the .pak.
+        if (ok) foreach (var e in new[] { ".utoc", ".ucas" }) if (File.Exists(outBase + e)) File.Delete(outBase + e);
+        return (ok, message, outBase + ".pak");
+    }
+
+    /// <summary>
+    /// The rows' media no bank holds -- the game plays them from a loose file -- for the rows this
+    /// picks. Asked of the bank index, so empty until it is in.
+    /// </summary>
+    private List<uint> TestLooseIds(Func<SoundRow, bool> which) =>
+        Sounds is null || Session?.BankIndexReady != true ? []
+        : Sounds.Rows.Where(which)
+                .Where(r => !Session.MediaBank.ContainsKey(r.MediaId) && Session.LooseMedia(r.MediaId) is not null)
+                .Select(r => r.MediaId).Distinct().ToList();
 
     // ---- the four buttons ---------------------------------------------------
 
@@ -162,9 +228,11 @@ public partial class MainWindow
             return ((int All, int Biggest)?)(all, biggest);
         });
         if (counted is null) return;   // Working has already said why.
-        if (counted.Value.All == 0)
+        var scopeStems = scope.Select(Path.GetFileNameWithoutExtension).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var loose = TestLooseIds(r => scopeStems.Contains(r.Bank));
+        if (counted.Value.All == 0 && loose.Count == 0)
         {
-            Say("those .bnk files embed no media, so there is nothing to number.");
+            Say("those .bnk files embed no media and stream no loose file, so there is nothing to number.");
             return;
         }
 
@@ -181,7 +249,7 @@ public partial class MainWindow
             "Numbering straight through instead makes every number unique across the build.",
             "Restart in each .bnk", "Number straight through");
 
-        var required = perBank ? counted.Value.Biggest : counted.Value.All;
+        var required = perBank ? Math.Max(counted.Value.Biggest, loose.Count) : counted.Value.All + loose.Count;
 
         var plan = new TestPlan(
             What: "numbered test .bnk",
@@ -194,7 +262,8 @@ public partial class MainWindow
             Required: required,
             SilenceOverflow: true,
             RestartPerBank: perBank,
-            ShortfallOk: true);
+            ShortfallOk: true,
+            Loose: loose);
 
         var label = PickedBankPaths() is { Count: 1 } one
             ? Path.GetFileName(one[0])
@@ -206,7 +275,8 @@ public partial class MainWindow
             var lowest = wems.ByNumber.Keys.Min();
             var short_ = Math.Max(0, required - have);
             var msg = new System.Text.StringBuilder();
-            msg.AppendLine($"Scope: {label}   —   {scope.Count} .bnk(s), {counted.Value.All} media entries.");
+            msg.AppendLine($"Scope: {label}   —   {scope.Count} .bnk(s), {counted.Value.All} media entries" +
+                           (loose.Count > 0 ? $" and {loose.Count} sound(s) played from a loose file." : "."));
             msg.AppendLine($"Numbered clips available: {have}  (lowest {lowest}, highest {wems.Max}).");
             msg.AppendLine(perBank
                 ? $"Numbering restarts at {lowest} for each .bnk; the largest .bnk needs {required}."
@@ -241,7 +311,8 @@ public partial class MainWindow
             Only: ids,
             Muted: TestMutedIds(ids),
             Keep: TestKeptNumbers(ids),
-            Required: ids.Count));
+            Required: ids.Count,
+            Loose: TestLooseIds(r => ids.Contains(r.MediaId))));
     }
 
     /// <summary>
@@ -256,15 +327,22 @@ public partial class MainWindow
         if (ids is null) return;
 
         var banks = TestBanksFor(ids);
-        if (banks.Count == 0) { Say("none of those sounds live in a .bnk we can find."); return; }
+        var selectedLoose = TestLooseIds(r => ids.Contains(r.MediaId));
+        if (banks.Count == 0 && selectedLoose.Count == 0) { Say("none of those sounds live in a .bnk or a loose file we can find."); return; }
 
         var others = await Working("Reading the .bnk files", () => TestOthersIn(banks, ids));
         if (others is null) return;
+        // The loose-only sounds of the same banks are silenced as well: they are the same banks' sounds.
+        var stems = banks.Select(Path.GetFileNameWithoutExtension)
+                         .Concat(Sounds.Rows.Where(r => selectedLoose.Contains(r.MediaId)).Select(r => r.Bank))
+                         .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var otherLoose = TestLooseIds(r => stems.Contains(r.Bank) && !ids.Contains(r.MediaId));
+        foreach (var id in otherLoose) others.Add(id);
 
         // Anything the user has muted stays muted, whether or not it was selected.
         foreach (var id in TestMutedIds()) others.Add(id);
 
-        if (!await Ask("Test only the selection",
+        if (TestClipDirForShot is null && !await Ask("Test only the selection",
                 $"Number {ids.Count} selected sound(s) and SILENCE the other {others.Count} " +
                 $"in {banks.Count} .bnk(s)." + Environment.NewLine + Environment.NewLine +
                 "Only what you picked will be audible.",
@@ -283,7 +361,8 @@ public partial class MainWindow
             Only: null,
             Muted: others,
             Keep: TestKeptNumbers(ids),
-            Required: ids.Count));
+            Required: ids.Count,
+            Loose: selectedLoose.Concat(otherLoose).ToList()));
     }
 
     /// <summary>Replaces the selected sounds with silence of the same length and format.</summary>
@@ -295,7 +374,7 @@ public partial class MainWindow
 
         var tested = SelectedRows.Where(r => r.TestNumber is not null)
                                  .Select(r => r.MediaId).Distinct().Count();
-        if (tested > 0 && !await Ask("Already tested",
+        if (tested > 0 && TestClipDirForShot is null && !await Ask("Already tested",
                 $"{tested} of the selected sound(s) carry a test number. Silencing them " +
                 "means you will not hear their number in game any more.",
                 "Silence them", "Cancel"))
@@ -305,14 +384,34 @@ public partial class MainWindow
         }
 
         var banks = TestBanksFor(ids);
-        if (banks.Count == 0) { Say("none of those sounds live in a .bnk we can find."); return; }
+        var loose = TestLooseIds(r => ids.Contains(r.MediaId));
+        if (banks.Count == 0 && loose.Count == 0) { Say("none of those sounds live in a .bnk or a loose file we can find."); return; }
 
-        var outRoot = await PickFolder("Output folder for the silent build");
+        var outRoot = BuildFolderForShot ?? await PickFolder("Output folder for the silent build");
         if (outRoot is null) { Say("no output folder, nothing built."); return; }
 
-        var result = await Working("Building the silent .bnk", () =>
-            SilentBankBuilder.Build(Session, banks, ids, outRoot, Sounds, TestModBase()));
-        if (result is null) return;
+        var work = Path.Combine(Path.GetTempPath(), "XzoundWave", "silent-" + Guid.NewGuid().ToString("N"));
+        (SilentBankBuilder.Result Built, string Pak, string Problem) made;
+        try
+        {
+            made = await Working("Building the silent .bnk", () =>
+            {
+                var r = SilentBankBuilder.Build(Session, banks, ids, work, Sounds, TestModBase(), loose);
+                var (ok, message, pak) = TestPack(work, outRoot, ModBaseName("Silent"));
+                return (r, ok ? pak : null, ok ? null : message);
+            });
+        }
+        finally
+        {
+            try { if (Directory.Exists(work)) Directory.Delete(work, true); }
+            catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        if (made.Built is null) return;
+        if (made.Problem is not null) { Say($"silent build: nothing to pack ({made.Problem})."); return; }
+        var result = made.Built;
+        _lastBuilt.Clear();
+        _lastBuilt.Add(made.Pak);
+        _lastBuiltRoot = outRoot;
 
         // Marked the way the tool has always marked them, so the row says what was done
         // to it. The old window also wrote this into the project file; no project is
@@ -326,9 +425,9 @@ public partial class MainWindow
         }
         Refresh();
 
-        Say($"silent .bnk: {result.Silenced} sound(s) silenced across {result.Banks} .bnk(s) " +
-            (result.NotFound > 0 ? $"({result.NotFound} not embedded there, skipped) " : "") +
-            $"in {outRoot} — legend in silent-bank-legend.csv" +
+        Say($"silent build: {result.Silenced} sound(s) silenced -- {Path.GetFileName(made.Pak)} in {outRoot}, " +
+            (result.NotFound > 0 ? $"{result.NotFound} not found in a bank or a loose file, skipped; " : "") +
+            "copy it into ~mods, or Install to ~mods; legend in silent-bank-legend.csv" +
             (marked > 0 ? $"; {marked} row(s) marked (Mute)." : "."));
     }
 
@@ -544,6 +643,15 @@ public partial class MainWindow
     /// </param>
     private async Task<TestBankBuilder.NumberedWems> TestClips(int required, bool shortfallOk)
     {
+        if (TestClipDirForShot is not null)
+        {
+            // The render harness: its own clip folder, spoken without asking, never put in the settings.
+            Directory.CreateDirectory(TestClipDirForShot);
+            var have = TestBankBuilder.ScanFolder(TestClipDirForShot);
+            if (have.ByNumber.Count < required && NumberSpeech.CanSpeak)
+                await Working("Speaking the numbers", () => NumberSpeech.Generate(TestClipDirForShot, 0, required - 1, _ => { }));
+            return TestBankBuilder.ScanFolder(TestClipDirForShot);
+        }
         if (string.IsNullOrWhiteSpace(Config.TestWemDir) || !Directory.Exists(Config.TestWemDir))
         {
             var dir = await PickFolder("Folder of numbered clips  ({number}.wem, plus an optional silent one)");

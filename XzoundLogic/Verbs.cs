@@ -35,6 +35,17 @@ public static class Verbs
     }
 
     private static string Arg(string[] a, int i) => i < a.Length ? a[i] : null;
+
+    private static int OrganizeVerb(string input, string output, string rules)
+    {
+        var settings = Settings.Load();
+        settings.AutoDetect();
+        var session = new GameSession();
+        session.Mount(settings, _ => { });
+        var r = WemOrganizer.Run(session, input, rules, output, Console.WriteLine);
+        Console.WriteLine(r.Report);
+        return 0;
+    }
     private static bool Flag(string[] a, string name) =>
         a.Any(x => x.Equals(name, StringComparison.OrdinalIgnoreCase));
 
@@ -110,6 +121,10 @@ public static class Verbs
             "carry an old mod's audio onto the game's current banks",
             (a, i) => ModUpdate.Run(a[i + 1], a[i + 2], Flag(a, ModUpdate.KeepWwiseBuiltFlag),
                                     madeFor: After(a, "--made-for"), historyDir: After(a, "--history-dir"))),
+
+        new("--organizewems", 2, "<inputDir> <outDir> [0-WEM-FOLDER-NAME-LIST.txt]",
+            "copy a folder of wems into one folder per mod: by a SoundKit rule list, or by character, skin and bank",
+            (a, i) => OrganizeVerb(a[i + 1], a[i + 2], Arg(a, i + 3) is { } r && !r.StartsWith("--") ? r : null)),
 
         new("--snapshot", 0, "[paksDir] [--history-dir <dir>]",
             "record which sound plays every media id in this version of the game (or the one in paksDir)",

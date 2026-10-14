@@ -28,7 +28,7 @@ public static class SilentBankBuilder
 
     public static Result Build(GameSession session, IEnumerable<string> bankPaths,
                                IReadOnlySet<uint> only, string outRoot, SkinSounds context,
-                               BankBase baseBanks = null)
+                               BankBase baseBanks = null, IReadOnlyCollection<uint> loose = null)
     {
         var log = new StringBuilder();
         var legend = new List<Row>();
@@ -84,6 +84,28 @@ public static class SilentBankBuilder
             banks++;
             log.AppendLine($"{bankName}: {built.Replaced} silenced, " +
                            $"{orig.Length:N0} B -> {built.Bytes.Length:N0} B");
+        }
+
+        // Selected sounds no bank holds: their loose file is silenced instead, at the game's own path.
+        foreach (var id in (loose ?? []).Where(only.Contains).Where(id => !found.Contains(id)).Distinct().OrderBy(x => x))
+        {
+            var src = session.LooseMedia(id, session.Language) ?? session.LooseMedia(id);
+            if (src is null) continue;
+            byte[] wem;
+            try { wem = src.Read(); } catch { log.AppendLine($"loose {id}: could not be read."); continue; }
+            var (rate, channels, seconds) = Describe(wem);
+            var quiet = Silence(rate, channels, seconds);
+            if (quiet is null) { log.AppendLine($"loose {id}: could not be silenced (unreadable header)."); continue; }
+            var dest = Path.Combine(outRoot, src.Path.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.WriteAllBytes(dest, quiet);
+            found.Add(id);
+            var rows = context?.Rows.Where(r => r.MediaId == id).ToList() ?? [];
+            legend.Add(new Row(id, (rows.FirstOrDefault()?.Bank ?? "loose") + " (loose file)",
+                string.Join(" | ", rows.Select(r => r.Display).Distinct()),
+                rows.FirstOrDefault()?.Category ?? "", rows.FirstOrDefault()?.Subtitle ?? "", seconds));
+            silenced++;
+            log.AppendLine($"loose {id}: silenced at {src.Path}.");
         }
 
         Directory.CreateDirectory(outRoot);

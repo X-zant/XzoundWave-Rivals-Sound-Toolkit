@@ -34,6 +34,14 @@ public static class Program
 
         if (args.Any(a => a.Equals("--shot-coldrag", StringComparison.OrdinalIgnoreCase))) return Shot.TakeColumnDrag();
 
+        var tb = Array.FindIndex(args, a => a.Equals("--shot-testbuild", StringComparison.OrdinalIgnoreCase));
+        if (tb >= 0 && args.Length > tb + 1)
+            return Shot.TakeTestBuild(args[tb + 1]);
+
+        var pl = Array.FindIndex(args, a => a.Equals("--shot-paklist", StringComparison.OrdinalIgnoreCase));
+        if (pl >= 0 && args.Length > pl + 4)
+            return Shot.TakePakList(args[pl + 1], args[pl + 2], args[pl + 3], args.Skip(pl + 4).ToList());
+
         var ui = Array.FindIndex(args, a => a.Equals("--shot-ui", StringComparison.OrdinalIgnoreCase));
         if (ui >= 0 && args.Length > ui + 1)
             return Shot.TakeUi(args[ui + 1]);

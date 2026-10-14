@@ -14,6 +14,9 @@ public sealed class Settings
     /// <summary>Build mod writes one mod per character (or per map, menu, music) instead of one in all.</summary>
     public bool SplitModsByGroup { get; set; }
 
+    /// <summary>A SoundKit-style 0-PAK-NAME-LIST.txt that Build mod sorts its output by; empty when none is used.</summary>
+    public string PakNameList { get; set; } = "";
+
     /// <summary>
     /// The game has loaded here before with these settings. Opening the window then loads it
     /// again by itself, in the language last picked, instead of waiting on the Setup tab.

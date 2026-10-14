@@ -61,6 +61,11 @@ public partial class MainWindow
             new("Build mod", () => _ = BuildModAsync(), Key: true,
                 Hint: "Rebuild every .bnk that embeds a staged or muted sound and package the mod for ~mods: " +
                       "a .pak, or, with new voice lines, the .utoc/.ucas/.pak bundle they need."),
+            new(HasPakNameList ? "Pak name list ✓" : "Pak name list…", () => _ = PickPakNameListAsync(),
+                Hint: "Sort Build mod's output by a SoundKit 0-PAK-NAME-LIST.txt: each rule <search>:<folder>:<pakname> " +
+                      "puts the banks whose name contains <search> (and a loose wem by its id, or by the bank that plays it) " +
+                      "into <folder>\\<pakname>.pak. What no rule takes goes where it would anyway. " +
+                      (HasPakNameList ? $"Now: {Config.PakNameList}" : "Off.")),
             new(Config.SplitModsByGroup ? "One .pak per character ✓" : "One .pak per character", ToggleSplit,
                 Hint: "Build mod writes one mod per character (and per map, menu or music for the sounds no character " +
                       "owns), each in a folder of its name, instead of one mod for everything."),
@@ -574,7 +579,7 @@ public partial class MainWindow
         // Only new lines: there is no regular build to make first.
         if (regular.Count == 0 && mutedIds.Count == 0)
         {
-            if (Config.SplitModsByGroup) await PackGroups(outRoot, work, [], "");
+            if (Config.SplitModsByGroup || HasPakNameList) await PackGroups(outRoot, work, [], "");
             else await BuildVoiceLines(outRoot, work, []);
             return;
         }
@@ -679,7 +684,7 @@ public partial class MainWindow
                           ? $"{built.Retimed} clip(s) are not the length their .bnk states, which its timing " +
                             "still describes. " : "") +
                       scopeNote + " Details in build-log.txt.";
-        if (Config.SplitModsByGroup)
+        if (Config.SplitModsByGroup || HasPakNameList)
         {
             await PackGroups(outRoot, work, built.Outputs, summary);
             return;
@@ -750,37 +755,96 @@ public partial class MainWindow
     /// </summary>
     private async Task PackGroups(string outRoot, string work, IReadOnlyCollection<string> outputs, string summary)
     {
+        var split = Config.SplitModsByGroup;
+        var list = ReadPakNameList();
         var sets = VoiceSetsOrNull() ?? [];
-        var lineGroups = _project.VoiceLines
-            .GroupBy(l => sets.FirstOrDefault(s => s.Key == l.Set) is { } set ? HeroGroup(set.HeroId) : "Unknown")
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<VoiceLine>)g.ToList(), StringComparer.OrdinalIgnoreCase);
-        var fileGroups = await Working("sorting the mod into groups", () =>
-            outputs.GroupBy(GroupOf, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase));
+        string LineHero(VoiceLine l) => sets.FirstOrDefault(s => s.Key == l.Set) is { } set ? HeroGroup(set.HeroId) : "Unknown";
+        // A mod is a folder under the output ("" for the output itself) and a pak name.
+        (string Folder, string Base) Home(string group) => split ? (group, ModBaseName(group)) : ("", ModBaseName());
+        var lineHeroes = _project.VoiceLines.Select(LineHero).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var lineGroups = _project.VoiceLines.GroupBy(l => Home(LineHero(l)))
+                                 .ToDictionary(g => g.Key, g => (IReadOnlyList<VoiceLine>)g.ToList());
+        var placedByList = 0;
+        var fileGroups = await Working("sorting the mod into groups", () => outputs.GroupBy(rel =>
+        {
+            var group = GroupOf(rel);
+            // A character with new voice lines keeps its banks in its bundle: the bundle writes
+            // that character's voice bank too, and a bank in two mods is one of them lost.
+            if (lineHeroes.Contains(group)) return Home(group);
+            if (list?.Match(rel, id => Session.PlayingBank(id)) is { } rule) { Interlocked.Increment(ref placedByList); return (Folder: rule.Folder, Base: rule.PakName); }
+            return Home(group);
+        }).ToDictionary(g => g.Key, g => g.ToList()));
         if (fileGroups is null) return;   // Working has already said why
 
         var made = new List<string>();
-        foreach (var group in fileGroups.Keys.Union(lineGroups.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(g => g, StringComparer.OrdinalIgnoreCase))
+        foreach (var key in fileGroups.Keys.Union(lineGroups.Keys).OrderBy(k => k.Folder, StringComparer.OrdinalIgnoreCase)
+                                     .ThenBy(k => k.Base, StringComparer.OrdinalIgnoreCase))
         {
-            var files = fileGroups.GetValueOrDefault(group) ?? [];
-            var outputBase = Path.Combine(outRoot, group, ModBaseName(group));
-            if (lineGroups.TryGetValue(group, out var lines))
+            var files = fileGroups.GetValueOrDefault(key) ?? [];
+            var outputBase = Path.Combine(outRoot, key.Folder, key.Base);
+            var shown = key.Folder.Length == 0 ? key.Base : $"{key.Folder}/{key.Base}";
+            if (lineGroups.TryGetValue(key, out var lines))
             {
                 if (!await BuildVoiceLines(outRoot, work, files, lines, outputBase)) return;
-                made.Add($"{group}/{Path.GetFileName(outputBase)}.utoc/.ucas/.pak");
+                made.Add($"{shown}.utoc/.ucas/.pak");
                 continue;
             }
-            var packed = await Working($"packing {group}", () =>
+            var packed = await Working($"packing {shown}", () =>
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(outputBase)!);
                 var r = ModPackager.PackagePak(work, files, outputBase);
                 if (r.Ok) foreach (var e in new[] { ".utoc", ".ucas" }) if (File.Exists(outputBase + e)) File.Delete(outputBase + e);
                 return r;
             });
-            if (!packed.Ok) { if (packed.Message is not null) Say($"could not pack {group}: {packed.Message}"); return; }
+            if (!packed.Ok) { if (packed.Message is not null) Say($"could not pack {shown}: {packed.Message}"); return; }
             _lastBuilt.Add(outputBase + ".pak");
-            made.Add($"{group}/{Path.GetFileName(outputBase)}.pak");
+            made.Add($"{shown}.pak");
         }
-        Say($"built {made.Count} mod(s) in {outRoot}: {string.Join(", ", made)} -- copy them into ~mods, or Install to ~mods. " + summary);
+        Say($"built {made.Count} mod(s) in {outRoot}: {string.Join(", ", made)}" +
+            (list is null ? "" : $" ({placedByList} file(s) placed by {Path.GetFileName(list.Path)}" +
+                                 (list.Skipped.Count > 0 ? $", {list.Skipped.Count} of its line(s) skipped as malformed" : "") + ")") +
+            " -- copy them into ~mods, or Install to ~mods. " + summary);
+    }
+
+    private bool HasPakNameList => !string.IsNullOrWhiteSpace(PakNameListPath);
+
+    /// <summary>The list in use: the render harness's own, or the one in the settings.</summary>
+    private string PakNameListPath => PakNameListForShot ?? Config.PakNameList;
+
+    /// <summary>The render harness's pak name list, which never reaches the settings file.</summary>
+    internal string PakNameListForShot;
+
+    /// <summary>The pak name list Build mod sorts by, or null when none is set or it cannot be read (said once).</summary>
+    private PakNameList ReadPakNameList()
+    {
+        if (!HasPakNameList) return null;
+        try { return PakNameList.Read(PakNameListPath); }
+        catch (Exception ex) { Say($"the pak name list could not be read ({ex.Message}); building without it."); return null; }
+    }
+
+    /// <summary>Pick a SoundKit 0-PAK-NAME-LIST.txt for Build mod to sort by, or stop using the one set.</summary>
+    private async Task PickPakNameListAsync()
+    {
+        if (HasPakNameList &&
+            await Ask("Pak name list", $"Build mod sorts its output by {Config.PakNameList}.", "Stop using it", "Pick another"))
+        {
+            Config.PakNameList = "";
+            Config.Save();
+            ShowToolbar();
+            Say("Build mod no longer uses a pak name list.");
+            return;
+        }
+        var file = await PickFile("A SoundKit 0-PAK-NAME-LIST.txt", "Pak name list", "*.txt");
+        if (file is null) return;
+        PakNameList list;
+        try { list = PakNameList.Read(file); }
+        catch (Exception ex) { Say($"could not read {Path.GetFileName(file)}: {ex.Message}"); return; }
+        if (list.Rules.Count == 0) { Say($"{Path.GetFileName(file)} has no rules (<search>:<folder>:<pakname>)."); return; }
+        Config.PakNameList = file;
+        Config.Save();
+        ShowToolbar();
+        Say($"Build mod now sorts its output by {Path.GetFileName(file)}: {list.Rules.Count} rule(s)" +
+            (list.Skipped.Count > 0 ? $", {list.Skipped.Count} line(s) skipped as malformed" : "") + ".");
     }
 
     private void ToggleSplit()
