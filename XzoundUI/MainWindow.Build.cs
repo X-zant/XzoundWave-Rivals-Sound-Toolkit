@@ -1048,6 +1048,7 @@ public partial class MainWindow
         // An empty box is how a hand-set level is given back: the sound follows the bulk
         // level again, which is what the old window's separate "clear" did.
         foreach (var r in rows) { r.Volume = gain; r.VolumeByHand = gain is not null; }
+        RowStateChanged(rows);
         BuildRedraw();
         Say(gain is null
             ? $"{rows.Count} sound(s) back to following the bulk level ({_bulkVolume:0.0##}x)."
@@ -1073,16 +1074,20 @@ public partial class MainWindow
         if (!applied) return;
 
         _bulkVolume = gain ?? 1.0;
-        var moved = 0;
+        var moved = new List<SoundRow>();
         foreach (var r in Sounds.Rows.Where(r => !r.VolumeByHand))
         {
             // Null rather than 1.0 at the neutral level, so the row goes back to
             // following the bulk setting instead of pinning itself to it.
             r.Volume = Math.Abs(_bulkVolume - 1.0) < 0.001 ? null : _bulkVolume;
-            moved++;
+            moved.Add(r);
         }
+        // The level itself is the project's too, so a reopened project builds at it.
+        _project.BulkVolume = _bulkVolume;
+        _project.Touch();
+        RowStateChanged(moved);
         BuildRedraw();
-        Say($"{moved} sound(s) now at {_bulkVolume:0.0##}x" +
+        Say($"{moved.Count} sound(s) now at {_bulkVolume:0.0##}x" +
             (byHand > 0 ? $"; {byHand} hand-set left alone" : "") + ".");
     }
 

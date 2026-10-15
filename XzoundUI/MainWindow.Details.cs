@@ -1951,8 +1951,7 @@ public partial class MainWindow
     /// </summary>
     private string CannotReach(SoundRow member)
     {
-        var hidden = (IEnumerable<string>)_settings.HiddenRowClasses ?? RowClasses.HiddenByDefault;
-        var by = RowClasses.HidingKinds(member, hidden)
+        var by = RowClasses.HidingKinds(member, HiddenRowKinds)
                            .Select(c => c.Label).Distinct()
                            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
         return $"media {member.MediaId} is not in the list as it is filtered now, so this " +

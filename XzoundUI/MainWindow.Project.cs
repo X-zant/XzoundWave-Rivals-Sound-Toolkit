@@ -6,11 +6,11 @@ using Avalonia.Controls.Primitives;
 namespace MRAudioKit.UI;
 
 /// <summary>
-/// The project: what is staged, and the new voice lines, saved as one .xzw file -- the same
-/// format and the same rules the WPF window used (paths stored relative to the project and
-/// with forward slashes, a dirty flag, an offer to save before anything replaces it). The
-/// window lost this in the port; new voice lines need it, because a line's VoiceID is
-/// allocated once and has to survive a restart.
+/// The project: what is staged, the new voice lines, and each sound's note, mute, level and
+/// test number, saved as one .xzw file -- the same format and the same rules the WPF window
+/// used (paths stored relative to the project and with forward slashes, a dirty flag, an
+/// offer to save before anything replaces it). The window lost this in the port; new voice
+/// lines need it, because a line's VoiceID is allocated once and has to survive a restart.
 ///
 /// Also here: the "New lines" node, which lists every new voice line as a row so that its
 /// audio is staged exactly the way any sound's is, keyed by the line's own media id.
@@ -221,9 +221,104 @@ public partial class MainWindow
         return moved;
     }
 
+    // ---- a sound's own state: its note, mute, level and test number ---------------------
+
+    /// <summary>
+    /// These sounds' note, mute, level or test number changed: into the project, so a save
+    /// keeps them. The old window did this from every place that changed a row; the port had
+    /// lost it, so every one of them came back blank after a restart.
+    ///
+    /// The state belongs to the media, not to the row. The project holds one record per media
+    /// id (with the event and bank beside it, which is what lets it follow the sound to a new id
+    /// after a game update), and a build mutes or levels a media id, not an event. One clip is
+    /// often played by several events, so several rows share an id; a change to one is copied
+    /// onto every row of that id the session has read, and only then written once. Written row
+    /// by row instead, whichever sibling came last decided the record, and an untouched sibling
+    /// with no note could wipe a note typed a moment before.
+    /// </summary>
+    private void RowStateChanged(IEnumerable<SoundRow> rows)
+    {
+        var changed = rows.GroupBy(r => r.MediaId).Select(g => g.Last()).ToList();
+        if (changed.Count == 0) return;
+        var ids = changed.Select(r => r.MediaId).ToHashSet();
+        var siblings = KnownRows().Where(r => ids.Contains(r.MediaId)).GroupBy(r => r.MediaId)
+                                  .ToDictionary(g => g.Key, g => g.ToList());
+        foreach (var source in changed)
+        {
+            foreach (var r in siblings.GetValueOrDefault(source.MediaId) ?? [])
+                if (!ReferenceEquals(r, source)) CopyState(source, r);
+            _project.SetNote(source);
+        }
+        RefreshProjectLabel();
+    }
+
+    private static void CopyState(SoundRow from, SoundRow to)
+    {
+        to.Notes = from.Notes;
+        to.ExtraNotes = from.ExtraNotes;
+        to.Tags = [.. from.Tags ?? []];
+        to.TestNumber = from.TestNumber;
+        to.Muted = from.Muted;
+        to.Volume = from.Volume;
+        to.VolumeByHand = from.VolumeByHand;
+    }
+
+    /// <summary>
+    /// Every row this session has read: each skin's, each loaded mod's, and the ones on screen
+    /// (a new voice line's row is made fresh for the screen). Rows outlive a project, so this is
+    /// what a project change has to clear and what a change to one row's media has to reach.
+    /// </summary>
+    private IEnumerable<SoundRow> KnownRows() =>
+        _skinCache.Values.SelectMany(s => s.Rows)
+                  .Concat(_mods.All.SelectMany(e => e.Sounds?.Rows ?? []))
+                  .Concat(_sounds?.Rows ?? [])
+                  .Distinct();
+
+    /// <summary>
+    /// The project's notes, mutes, levels and test numbers onto rows just put on screen; how
+    /// many records moved to a new media id, for the caller to say. Runs every time a selection
+    /// is shown, because a mod's rows and a new line's are only met when they are listed, and a
+    /// record can only follow its sound to a new id once that sound's row is listed.
+    ///
+    /// A record moves only when the game no longer has its media at all: a mod's bank playing
+    /// an event from another id than the game's copy is not a game update, and the record still
+    /// belongs to the game's id.
+    /// </summary>
+    private int ApplyProjectToRows(IReadOnlyList<SoundRow> rows)
+    {
+        var session = _session;
+        var relinked = _project.ApplyNotes(rows, gone: id =>
+            session?.Provider is not null && !session.MediaBank.ContainsKey(id) && session.LooseMedia(id) is null);
+        if (relinked > 0) RefreshProjectLabel();
+        return relinked;
+    }
+
+    private static string RelinkedNote(int relinked) => relinked == 0 ? "" :
+        $" {relinked} note(s) followed their sound to a new media id after a game update; save the project to keep it.";
+
+    /// <summary>
+    /// Every row read this session back to having no note, mute, level or test number, before
+    /// another project's are put on them. Rows outlive a project (they are kept per skin and per
+    /// loaded mod), so without this a New or an Open would inherit the last project's mutes.
+    /// </summary>
+    private void ClearRowState()
+    {
+        foreach (var r in KnownRows())
+        {
+            r.Notes = "";
+            r.ExtraNotes = "";
+            r.Tags = [];
+            r.TestNumber = null;
+            r.Muted = false;
+            r.Volume = null;
+            r.VolumeByHand = false;
+        }
+    }
+
     /// <summary>The window's state into the project, just before it is written.</summary>
     private void CaptureIntoProject()
     {
+        _project.BulkVolume = _bulkVolume;
         var first = _picked.FirstOrDefault(n => n.Skin is not null);
         _project.Character = first?.CharId ?? _project.Character;
         _project.Skin = first?.Skin?.SkinId ?? _project.Skin;
@@ -355,6 +450,8 @@ public partial class MainWindow
         if (!await ConfirmDiscard()) return;
         _project = Project.New();
         _pending.Clear();
+        ClearRowState();
+        _bulkVolume = 1.0;
         MarkStagedRows();
         BuildRedraw();
         RefreshNewLinesNode();
@@ -383,13 +480,24 @@ public partial class MainWindow
         }
         if (RemembersLayout) _settings.NoteRecentProject(path);
         _settings.Save();
+        // The last project's notes, mutes and levels off every row, and this one's level back.
+        ClearRowState();
+        _bulkVolume = _project.BulkVolume;
         // Before the files are read: from here on the window edits the project being opened.
         _voiceLinesWindow?.ProjectReplaced();
         await RestoreFromProject();
         _voiceLinesWindow?.ProjectReplaced();
+        // After the restore, which marks the project clean: a note relinked to a new media id
+        // here leaves it unsaved, and says so.
+        var relinked = _sounds is null ? 0 : ApplyProjectToRows(_sounds.Rows);
+        BuildRedraw();
         if (announce)
             Say($"opened \"{_project.Name}\": {_project.Replacements.Count} staged file(s), " +
-                $"{_project.VoiceLines.Count} new voice line(s).");
+                $"{_project.VoiceLines.Count} new voice line(s), " +
+                $"{_project.Notes.Count(n => !n.IsEmpty)} sound(s) with a note, mute, level or test number." +
+                RelinkedNote(relinked));
+        else if (relinked > 0)
+            Say(RelinkedNote(relinked).Trim());
     }
 
     /// <summary>
@@ -410,6 +518,12 @@ public partial class MainWindow
 
     /// <summary>The render harness: a project opened from a file, as Open… does.</summary>
     internal Task OpenProjectForShot(string path) => OpenProject(path, announce: false);
+
+    /// <summary>The render harness: New, as the project menu does it.</summary>
+    internal Task NewProjectForShot() => NewProject();
+
+    /// <summary>The render harness: a row's level set the way Set volume… sets it, without its dialog.</summary>
+    internal void RowStateChangedForShot(IEnumerable<SoundRow> rows) => RowStateChanged(rows);
 
     /// <summary>The render harness: the project saved to a file, as Save as… would.</summary>
     internal async Task SaveProjectForShot(string path)

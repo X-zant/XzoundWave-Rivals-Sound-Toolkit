@@ -105,7 +105,8 @@ public partial class SettingsWindow : Window
         // what lets a first run start with the unnamed events already out of the way.
         var hidden = _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault];
 
-        foreach (var cls in RowClasses.All)
+        // Not the kinds about tags, which the window cannot set for now (RowClasses.Withheld).
+        foreach (var cls in RowClasses.Offered)
         {
             var box = new CheckBox
             {
@@ -153,7 +154,9 @@ public partial class SettingsWindow : Window
     /// back, because the name they stored no longer matches anything. The window carries
     /// a renames table that rewrites the old name when settings are loaded, and the rule
     /// is that renaming a header here means adding a pair to it. The headers as they
-    /// stand are Mod, .bnk, Event, Media ID, Category, Subtitle / line and Tags.
+    /// stand are Mod, .bnk, Event, Media ID, Category, Subtitle / line, Test #, Vol, Notes
+    /// and Len. Tags was one until it was withdrawn for the community database; its entry is
+    /// left alone like any other absent column's.
     ///
     /// An entry naming a column that no longer exists is left alone rather than tidied
     /// away: an absent column can be neither shown nor hidden, and dropping the entry
@@ -629,7 +632,7 @@ public partial class SettingsWindow : Window
 
     private void RefreshSummary()
     {
-        var rows = (_settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault])
+        var rows = RowClasses.InForce(_settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault])
             .Select(RowClasses.Find).Where(c => c is not null).ToList();
         var cols = _settings.HiddenColumns ?? [];
         Summary.Text = rows.Count == 0 && cols.Count == 0

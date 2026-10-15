@@ -555,6 +555,200 @@ public static class Shot
         return 0;
     }
 
+    /// <summary>
+    /// XzoundWave --shot-notes &lt;dir&gt;: a note typed into the Notes cell the way a person types
+    /// one, a mute from the row menu and a level set by hand, saved with the project; then New,
+    /// which must clear them off the rows, and Open, which must put every one back.
+    ///
+    /// Saves a project into &lt;dir&gt;, and the window writes its settings as a save does, so run
+    /// it under a settings folder of its own (on Linux, HOME pointed at a scratch folder).
+    /// </summary>
+    public static int TakeNotes(string dir)
+    {
+        try
+        {
+            AppBuilder.Configure<App>().UseBundledFonts().UseSkia()
+                      .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
+            Directory.CreateDirectory(dir);
+            var main = new MainWindow { Width = 1440, Height = 840 };
+            main.Show();
+            main.LoadGameSync();
+            void Pump(Task t = null)
+            {
+                while (t is { IsCompleted: false }) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); }
+                for (var i = 0; i < 5; i++) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+            }
+            Pump();
+            main.ShowSkinSync("1030001", "vo");
+            Pump();
+            var rows = main.SoundsForShot.Rows;
+            var (noted, muted, levelled) = (rows[0], rows[1], rows[2]);
+            Console.WriteLine($"rows {rows.Count}; note on {noted.MediaId}, mute on {muted.MediaId}, level on {levelled.MediaId}");
+
+            var failures = 0;
+            void Check(string what, bool ok, string detail = "")
+            {
+                Console.WriteLine($"  {(ok ? "ok  " : "FAIL")}  {what}{(detail.Length > 0 ? "   " + detail : "")}");
+                if (!ok) failures++;
+            }
+
+            // Typed into the cell: select the row, begin the edit, type, commit -- the path a
+            // click and the keyboard take, ending in CellEditEnded.
+            var grid = main.FindControl<DataGrid>("Grid_");
+            var notes = grid.Columns.First(c => c.Header?.ToString() == "Notes");
+            grid.SelectedItem = noted;
+            grid.ScrollIntoView(noted, notes);
+            grid.CurrentColumn = notes;
+            Pump();
+            var began = grid.BeginEdit();
+            Pump();
+            var box = grid.GetVisualDescendants().OfType<TextBox>().FirstOrDefault();
+            Check("the Notes cell opens for typing", began && box is not null);
+            if (box is not null) box.Text = "too loud, drop 3 dB";
+            grid.CommitEdit();
+            Pump();
+            Check("the typed note is on the row", noted.Notes == "too loud, drop 3 dB", $"\"{noted.Notes}\"");
+            Check("and in the project", main.CurrentProject.FindNote(noted.MediaId)?.Notes == "too loud, drop 3 dB");
+
+            main.SelectMediaForShot(muted.MediaId);
+            main.MuteForShot();
+            levelled.Volume = 0.5;
+            levelled.VolumeByHand = true;
+            main.RowStateChangedForShot([levelled]);
+            Check("the mute and the level are in the project",
+                  main.CurrentProject.FindNote(muted.MediaId)?.Muted == true &&
+                  main.CurrentProject.FindNote(levelled.MediaId)?.Volume == 0.5);
+
+            var path = Path.Combine(dir, "notes-check" + Project.Extension);
+            Pump(main.SaveProjectForShot(path));
+            var saved = Project.Load(path);
+            Check("the saved file holds all three", saved.Notes.Count(n => !n.IsEmpty) == 3,
+                  string.Join("; ", saved.Notes.Select(n => $"{n.MediaId}: \"{n.Notes}\" muted={n.Muted} vol={n.Volume}")));
+
+            Pump(main.NewProjectForShot());
+            Check("New clears them off the rows",
+                  noted.Notes == "" && !muted.Muted && levelled.Volume is null && !levelled.VolumeByHand);
+
+            Pump(main.OpenProjectForShot(path));
+            Check("Open puts the note back", noted.Notes == "too loud, drop 3 dB", $"\"{noted.Notes}\"");
+            Check("Open puts the mute back", muted.Muted);
+            Check("Open puts the level back, as set by hand", levelled.Volume == 0.5 && levelled.VolumeByHand);
+            Check("and the project opens clean", !main.CurrentProject.IsDirty);
+
+            // Opening the cell and leaving it is a commit with nothing changed: not an edit.
+            grid.SelectedItem = noted;
+            grid.CurrentColumn = notes;
+            Pump();
+            grid.BeginEdit();
+            Pump();
+            grid.CommitEdit();
+            Pump();
+            Check("opening a note and leaving it unchanged leaves the project clean", !main.CurrentProject.IsDirty);
+
+            // One clip played by several events: the state is the clip's, so a change on one row
+            // reaches every row of it, and a later change on a sibling keeps what the first set.
+            main.ShowSkinSync("1030001");
+            Pump();
+            var shared = main.SoundsForShot.Rows.GroupBy(r => r.MediaId).FirstOrDefault(g => g.Count() > 1)?.ToList();
+            if (shared is null) Console.WriteLine("  --    no clip in this skin is played by two events; sharing not checked");
+            else
+            {
+                var (a, b) = (shared[0], shared[1]);
+                a.Notes = "shared clip";
+                main.RowStateChangedForShot([a]);
+                Check("a note on one row of a shared clip shows on its sibling", b.Notes == "shared clip",
+                      $"{a.MediaId}: {a.Display} / {b.Display}");
+                main.SelectMediaForShot(b.MediaId);
+                main.MuteForShot();
+                var rec = main.CurrentProject.FindNote(a.MediaId);
+                Check("muting the sibling keeps the note", rec?.Notes == "shared clip" && rec.Muted && a.Muted,
+                      $"note \"{rec?.Notes}\", muted {rec?.Muted}");
+            }
+
+            Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
+            return failures == 0 ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("could not run the notes check: " + ex);
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// XzoundWave --shot-colpersist: a column dragged narrower in the real window (one that
+    /// remembers its layout), the window closed, a new one opened -- at the width it was left.
+    ///
+    /// Writes column widths into the settings, so it refuses to run where the app has been set
+    /// up; on Linux, point HOME at an empty scratch folder.
+    /// </summary>
+    public static int TakeColumnPersist()
+    {
+        // Any settings at all, the pre-rename MRAudioKit ones included: loading those migrates
+        // them, key and all, into a real XzoundWave settings file that this would then write into.
+        var settingsFile = new[] { Settings.AppDataDir, Path.Combine(Settings.UserConfigRoot, "MRAudioKit") }
+            .Select(d => Path.Combine(d, "settings.json")).FirstOrDefault(File.Exists);
+        if (settingsFile is not null)
+        {
+            Console.Error.WriteLine($"refusing: {settingsFile} exists, and this writes column widths into the settings.");
+            return 2;
+        }
+        try
+        {
+            AppBuilder.Configure<App>().UseBundledFonts().UseSkia()
+                      .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
+            void Pump() { for (var i = 0; i < 20; i++) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); } }
+            var failures = 0;
+            void Check(string what, bool ok, string detail = "")
+            {
+                Console.WriteLine($"  {(ok ? "ok  " : "FAIL")}  {what}{(detail.Length > 0 ? "   " + detail : "")}");
+                if (!ok) failures++;
+            }
+
+            var first = new MainWindow { Width = 1440, Height = 840, RemembersLayout = true };
+            first.Show();
+            Pump();
+            var grid = first.FindControl<DataGrid>("Grid_");
+            var col = grid.Columns.First(c => c.Header?.ToString() == "Event");
+            var header = first.GetVisualDescendants().OfType<DataGridColumnHeader>().First(h => h.IsVisible && h.Content?.ToString() == "Event");
+            var edge = header.TranslatePoint(new Point(header.Bounds.Width - 2, header.Bounds.Height / 2), first) ?? default;
+            var before = col.ActualWidth;
+            first.MouseMove(edge);
+            first.MouseDown(edge, MouseButton.Left);
+            for (var d = -5; d >= -90; d -= 5) { first.MouseMove(edge + new Point(d, 0), RawInputModifiers.LeftMouseButton); Dispatcher.UIThread.RunJobs(); }
+            first.MouseUp(edge + new Point(-90, 0), MouseButton.Left);
+            Pump();
+            var dragged = col.ActualWidth;
+            Check("dragging the Event header's edge narrows the column", dragged < before - 50, $"{before:0} -> {dragged:0}");
+
+            // A column cannot be dragged narrower than what it has to show.
+            var media = grid.Columns.First(c => c.Header?.ToString() == "Media ID");
+            Check("a column keeps its floor", media.ActualWidth >= media.MinWidth, $"{media.ActualWidth:0} >= {media.MinWidth:0}");
+
+            first.Close();
+            Pump();
+            var stored = Settings.Load().ColumnWidths;
+            Check("closing stores the dragged width", stored is not null && stored.TryGetValue("Event", out var w) && Math.Abs(w - dragged) < 1.5,
+                  stored is null ? "nothing stored" : $"Event stored as {stored.GetValueOrDefault("Event"):0}");
+
+            var second = new MainWindow { Width = 1440, Height = 840, RemembersLayout = true };
+            second.Show();
+            Pump();
+            var again = second.FindControl<DataGrid>("Grid_").Columns.First(c => c.Header?.ToString() == "Event").ActualWidth;
+            Check("the next window opens at that width", Math.Abs(again - dragged) < 1.5, $"{again:0} vs {dragged:0}");
+            second.Close();
+            Pump();
+
+            Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
+            return failures == 0 ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("could not run the column check: " + ex);
+            return 1;
+        }
+    }
+
     /// <summary>XzoundWave --shot-recompress &lt;out&gt; &lt;input&gt;...: "Recompress…" through its own path.</summary>
     public static int TakeRecompress(string outDir, IReadOnlyList<string> inputs)
     {

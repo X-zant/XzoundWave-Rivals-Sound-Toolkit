@@ -64,9 +64,7 @@ public static class LiveTranslate
         _ => "nowhere",
     };
 
-    private static readonly string CachePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "XzoundWave", "translations.json");
+    private static readonly string CachePath = Path.Combine(Settings.AppDataDir, "translations.json");
 
     private static Dictionary<string, string> _cache;
 

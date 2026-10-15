@@ -32,8 +32,7 @@ public static class Cedict
         yield return Path.Combine(Settings.AppDataDir, FileName);
         yield return Path.Combine(Settings.AppDataDir, FileName + ".gz");
         // A copy downloaded before the tool was renamed is still perfectly good.
-        var legacy = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MRAudioKit");
+        var legacy = Path.Combine(Settings.UserConfigRoot, "MRAudioKit");
         yield return Path.Combine(legacy, FileName);
         yield return Path.Combine(legacy, FileName + ".gz");
     }

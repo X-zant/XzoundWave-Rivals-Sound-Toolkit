@@ -33,6 +33,11 @@ public static class Program
             return UiSelfTest.Run();
 
         if (args.Any(a => a.Equals("--shot-coldrag", StringComparison.OrdinalIgnoreCase))) return Shot.TakeColumnDrag();
+        if (args.Any(a => a.Equals("--shot-colpersist", StringComparison.OrdinalIgnoreCase))) return Shot.TakeColumnPersist();
+
+        var nt = Array.FindIndex(args, a => a.Equals("--shot-notes", StringComparison.OrdinalIgnoreCase));
+        if (nt >= 0 && args.Length > nt + 1)
+            return Shot.TakeNotes(args[nt + 1]);
 
         var tb = Array.FindIndex(args, a => a.Equals("--shot-testbuild", StringComparison.OrdinalIgnoreCase));
         if (tb >= 0 && args.Length > tb + 1)

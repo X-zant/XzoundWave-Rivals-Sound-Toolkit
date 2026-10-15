@@ -145,7 +145,7 @@ public partial class MainWindow
         if (plan.Keep?.Count > 0)
             also.Add($"{plan.Keep.Count} kept the number they already had, so earlier notes still match");
         if (tagged > 0)
-            also.Add($"{tagged} sound(s) carry their number for this session");
+            also.Add($"{tagged} sound(s) carry their number in the Test # column, kept in the project");
 
         Say($"{plan.What}: {result.Numbered} numbered, {result.Silenced} silenced, " +
             (result.Unassigned > 0 ? $"{result.Unassigned} left as shipped, " : "") +
@@ -414,21 +414,21 @@ public partial class MainWindow
         _lastBuiltRoot = outRoot;
 
         // Marked the way the tool has always marked them, so the row says what was done
-        // to it. The old window also wrote this into the project file; no project is
-        // wired into this window yet, so the mark lives on the row for this session.
-        var marked = 0;
+        // to it, in its Notes, and kept in the project like any note.
+        var marked = new List<SoundRow>();
         foreach (var row in Sounds.Rows.Where(x => ids.Contains(x.MediaId)))
         {
             if ((row.Notes ?? "").Contains("(Mute)", StringComparison.OrdinalIgnoreCase)) continue;
             row.Notes = string.IsNullOrWhiteSpace(row.Notes) ? "(Mute)" : row.Notes + " (Mute)";
-            marked++;
+            marked.Add(row);
         }
+        RowStateChanged(marked);
         Refresh();
 
         Say($"silent build: {result.Silenced} sound(s) silenced -- {Path.GetFileName(made.Pak)} in {outRoot}, " +
             (result.NotFound > 0 ? $"{result.NotFound} not found in a bank or a loose file, skipped; " : "") +
             "copy it into ~mods, or Install to ~mods; legend in silent-bank-legend.csv" +
-            (marked > 0 ? $"; {marked} row(s) marked (Mute)." : "."));
+            (marked.Count > 0 ? $"; {marked.Count} row(s) marked (Mute)." : "."));
     }
 
     // ---- the parts all four share -------------------------------------------
@@ -608,24 +608,15 @@ public partial class MainWindow
 
     /// <summary>
     /// Write each assigned number back onto its sound, so hearing "42" in game leads to
-    /// the row it came from.
-    ///
-    /// The old window also recorded these in the project file, which is what let them
-    /// survive closing the app. No project is wired into this window yet, so they live
-    /// on the rows for as long as the session does; the legend .csv is the copy that
-    /// outlasts it, and the status line says as much.
+    /// the row it came from, and into the project, so the numbers survive closing the app
+    /// as they did in the old window. Existing notes are left alone; only the number is
+    /// written (Project.RecordTestNumbers).
     /// </summary>
     private int TestNumbersOnto(IEnumerable<TestBankBuilder.Row> legend)
     {
         if (Sounds is null) return 0;
-        var byId = Sounds.Rows.GroupBy(r => r.MediaId).ToDictionary(g => g.Key, g => g.ToList());
-        var n = 0;
-        foreach (var entry in legend)
-        {
-            if (!byId.TryGetValue(entry.MediaId, out var matches)) continue;
-            foreach (var row in matches) row.TestNumber = entry.Number;
-            n++;
-        }
+        var n = _project.RecordTestNumbers(legend.Select(e => (e.Number, e.MediaId)), Sounds.Rows);
+        RefreshProjectLabel();
         return n;
     }
 

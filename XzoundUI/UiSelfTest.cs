@@ -85,10 +85,16 @@ public static class UiSelfTest
         // made this test pass or fail depending on which columns whoever ran it had
         // switched off, which is a test of the tester.
         var offered = grid.Columns.Select(c => c.Header?.ToString()).ToList();
-        Check("the list offers the mockup's seven columns, plus Len for measured durations",
+        Check("the list offers the mockup's columns, test number, level and notes, plus Len for measured durations",
               offered.SequenceEqual(new[]
-              { "Mod", ".bnk", "Event", "Media ID", "Category", "Subtitle / line", "Tags", "Len" }),
+              { "Mod", ".bnk", "Event", "Media ID", "Category", "Subtitle / line", "Test #", "Vol", "Notes", "Len" }),
               string.Join(" | ", offered));
+
+        // Notes is typed into; everything else is the game's, or the tool's, and an edit there
+        // would write into a row nothing reads back.
+        var editable = grid.Columns.Where(c => !c.IsReadOnly).Select(c => c.Header?.ToString()).ToList();
+        Check("Notes is the one column you can type in", editable.SequenceEqual(new[] { "Notes" }),
+              string.Join(" | ", editable));
 
         var hidden = offered.Where(h =>
             !grid.Columns.First(c => c.Header?.ToString() == h).IsVisible).ToList();

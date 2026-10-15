@@ -79,7 +79,19 @@ public partial class MainWindow : Window
         // game shipped needs its own way in.
         Grid_.DoubleTapped += (_, _) =>
         {
+            // A double-click in the Notes cell is someone opening it to type, not asking to
+            // hear the sound again.
+            if (Grid_.CurrentColumn?.Header?.ToString() == NotesColumn) return;
             if (CurrentRow is not null) PlayRow(CurrentRow, original: false);
+        };
+        Grid_.CellEditEnded += (_, e) =>
+        {
+            if (e.EditAction != DataGridEditAction.Commit || e.Row?.DataContext is not SoundRow row) return;
+            if (e.Column?.Header?.ToString() != NotesColumn) return;
+            // Opening the cell and leaving it is a commit too; only a different note is a change.
+            if ((_project.FindNote(row.MediaId)?.Notes ?? "") == (row.Notes ?? "")) return;
+            RowStateChanged([row]);
+            Say($"note saved on {row.MediaId}, in the project \"{_project.Name}\". Save the project to keep it.");
         };
         Grid_.ContextFlyout = RowMenu();
         BtnColumns.Click += (_, _) => ShowColumnMenu();
@@ -221,13 +233,19 @@ public partial class MainWindow : Window
         // nothing at all -- and no column could be dragged wider, there being nowhere to take
         // the room from. Fixed widths scroll sideways instead, which is what the window this was
         // ported from did: its list carried 1,781px of columns in 592px and had always scrolled.
-        void Add(string header, string path, int width, int floor)
+        // Only Notes is editable: the grid is not read-only so that it can be, and every other
+        // column says so itself.
+        // A column showing a label for a number sorts by the number (sortBy), or "#10" comes
+        // before "#2" and "10.0x" before "2.0x" (SortingSelfTest).
+        void Add(string header, string path, int width, int floor, bool editable = false, string sortBy = null)
             => Grid_.Columns.Add(new DataGridTextColumn
             {
                 Header = header,
-                Binding = new Binding(path),
+                Binding = new Binding(path) { Mode = editable ? BindingMode.TwoWay : BindingMode.OneWay },
                 Width = new DataGridLength(width),
                 MinWidth = floor,
+                IsReadOnly = !editable,
+                SortMemberPath = sortBy,
             });
 
         Add("Mod", nameof(SoundRow.Mod), 80, 50);
@@ -237,13 +255,24 @@ public partial class MainWindow : Window
         Add("Media ID", nameof(SoundRow.MediaId), 110, 100);
         Add("Category", nameof(SoundRow.CategoryShown), 150, 70);
         Add("Subtitle / line", nameof(SoundRow.Subtitle), 420, 120);
-        Add("Tags", nameof(SoundRow.TagLabel), 120, 50);
+
+        // What a test build numbered this sound, so hearing "42" in game leads back to its row;
+        // and a level set on it, starred when set by hand. Both are kept in the project.
+        // Floored at its header, which is wider than any number it shows: about 76 px in
+        // Segoe UI and 80 in Inter, the Linux window's font.
+        Add(TestColumn, nameof(SoundRow.TestLabel), 90, 90, sortBy: nameof(SoundRow.TestNumber));
+        Add(VolColumn, nameof(SoundRow.VolumeLabel), 60, 45, sortBy: nameof(SoundRow.Volume));
+
+        // Your own words about the sound, typed straight into the cell and kept in the project
+        // (Grid_CellEditEnded). Tags were the other half of this once; they are withdrawn
+        // until the community database they are meant for.
+        Add(NotesColumn, nameof(SoundRow.Notes), 220, 80, editable: true);
 
         // Hidden on a first run, like .bnk: an unmeasured length is an empty column,
         // and the mockup's seven are what the default view should be. But Measure
         // durations has to have somewhere to put its answer, or the button reports
         // into the status line and nowhere else.
-        Add("Len", nameof(SoundRow.Length), 60, 45);
+        Add("Len", nameof(SoundRow.Length), 60, 45, sortBy: nameof(SoundRow.Seconds));
 
         // A cell clips its text against its own bounds, and DataGridTextColumn leaves
         // TextTrimming at None, so a value too wide for its column comes out SHORTER
@@ -470,24 +499,28 @@ public partial class MainWindow : Window
     /// it, so a change to what a cell can say moves the floor with it. Media ID binds a
     /// uint (SoundIndex.cs:19), so ten digits is the type's ceiling and the ceiling is
     /// the honest floor. Mod's widest state is the one its own property yields for a row
-    /// with a file staged (SoundIndex.cs:216). Tags asks the vocabulary for its codes and
-    /// formats one the way the cell formats it.
+    /// with a file staged (SoundIndex.cs:216). Test # and Vol ask the row for its label at
+    /// the widest value a person sets: a four-digit test number, a level of 10x by hand.
     ///
-    /// Len and Tags are floors paired with the ellipsis rather than guarantees, because
-    /// neither is bounded above: seconds is a double, and a tag list is a concatenation
-    /// (SoundTags.Format), so past the floor it is the ellipsis that says a value was
-    /// shortened. Three integer digits on Len is over sixteen minutes of audio, and Len
-    /// is where this matters most -- 123.45s clipped to 123.4 loses the unit that would
-    /// have told you something was missing, and still reads as a duration.
+    /// Len is a floor paired with the ellipsis rather than a guarantee, because seconds is a
+    /// double with no upper bound, so past the floor it is the ellipsis that says a value
+    /// was shortened. Three integer digits is over sixteen minutes of audio, and Len is
+    /// where this matters most -- 123.45s clipped to 123.4 loses the unit that would have
+    /// told you something was missing, and still reads as a duration.
     /// </summary>
     private static IEnumerable<(string Header, IEnumerable<string> Candidates)> BoundedColumns()
     {
         yield return ("Mod", [new SoundRow { Muted = true }.Mod,
                               new SoundRow { ReplacementPath = "" }.Mod]);
         yield return ("Media ID", [new string('0', uint.MaxValue.ToString().Length)]);
-        yield return ("Tags", SoundTags.All.Select(t => new SoundRow { Tags = [t.Code] }.TagLabel));
+        yield return (TestColumn, [new SoundRow { TestNumber = 9999 }.TestLabel]);
+        yield return (VolColumn, [new SoundRow { Volume = 10.25, VolumeByHand = true }.VolumeLabel]);
         yield return ("Len", [new SoundRow { Seconds = 999.99 }.Length]);
     }
+
+    private const string TestColumn = "Test #";
+    private const string VolColumn = "Vol";
+    private const string NotesColumn = "Notes";
 
     // ---- selection ----------------------------------------------------------
 
@@ -611,6 +644,9 @@ public partial class MainWindow : Window
         return menu;
     }
 
+    /// <summary>The render harness: right-click › Mute on the selection.</summary>
+    internal void MuteForShot() => ToggleMute();
+
     /// <summary>
     /// Mute or unmute the selection. When several sounds fire at once only the loudest
     /// is intelligible, so silencing the one you have already identified is how the
@@ -625,6 +661,7 @@ public partial class MainWindow : Window
         // what "mute these" means when some of them already are.
         var turnOn = rows.Any(r => !r.Muted);
         foreach (var r in rows) r.Muted = turnOn;
+        RowStateChanged(rows);
         Refresh();
 
         var muted = Sounds?.Rows.Count(r => r.Muted) ?? 0;
@@ -695,6 +732,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// The row kinds Settings › Rows has switched off, as the list acts on them: the stored
+    /// setting less the kinds about tags, which the window does not offer for now
+    /// (RowClasses.Withheld). One property for every place that hides or explains a row.
+    /// </summary>
+    private List<string> HiddenRowKinds =>
+        RowClasses.InForce(_settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault]);
+
+    /// <summary>
     /// What the list shows, out of what the selection holds. The filter is deliberately
     /// only the text box: the row-kind switches are a persisted setting and belong in
     /// Settings, where they can be seen rather than remembered.
@@ -707,7 +752,7 @@ public partial class MainWindow : Window
 
         // Whole kinds of row can be switched off in Settings, and that setting applies
         // everywhere the list is read from.
-        rows = RowClasses.Apply(rows, _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault]);
+        rows = RowClasses.Apply(rows, HiddenRowKinds);
 
         if (q.Length > 0)
             rows = rows.Where(r =>
@@ -715,7 +760,7 @@ public partial class MainWindow : Window
                 r.Subtitle.Contains(q, StringComparison.OrdinalIgnoreCase) ||
                 r.MediaId.ToString().Contains(q) ||
                 r.Bank.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                SoundTags.Matches(r.Tags, q) ||
+                (r.Notes ?? "").Contains(q, StringComparison.OrdinalIgnoreCase) ||
                 // Clips are spoken zero-padded, so "042" should find #42 as well.
                 (int.TryParse(q.TrimStart('#'), out var n) && r.TestNumber == n));
 
@@ -737,8 +782,9 @@ public partial class MainWindow : Window
     private void ShowRows()
     {
         _sounds = Merge();
+        var relinked = ApplyProjectToRows(_sounds.Rows);
         ApplyFilter();
-        Say($"{_picked.Count} selected, {_sounds.Rows.Count:N0} sounds.");
+        Say($"{_picked.Count} selected, {_sounds.Rows.Count:N0} sounds." + RelinkedNote(relinked));
     }
 
     // Game rows a loaded loose file is the audio of, last time the rows were merged.
@@ -853,7 +899,7 @@ public partial class MainWindow : Window
 
         var shown = (Grid_.ItemsSource as IEnumerable<SoundRow>)?.ToList() ?? [];
         var all = _sounds?.Rows ?? [];
-        var hiddenKeys = _settings.HiddenRowClasses ??= [.. RowClasses.HiddenByDefault];
+        var hiddenKeys = HiddenRowKinds;
         var withheld = all.Where(r => RowClasses.IsHidden(r, hiddenKeys)).ToList();
 
         StatScope.Text = _mods.Any

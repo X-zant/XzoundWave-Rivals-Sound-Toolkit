@@ -151,13 +151,21 @@ public sealed class Settings
 
 
     /// <summary>Settings, notes and unpacked tools all live here.</summary>
-    public static string AppDataDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XzoundWave");
+    public static string AppDataDir => Path.Combine(UserConfigRoot, "XzoundWave");
 
     /// <summary>The folder used before the tool was renamed, read once so an existing
     /// user keeps their paks path and AES key instead of starting over.</summary>
-    private static string LegacyDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MRAudioKit");
+    private static string LegacyDir => Path.Combine(UserConfigRoot, "MRAudioKit");
+
+    /// <summary>
+    /// %AppData% on Windows, ~/.config (or $XDG_CONFIG_HOME) elsewhere, whether or not it exists
+    /// yet. Asked plainly, .NET answers "" for a folder that is not there, and a fresh Linux home
+    /// can lack ~/.config: settings then went to a relative "XzoundWave" in whatever folder the
+    /// program was started from, and failed outright when that folder held the program itself,
+    /// which is also called XzoundWave. Save creates the folder.
+    /// </summary>
+    public static string UserConfigRoot =>
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.DoNotVerify);
 
     private static string Dir => AppDataDir;
     private static string File_ => Path.Combine(Dir, "settings.json");

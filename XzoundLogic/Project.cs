@@ -260,25 +260,47 @@ public sealed class Project
     /// Attach notes to freshly-built rows, moving any whose media id a game update
     /// changed onto its new id by matching the event name within the same bank.
     /// Returns how many were relinked.
+    ///
+    /// A record moves only when that is not a guess: it is the one record for its bank and
+    /// event, and that event now plays exactly one media id the project has no record for.
+    /// An event of a random container plays several, and moving one note onto all of them (or
+    /// onto whichever came last, as this once did) silences or levels sounds nobody touched.
     /// </summary>
-    public int ApplyNotes(IReadOnlyList<SoundRow> rows)
+    /// <param name="gone">
+    /// When given, a record moves only if this says its media id is no longer in the game at
+    /// all. Without it, a record whose media the rows do not hold counts as moved, which is
+    /// also true of a sound in another bank, or of a mod's bank playing an event from another
+    /// id than the game's copy.
+    /// </param>
+    public int ApplyNotes(IReadOnlyList<SoundRow> rows, Func<uint, bool> gone = null)
     {
+        static string Key(string bank, string evt) => $"{bank}|{evt}";
         var present = rows.Select(r => r.MediaId).ToHashSet();
-        var orphans = Notes.Where(n => !present.Contains(n.MediaId) && !n.IsEmpty).ToList();
-        var byEvent = new Dictionary<string, NoteRecord>(StringComparer.OrdinalIgnoreCase);
-        foreach (var o in orphans)
-            if (!string.IsNullOrWhiteSpace(o.Event)) byEvent[$"{o.Bank}|{o.Event}"] = o;
+        var orphans = Notes.Where(n => !present.Contains(n.MediaId) && !n.IsEmpty &&
+                                       !string.IsNullOrWhiteSpace(n.Event) && (gone is null || gone(n.MediaId)))
+                           .GroupBy(n => Key(n.Bank, n.Event), StringComparer.OrdinalIgnoreCase)
+                           .Where(g => g.Count() == 1)
+                           .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var unclaimed = rows.Where(r => FindNote(r.MediaId) is null)
+                            .GroupBy(r => Key(r.Bank, r.Display), StringComparer.OrdinalIgnoreCase)
+                            .ToDictionary(g => g.Key, g => g.Select(r => r.MediaId).Distinct().ToList(),
+                                          StringComparer.OrdinalIgnoreCase);
 
+        // Two events can play one clip, so two records could both claim the same new id: the
+        // first keeps it and the other stays where it was rather than becoming a second record
+        // for one media id, which FindNote would never see.
         var relinked = 0;
+        var claimed = new HashSet<uint>();
+        foreach (var (key, moved) in orphans)
+            if (unclaimed.TryGetValue(key, out var ids) && ids.Count == 1 && claimed.Add(ids[0]))
+            {
+                moved.MediaId = ids[0];
+                relinked++;
+            }
+
         foreach (var row in rows)
         {
             var rec = FindNote(row.MediaId);
-            if (rec is null && byEvent.TryGetValue($"{row.Bank}|{row.Display}", out var moved))
-            {
-                moved.MediaId = row.MediaId;
-                rec = moved;
-                relinked++;
-            }
             if (rec is null) continue;
             row.Notes = rec.Notes;
             row.ExtraNotes = rec.Extra;

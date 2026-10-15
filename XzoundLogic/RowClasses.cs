@@ -74,6 +74,23 @@ public static class RowClasses
     /// </summary>
     public static readonly string[] HiddenByDefault = [];
 
+    /// <summary>
+    /// Kinds the window does not offer for now: the two about tags. Tags are meant for the
+    /// community database and come back with it, so the vocabulary and these filters stay
+    /// here; until then the window cannot tag a sound, and a setting stored before that
+    /// ("untagged" switched off hid every row) must not keep rows off screen with no box left
+    /// to turn it back on. Use <see cref="Offered"/> and <see cref="InForce"/> for the window.
+    /// </summary>
+    public static readonly string[] Withheld = ["tagged", "untagged"];
+
+    /// <summary>The kinds the window lists in Settings › Rows.</summary>
+    public static IEnumerable<RowClass> Offered =>
+        All.Where(c => !Withheld.Contains(c.Key, StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>The stored hidden kinds the window acts on: the stored list less <see cref="Withheld"/>.</summary>
+    public static List<string> InForce(IEnumerable<string> hidden) =>
+        (hidden ?? HiddenByDefault).Where(k => !Withheld.Contains(k, StringComparer.OrdinalIgnoreCase)).ToList();
+
     public static RowClass Find(string key) =>
         All.FirstOrDefault(c => c.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
 

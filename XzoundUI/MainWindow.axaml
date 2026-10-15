@@ -223,7 +223,7 @@
       <GridSplitter Grid.Column="1" Background="{StaticResource Bg}" ResizeDirection="Columns"/>
 
       <DataGrid x:Name="Grid_" Grid.Column="2" Background="Transparent"
-                GridLinesVisibility="Horizontal" IsReadOnly="True"
+                GridLinesVisibility="Horizontal" IsReadOnly="False"
                 CanUserSortColumns="True" CanUserResizeColumns="True" HeadersVisibility="Column"/>
 
       <GridSplitter Grid.Column="3" Background="{StaticResource Bg}" ResizeDirection="Columns"/>
