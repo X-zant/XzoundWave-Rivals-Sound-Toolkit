@@ -3,13 +3,15 @@
 XzoundWave is MIT licensed (see `LICENSE`). The components below are not, and their
 terms travel with any copy you distribute.
 
-XzoundWave ships as one file per platform: `XzoundWave.exe` on Windows, `xzoundwave` on
-Linux. Everything down to **Supplied by you** is **inside that file**: the aoTuV
-codebooks are compiled into `XzoundCore.dll`, vgmstream is an embedded zip written out to
-your app data the first time it is needed, the spoken word clips are embedded resources,
-and the NuGet packages are folded in with the rest by the single-file publish. The Linux
-build is self-contained and carries the .NET runtime as well; the Windows one asks the
-machine for it. What is listed under **Supplied by you** is never bundled at all.
+XzoundWave ships as single files: `XzoundWave.exe` on Windows; on Linux the window,
+`XzoundWave`, and the same engine without it, `xzoundwave`. Everything down to
+**Supplied by you** is **inside those files**: the aoTuV codebooks are compiled into
+`XzoundCore.dll`, vgmstream is an embedded zip written out to your app data the first
+time it is needed, the spoken word clips are embedded resources, the Linux window's fonts
+are embedded resources, and the NuGet packages are folded in with the rest by the
+single-file publish. The Linux builds are self-contained and carry the .NET runtime as
+well; the Windows one asks the machine for it. What is listed under **Supplied by you**
+is never bundled at all.
 
 ---
 
@@ -96,16 +98,53 @@ are published by the project at the link above, and because XzoundWave only ever
 as a separate process, pointing Settings › Tools at your own `vgmstream-cli` is the whole
 of the swap. Nothing here is a modified build.
 
-## The .NET runtime, in the Linux build only
+## The .NET runtime, in the Linux builds only
 
 The Linux release is self-contained: the runtime and its class libraries are published
-into `xzoundwave` rather than installed on the machine, which is what makes that one file
-about 53 MB and "nothing to install" true there. It is
+into `xzoundwave` and `XzoundWave` rather than installed on the machine, which is what
+makes "nothing to install" true there. It is
 [.NET](https://github.com/dotnet/runtime), **MIT** licensed, Copyright (c) .NET
 Foundation and Contributors.
 
 The Windows release carries none of it and asks the machine for the .NET Desktop Runtime
 instead, so this section does not apply to `XzoundWave.exe`.
+
+## Fonts, used by the Linux window
+
+Windows always has Segoe UI and a Chinese font, and the Windows window uses those. A
+Linux machine has whatever its distribution installed, so the Linux window brings two,
+both licensed under the **SIL Open Font License 1.1**, whose full text is at the end of
+this file:
+
+- **[Inter](https://github.com/rsms/inter)** 3.019, the interface font, by way of the
+  Avalonia.Fonts.Inter package. Copyright 2020 The Inter Project Authors. "Inter" is a
+  trademark of rsms. The package is inside `XzoundWave.exe` too, unused, because the
+  headless renderer the window is tested with depends on it, so this notice covers every
+  window build.
+- **[Noto Sans SC](https://github.com/notofonts/noto-cjk)** 2.004, for Chinese and the
+  Japanese kana. © 2014-2021 Adobe (http://www.adobe.com/). In the Linux window only.
+  Shipped unmodified as `vendor/fonts/NotoSansSC-Regular.otf`, with its licence beside it.
+
+Neither is modified, and neither is sold on its own: they travel inside the program,
+which is what the licence permits. The command-line `xzoundwave` carries neither.
+
+## The window's drawing libraries
+
+The window draws with [Skia](https://github.com/google/skia) and shapes text with
+[HarfBuzz](https://github.com/harfbuzz/harfbuzz), native libraries that arrive through the
+SkiaSharp and HarfBuzzSharp packages and are folded into the window's single file on both
+platforms. On Windows it also carries [ANGLE](https://github.com/google/angle), which
+Avalonia renders OpenGL through. Skia and ANGLE are **BSD-3-Clause** (Copyright (c) 2011
+Google Inc.; Copyright 2018 The ANGLE Project Authors), HarfBuzz is the **"Old MIT"**
+licence, and libSkiaSharp has more linked into it (libpng, zlib, FreeType, expat, ICU,
+libjpeg-turbo, libwebp and others), each under its own terms.
+
+Their notices run to some 140 KB, so they are not repeated here. SkiaSharp publishes them
+as one file, which is compiled into the window together with SkiaSharp's MIT licence and,
+on Windows, ANGLE's licence: `XzoundWave --licences` prints all three after this file,
+and they are written out beside the unpacked vgmstream as `XzoundWave-*.txt`. In the
+source they are `vendor/notices/`. The command-line `xzoundwave` carries none of these
+libraries and none of their notices.
 
 ## Spoken number clips, recorded once and embedded
 
@@ -130,6 +169,9 @@ pass on contains them:
 | [NVorbis](https://github.com/NVorbis/NVorbis) | MIT — Copyright (c) 2020 Andrew Ward |
 | [OggVorbisEncoder](https://github.com/SteveLillis/.NET-Ogg-Vorbis-Encoder) | MIT — Steve Lillis |
 | Microsoft.Bcl.Memory | MIT |
+| [Avalonia](https://github.com/AvaloniaUI/Avalonia), with its DataGrid, Fluent theme, Skia and headless packages — the window | MIT — Copyright (c) AvaloniaUI OÜ |
+| [SkiaSharp and HarfBuzzSharp](https://github.com/mono/SkiaSharp), which Avalonia draws with — the window | MIT — Copyright (c) 2015-2016 Xamarin, Inc., Copyright (c) 2017-2018 Microsoft Corporation; the native libraries inside them, see **The window's drawing libraries** |
+| [Avalonia.Fonts.Inter](https://github.com/AvaloniaUI/Avalonia) — the window, used on Linux | MIT; the Inter font inside it is OFL 1.1, see **Fonts** |
 
 ## Supplied by you — never bundled
 
@@ -160,3 +202,104 @@ distribution.
 Marvel Rivals and its audio are the property of NetEase and Marvel. This tool ships
 none of it. It reads the copy you already own, and anything you export or build from
 it stays yours to handle responsibly.
+
+---
+
+## SIL Open Font License 1.1
+
+The terms Inter and Noto Sans SC are distributed under, as published with Noto Sans SC.
+
+```
+This Font Software is licensed under the SIL Open Font License,
+Version 1.1.
+
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font
+creation efforts of academic and linguistic communities, and to
+provide a free and open framework in which fonts may be shared and
+improved in partnership with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply to
+any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software
+components as distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to,
+deleting, or substituting -- in part or in whole -- any of the
+components of the Original Version, by changing formats or by porting
+the Font Software to a new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed,
+modify, redistribute, and sell modified and unmodified copies of the
+Font Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components, in
+Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the
+corresponding Copyright Holder. This restriction only applies to the
+primary font name as presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created using
+the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+```

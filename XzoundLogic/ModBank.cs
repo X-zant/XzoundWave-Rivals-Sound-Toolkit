@@ -154,8 +154,17 @@ public static class ModBank
             var mounted = Mount(dir, dir, settings, withMedia);
             if (mounted.Problem is not null && banks.Count == 0 && media.Count == 0)
                 throw new InvalidDataException(mounted.Problem);
-            banks.AddRange(mounted.Banks);
-            media.AddRange(mounted.Media);
+            // The folder a command-line build writes holds its mod twice: unpacked under Marvel/,
+            // and packed into the .pak beside it. A file a container ships at the very path, and
+            // with the very bytes, of one already read from the folder is that file again, and
+            // taken twice it made an update carry every sound twice and a merge find a mod
+            // colliding with itself. Different bytes at one path are two files and both are kept.
+            bool Again(string at, byte[] bytes, IEnumerable<(string At, byte[] Bytes)> read) =>
+                at is not null && read.Any(r => at.Equals(r.At, StringComparison.OrdinalIgnoreCase) && bytes.AsSpan().SequenceEqual(r.Bytes));
+            var readBanks = banks.Select(b => (b.MountedAt, b.Bytes)).ToList();
+            var readMedia = media.Select(m => (m.MountedAt, m.Bytes)).ToList();
+            banks.AddRange(mounted.Banks.Where(b => !Again(b.MountedAt, b.Bytes, readBanks)));
+            media.AddRange(mounted.Media.Where(m => !Again(m.MountedAt, m.Bytes, readMedia)));
             skipped.AddRange(mounted.Skipped);
             others.AddRange(mounted.Others);
         }

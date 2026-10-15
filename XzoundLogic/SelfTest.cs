@@ -185,7 +185,8 @@ public static class SelfTest
 
     /// <summary>
     ///     XzoundWave.exe --openbank &lt;bnkOrPak&gt; [rows]
-    /// What the window shows when someone opens a bank that did not come from the game.
+    /// What the window shows when someone opens a bank that did not come from the game, and
+    /// the loose Media wems a mod ships beside its banks or instead of them.
     /// </summary>
     public static int OpenBank(string path, int show)
     {
@@ -193,15 +194,26 @@ public static class SelfTest
         var settings = Settings.Load();
         settings.AutoDetect();
 
+        // With its loose Media files, as the window opens a mod: a mod can be nothing else -- the
+        // audio of sounds no bank holds, which the game reads by its path -- and one that ships
+        // banks as well would otherwise be described without half of what it changes. Opened for
+        // its banks alone, every mod of loose files was refused as holding "no .bnk files" here
+        // while the window opened it and showed what it changed.
         ModBank.Opened opened;
-        try { opened = ModBank.Open(path, settings); }
+        try { opened = ModBank.Open(path, settings, withMedia: true); }
         catch (Exception ex) { W("OPEN FAILED: " + ex.Message); return 1; }
 
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
         var banks = opened.Banks;
         if (opened.Skipped.Count > 0)
             W($"skipped {opened.Skipped.Count} container(s): {string.Join(", ", opened.Skipped)}");
-        W($"{banks.Count} bank(s) in {Path.GetFileName(path)}:");
-        foreach (var b in banks) W($"  {b.Name,-34} {b.Bytes.Length,13:N0} B");
+        if (banks.Count > 0 || opened.Media.Count == 0)
+        {
+            W($"{banks.Count} bank(s) in {name}:");
+            foreach (var b in banks) W($"  {b.Name,-34} {b.Bytes.Length,13:N0} B");
+        }
+        if (opened.Media.Count > 0)
+            W($"{opened.Media.Count} loose wem(s) in {name}, {opened.Media.Sum(m => (long)m.Bytes.Length):N0} B");
 
         // Names come from the game, so mount it -- but a bank must still open without it.
         GameSession session = null;
@@ -231,12 +243,86 @@ public static class SelfTest
                 W($"  {r.MediaId,-11} {r.Codec,-7} {r.Length,-8} {r.Display}" +
                   (string.IsNullOrEmpty(r.Subtitle) ? "" : $"   \"{r.Subtitle}\""));
         }
+
+        if (opened.Media.Count > 0) OpenLoose(session, opened.Media, name, show, W);
         return 0;
     }
 
     /// <summary>
+    /// A mod's loose Media wems, each read against the game the way the window reads them when
+    /// it opens the mod (<see cref="ModSet.ReadLoose"/>): its media id and language folder, its
+    /// size, whether the game ships these bytes at that path, other bytes, or nothing, and the
+    /// bank that plays it -- what the window's status line counts and its Details pane names.
+    /// </summary>
+    private static void OpenLoose(GameSession session, List<ModBank.LooseMedia> media, string source, int show,
+                                  Action<string> W)
+    {
+        // Whether a file reaches its sound and which bank plays it are asked of the bank index,
+        // which the window builds in the background as soon as the game is loaded. The first
+        // file no bank embeds then reads every bank once to learn which Sound or track plays it.
+        if (session is not null && !session.BankIndexReady) session.IndexBanks(_ => { });
+        var read = media.Select(m => (File: m, Loose: ModSet.ReadLoose(session, m, source))).ToList();
+        var loose = read.Where(x => x.Loose is not null).Select(x => x.Loose).ToList();
+        var unnamed = read.Where(x => x.Loose is null).Select(x => x.File.MountedAt).ToList();
+        var language = session?.Language;
+
+        // The window's summary of a loose-file load, in the same terms (LooseSummary).
+        var changed = loose.Count(l => l.Changed);
+        var added = loose.Count(l => l.Tag == "NEW" && l.Reaches);
+        var unread = loose.Count(l => l.Changed && !l.Reaches && l.Stem is not null);
+        var foreign = loose.Count(l => l.Changed && l.Reaches && !l.AppliesIn(language));
+        var unplayed = loose.Count(l => l.Changed && l.Stem is null);
+        W("");
+        W(session is null
+            ? $"loose: {loose.Count} wem(s) named by a media id (no game mounted, so none is compared or placed)"
+            : $"loose: {loose.Count} wem(s) named by a media id, {changed} changed from the game's" +
+              (added > 0 ? $" ({added} where the game streams a file it does not ship)" : "") +
+              (loose.Count - changed > 0 ? $", {loose.Count - changed} the game's own bytes" : "") +
+              (unread > 0 ? $", {unread} at a path the game does not read for that sound, so they change nothing" : "") +
+              (foreign > 0 ? $", {foreign} for a language other than {language}, which this language does not play" : "") +
+              (unplayed > 0 ? $", {unplayed} that nothing in the game plays" : ""));
+
+        foreach (var l in loose.Take(show))
+        {
+            var game = session is null ? "not compared"
+                : l.Tag switch { "" => "same bytes as the game's", "MODDED" => "differs from the game's", _ => "new: the game ships nothing here" };
+            // Only what the bank named before it does not already say: a file nothing plays is
+            // not also said to sit where its sound does not look, having no sound to look.
+            var note = session is null || !l.Changed || l.Stem is null ? ""
+                : !l.Reaches ? "; the game does not read this path for that sound"
+                : !l.AppliesIn(language) ? (l.Language is null
+                    ? $"; the game ships {language} its own copy, which is read instead"
+                    : $"; {l.Language} only, not {language}")
+                : "";
+            W($"  {l.Id,-11} {l.Language ?? "shared",-13} {l.Bytes.Length,11:N0} B  {game}; {PlayedBy(session, l.Id)}{note}");
+            W($"      {l.MountedAt}");
+        }
+        if (loose.Count > show) W($"  ... and {loose.Count - show} more (a larger [rows] lists them)");
+        if (unnamed.Count > 0)
+            W($"  {unnamed.Count} not named by a media id, so nothing says which sound they are: " +
+              string.Join(", ", unnamed.Take(4)) + (unnamed.Count > 4 ? ", ..." : ""));
+    }
+
+    /// <summary>
+    /// The bank that plays a medium and how, in the order <see cref="GameSession.PlayingBank"/>
+    /// asks: a bank that embeds it (whole, or only the start it prefetches, the rest streaming
+    /// from the loose file), a bank whose Sound streams it, a bank whose music track places it.
+    /// </summary>
+    private static string PlayedBy(GameSession session, uint id)
+    {
+        if (session is null) return "no game to say which bank plays it";
+        if (session.BanksForMedia(id) is { Count: > 0 } holding)
+            return $"played by {Path.GetFileName(holding[0])}, which embeds it (whole or its prefetched start)" +
+                   (holding.Count > 1 ? $", as do {holding.Count - 1} other bank(s)" : "");
+        if (session.StreamingBank(id) is { } streams) return $"played by {Path.GetFileName(streams)}, whose Sound streams it";
+        if (session.MusicBank(id) is { } track) return $"played by {Path.GetFileName(track)}, on a music track";
+        return "nothing in the game plays it";
+    }
+
+    /// <summary>
     ///     XzoundWave.exe --volume &lt;skinId&gt; &lt;gain&gt; &lt;outFolder&gt; [bankFilter]
-    /// Write banks with every sound scaled by gain, and check the result decodes.
+    /// Write banks with every sound scaled by gain, and check the result decodes. The banks are
+    /// packed into a .pak named for the level, as the window names a volume build.
     /// </summary>
     public static int Volume(string skinId, string gainText, string outDir, string bankFilter)
     {
@@ -260,12 +346,19 @@ public static class SelfTest
         W($"{scope.Count} bank(s), gain {gain:0.0##}  ->  {VolumeTool.Label(gain)}");
 
         var t0 = DateTime.UtcNow;
+        // The folder is not emptied first, so what was in it before is noted, and only this
+        // level's banks go into this level's pak.
+        var before = VerbPak.Snapshot(outDir);
         var r = VolumeBankBuilder.Build(session, scope, _ => gain, outDir, sounds,
                                         settings.VgmstreamPath, W);
         W("");
         W(r.Log);
         W($"{r.Scaled} scaled, {r.Skipped} untouched, {r.Failed} failed " +
           $"in {(DateTime.UtcNow - t0).TotalSeconds:N1}s");
+        // Named as the window names one level of a volume build: the project's name, which the
+        // command line does not have, with the level between it and the patch suffix.
+        if (!VerbPak.Pack(outDir, VerbPak.ProjectName(VolumeTool.Label(gain)), VerbPak.WrittenSince(outDir, before), W))
+            return 1;
         return r.Failed == 0 && r.Scaled > 0 ? 0 : 1;
     }
 
@@ -324,7 +417,8 @@ public static class SelfTest
 
     /// <summary>
     ///     XzoundWave.exe --merge &lt;priority&gt; &lt;secondary&gt; &lt;outFolder&gt;
-    /// Combine two mods, priority winning any sound both changed.
+    /// Combine two mods, priority winning any sound both changed, packed into one .pak named
+    /// after both, as the window names a merge.
     /// </summary>
     public static int Merge(string priority, string secondary, string outDir)
     {
@@ -336,12 +430,18 @@ public static class SelfTest
 
         try
         {
+            // Only the files this merge writes go into its pak: the folder is not emptied first,
+            // and an earlier merge's banks left in it are not part of this one.
+            var before = VerbPak.Snapshot(outDir);
             var r = ModMerge.Build(session, priority, secondary, outDir, settings,
                                    Path.Combine(outDir, "_extracted"), W);
             W("");
             W(r.Log);
             W($"{r.Banks} bank(s) and {r.Loose} loose file(s) written, {r.FromPriority} from priority, " +
               $"{r.FromSecondary} from secondary, {r.Collisions.Count} collision(s)");
+            // Each mod's own changed sounds in _extracted stay beside the pak, never in it.
+            if (!VerbPak.Pack(outDir, VerbPak.MergeName(priority, secondary), VerbPak.WrittenSince(outDir, before), W))
+                return 1;
             return r.Banks + r.Loose > 0 ? 0 : 1;
         }
         catch (Exception ex) { W("MERGE FAILED: " + ex.Message); return 1; }
@@ -553,6 +653,8 @@ public static class SelfTest
 
     /// <summary>
     ///     XzoundWave.exe --testbank &lt;skinId&gt; &lt;numberedWemFolder&gt; &lt;outFolder&gt; [bankFilter]
+    /// Packed into XzoundMod_Test_9999999_P.pak, the window's name for a test build, with the
+    /// legend and log beside it.
     /// </summary>
     public static int TestBank(string skinId, string wemDir, string outDir, string bankFilter)
     {
@@ -580,6 +682,7 @@ public static class SelfTest
         W($"total entries in scope: {TestBankBuilder.CountEntries(session, scope)}");
 
         if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
+        var before = VerbPak.Snapshot(outDir);
         var r = TestBankBuilder.Build(session, scope, wems, outDir, lowest, true, sounds, true);
         W("");
         W(r.Log);
@@ -589,12 +692,19 @@ public static class SelfTest
         W("output:");
         foreach (var f in Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories).OrderBy(x => x))
             W($"  {new FileInfo(f).Length,12:N0} B  {Path.GetRelativePath(outDir, f)}");
-        return 0;
+        // The builder says what it wrote only in its log, so the pak takes what appeared under
+        // Marvel/: the folder was emptied above, which makes that exactly this run's banks.
+        var written = VerbPak.WrittenSince(outDir, before);
+        if (!VerbPak.Pack(outDir, VerbPak.ProjectName("Test"), written, W)) return 1;
+        // A test build with nothing in it has no pak to install, which the window refuses as
+        // nothing to pack; a script that copies the pak when this succeeds must be told the same.
+        return written.Count > 0 ? 0 : 1;
     }
 
     /// <summary>
     ///     XzoundWave.exe --build &lt;skinId&gt; &lt;wemFolder&gt; &lt;outFolder&gt;
-    /// The same ModBuilder the window calls, with no window.
+    /// The same ModBuilder the window calls, with no window, packed as the window packs it:
+    /// what the build wrote, into XzoundMod_9999999_P.pak beside the Marvel folder it came from.
     /// </summary>
     public static int BuildMod(string skinId, string wemDir, string outDir, bool prefetch = false)
     {
@@ -642,7 +752,12 @@ public static class SelfTest
         foreach (var f in Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories)
                                    .OrderBy(x => x))
             W($"  {new FileInfo(f).Length,10:N0} B  {Path.GetRelativePath(outDir, f)}");
-        return 0;
+        // The builder's own list of what it wrote, the list the window packs. The name is the
+        // window's for a project that was never named, since there is no project here at all.
+        if (!VerbPak.Pack(outDir, VerbPak.ProjectName(), r.Outputs, W)) return 1;
+        // A build that wrote nothing has no pak, and the window calls that nothing to pack, not a
+        // build; as for --merge and --volume, so does the exit code.
+        return r.Outputs.Count > 0 ? 0 : 1;
     }
 
     /// <summary>

@@ -51,4 +51,17 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- The same as the window's: the distributable is the one executable. UAssetTool is an Exe
+       reached through XzoundLogic, so a publish for a runtime builds it twice, once for that
+       runtime and once for none, and the two runtimeconfigs of the same name stopped this
+       publish outright (NETSDK1152). Neither it nor UAssetTool's launcher is used: this host
+       calls UAssetTool as a library. -->
+  <Target Name="PublishOnlyTheExe" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'UAssetTool.runtimeconfig.json'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(RelativePath)' == 'UAssetTool.exe' Or '%(RelativePath)' == 'UAssetTool'" />
+    </ItemGroup>
+  </Target>
+
 </Project>

@@ -2390,16 +2390,22 @@ public static class ModUpdate
         }
 
         var report = new StringBuilder();
-        report.AppendLine($"Updating {Path.GetFileName(modPath)} onto the game's current banks.");
+        // The mod by its name on disk, as the pak is named: a folder given as "." or with a closing
+        // separator has no name as typed.
+        report.AppendLine($"Updating {Path.GetFileName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(modPath)))} onto the game's current banks.");
         report.AppendLine($"Output: {outRoot}");
         report.AppendLine();
         report.AppendLine("Each bank below is the GAME'S CURRENT bank with only the mod's audio carried onto it, so it");
         report.AppendLine("answers every event the game defines today. Nothing the mod changed in the bank's structure is");
         report.AppendLine("kept; only audio is.");
         report.AppendLine();
-        report.AppendLine("This tool does not write .pak files. Pack the Marvel folder in the output with repak, as you");
-        report.AppendLine("do for any other build, and put the new pak in place of the old one rather than beside it:");
-        report.AppendLine("two paks that ship the same .bnk path cannot both apply, and the old one would hide this.");
+        // The window and the command line both pack what the update wrote into one .pak and put
+        // this report beside it, so the report says that, and nothing about packing it by hand:
+        // the command line is the whole of the Linux release, where there was no repak to hand.
+        foreach (var line in Wrapped(banks + loose > 0
+                     ? PackedParagraph(VerbPak.UpdateName(modPath))
+                     : "Nothing was carried, so no .pak is written; why each sound was not is below."))
+            report.AppendLine(line);
         report.AppendLine();
         report.AppendLine("SUMMARY");
         foreach (var s in summary) report.AppendLine(s);
@@ -2546,8 +2552,34 @@ public static class ModUpdate
         if (line.Length > 0) yield return line.ToString();
     }
 
+    // The report's paragraph on the pak, which names it, because a folder updated into more than
+    // once can hold more than one pak. Run reads the name back from an earlier report to find the
+    // pak that update was packed into, and replaces the paragraph when its own packing fails after
+    // the report was written.
+    private static string PackedParagraph(string pak) =>
+        $"The update is packed into one .pak, {pak}.pak, written beside this report. Put it in ~mods in place of " +
+        "the old mod rather than beside it: two paks that ship the same .bnk path cannot both apply, " +
+        "and the old one would hide this.";
+
+    // The pak an update's report names, by PackedParagraph, or null where it names none, as for an
+    // update that carried nothing. Only a name an update gives its pak, and only one in the report's
+    // own folder: what a report says is read here to delete by, and a report is a file anyone can edit.
+    // Read with its line breaks as spaces, since Wrapped breaks the sentence wherever the length of
+    // the name puts it.
+    private static string PackedBy(string report)
+    {
+        var said = System.Text.RegularExpressions.Regex.Match(
+            System.Text.RegularExpressions.Regex.Replace(report, @"\s+", " "),
+            @"The update is packed into one \.pak, (\S+)\.pak, written beside this report");
+        var name = said.Success ? said.Groups[1].Value : null;
+        return name is not null && name == Path.GetFileName(name) &&
+               name.EndsWith("_updated" + VerbPak.PatchSuffix, StringComparison.OrdinalIgnoreCase) ? name : null;
+    }
+
     /// <summary>
     ///     XzoundWave.exe --updatemod &lt;mod.pak|mod.bnk|folder&gt; &lt;outDir&gt; [--keep-wwise-built]
+    /// The update packed into &lt;mod&gt;_updated_9999999_P.pak, the window's name for it, beside the
+    /// report and the Marvel folder it was packed from.
     /// </summary>
     public static int Run(string modPath, string outDir, bool keepWwiseBuilt = false, string madeFor = null, string historyDir = null)
     {
@@ -2563,10 +2595,23 @@ public static class ModUpdate
         session.IndexBanks(_ => { });
 
         // An earlier update into this folder left files placed by what it read then; a second reading
-        // (another --made-for) must not pack beside them.
-        if (File.Exists(Path.Combine(outDir, ReportName)))
+        // (another --made-for) must not pack beside them. Nor may the pak they were packed into
+        // outlive them: a reading that carries nothing writes no pak, and the old one would then be
+        // the only thing left to install. That pak is the one the earlier report names, which has
+        // this run's own name only when it updated the same mod: an update of another mod into the
+        // same folder otherwise left its pak behind with neither its files nor its report. The mod
+        // being updated is never deleted, even when it is that earlier pak, since it is read below.
+        var pakName = VerbPak.UpdateName(modPath);
+        var earlier = Path.Combine(outDir, ReportName);
+        if (File.Exists(earlier))
+        {
             foreach (var old in new[] { "Marvel", Result.UnplacedFolder }.Select(d => Path.Combine(outDir, d)).Where(Directory.Exists))
                 Directory.Delete(old, true);
+            foreach (var pak in new[] { pakName, PackedBy(File.ReadAllText(earlier)) }
+                         .Where(p => p is not null).Select(p => Path.Combine(outDir, p + ".pak")).Distinct(AppPaths.Comparer)
+                         .Where(p => File.Exists(p) && !AppPaths.SamePath(p, modPath)))
+                File.Delete(pak);
+        }
 
         try
         {
@@ -2619,8 +2664,26 @@ public static class ModUpdate
                 W($"NOT A CLEAN UPDATE: {r.AuditProblems.Count} line(s) did not land on the slot they were written for:");
                 foreach (var p in r.AuditProblems) W("  " + p);
             }
+            // Packed as the window packs it, from the update's own list of what it wrote, so the
+            // _unplaced files and the report stay beside the pak and never go into it. Said with
+            // the report's path: both are where the result is, not what it is.
+            var packed = VerbPak.Pack(outDir, pakName, r.Outputs, W);
+            // Build wrote the report before there was a pak to write, and it says the pak is beside
+            // it. The window copies the report out only once its pak is written, so only here can it
+            // be left saying so of a pak that is not there, for someone to look for in vain or to
+            // install a stale one by its name; it says what happened instead.
+            if (!packed)
+                File.WriteAllText(Path.Combine(outDir, ReportName), r.Report.Replace(
+                    string.Join(Environment.NewLine, Wrapped(PackedParagraph(pakName))),
+                    string.Join(Environment.NewLine, Wrapped(
+                        $"Packing the update into {pakName}.pak failed, so there is no .pak of this update; one of that " +
+                        "name beside this report is an earlier run's, and the command's output says why packing failed. " +
+                        "Every file the update wrote is in the Marvel folder beside this report. Run the update again once " +
+                        "the cause is fixed, and put the .pak it writes in ~mods in place of the old mod rather than " +
+                        "beside it: two paks that ship the same .bnk path cannot both apply."))),
+                    new UTF8Encoding(true));
             W($"report: {Path.Combine(outDir, ReportName)}");
-            return !r.Clean ? 2 : r.Banks + r.Loose > 0 ? 0 : 1;
+            return !packed ? 1 : !r.Clean ? 2 : r.Banks + r.Loose > 0 ? 0 : 1;
         }
         catch (Exception ex) { W("UPDATE FAILED: " + ex.Message); return 1; }
     }

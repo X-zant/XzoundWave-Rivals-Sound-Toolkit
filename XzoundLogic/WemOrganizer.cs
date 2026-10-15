@@ -98,7 +98,9 @@ public static class WemOrganizer
             .Select(d => (Dir: d, M: Regex.Match(Path.GetFileName(d), @"^(\d+)(?:-.*)?$")))
             .Where(x => x.M.Success).Select(x => (x.Dir, Folder: int.Parse(x.M.Groups[1].Value))).ToList();
         var pools = numbered.Count > 0 ? numbered : [(input, 1)];
-        var files = pools.SelectMany(p => Directory.EnumerateFiles(p.Dir, "*.wem", SearchOption.AllDirectories)
+        // Any case of the extension: a folder made on Windows can hold "x.WEM", and Linux matches a pattern by case.
+        var anyCase = new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive };
+        var files = pools.SelectMany(p => Directory.EnumerateFiles(p.Dir, "*.wem", anyCase)
                                                    // Not what an earlier run put in an output folder inside the input.
                                                    .Where(f => Path.GetRelativePath(output, f).StartsWith(".."))
                                                    .Select(f => (Path: f, p.Folder)))
@@ -141,7 +143,7 @@ public static class WemOrganizer
                     copied++;
                 }
                 report.AppendLine($"  line {rule.Line,3}  {rule.Folder}:{rule.Pattern}  ->  " +
-                                  (rule.Delete ? "[DELETE] (left out)" : rule.Parent is null ? rule.Dest : $"{rule.Parent}\\{rule.Dest}") +
+                                  (rule.Delete ? "[DELETE] (left out)" : rule.Parent is null ? rule.Dest : Path.Combine(rule.Parent, rule.Dest)) +
                                   $"  {hits.Count} wem(s)");
             }
             foreach (var (path, folder) in remaining)

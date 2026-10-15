@@ -78,15 +78,69 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- The Linux window carries .NET, Skia and the fonts below, which made it 136 MB as a
+       plain single file. Compressed it is about half that, at the price of unpacking into
+       memory at start-up. Only a self-contained publish can compress, which the Linux one
+       is and the Windows one is not. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' And !$(RuntimeIdentifier.StartsWith('win')) And '$(SelfContained)' == 'true'">
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- Fonts, used everywhere but Windows.
+
+       Windows always has Segoe UI and a Chinese font, and the window was laid out against the
+       first of them. Linux has whatever the distribution put there, which Avalonia asks
+       fontconfig for: on a great many machines that is DejaVu Sans, wide enough that every
+       toolbar wrapped onto a second row, and on a stock WSL Ubuntu nothing at all that can draw
+       Chinese, so the Category column fell back to English. Inter is Avalonia's own interface
+       font and comes as a package; Noto Sans SC covers Chinese and the Japanese kana. Both are
+       under the SIL Open Font License, listed in THIRD-PARTY-NOTICES.md.
+
+       Inter is in every build regardless: Avalonia.Headless above depends on the package, so
+       naming it here only makes the dependency visible. Windows carries it unused. Noto Sans SC
+       is the one worth keeping out of a Windows publish, at 8 MB, so it and the code that
+       registers both fonts are conditioned on the runtime identifier like the vgmstream
+       payloads. A build with no runtime identifier takes them, and the window still uses them
+       only when it is not running on Windows (Fonts.cs). -->
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.3" />
+  </ItemGroup>
+  <PropertyGroup Condition="!$(RuntimeIdentifier.StartsWith('win'))">
+    <DefineConstants>$(DefineConstants);BUNDLED_FONTS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="!$(RuntimeIdentifier.StartsWith('win'))">
+    <AvaloniaResource Include="..\vendor\fonts\NotoSansSC-Regular.otf" Link="Assets\Fonts\NotoSansSC-Regular.otf" />
+  </ItemGroup>
+
+  <!-- The notices of the native libraries the window draws with, which its single file carries
+       and the command line does not: Skia and HarfBuzz with everything linked into them (the
+       one notice SkiaSharp publishes for both), SkiaSharp's own licence, and ANGLE, the OpenGL
+       layer only a Windows build ships. Printed by the licences verb and written beside the unpacked
+       tools (Bundled.HostNotices); THIRD-PARTY-NOTICES.md names them. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\vendor\notices\SkiaSharp-LICENSE.txt" LogicalName="XzoundWave.notices.SkiaSharp-LICENSE.txt" />
+    <EmbeddedResource Include="..\vendor\notices\SkiaSharp-THIRD-PARTY-NOTICES.txt" LogicalName="XzoundWave.notices.SkiaSharp-THIRD-PARTY-NOTICES.txt" />
+  </ItemGroup>
+  <ItemGroup Condition="!$(RuntimeIdentifier.StartsWith('linux'))">
+    <EmbeddedResource Include="..\vendor\notices\ANGLE-LICENSE.txt" LogicalName="XzoundWave.notices.ANGLE-LICENSE.txt" />
+  </ItemGroup>
+
   <!-- The distributable is the one exe. UAssetTool and UAssetAPI are compiled into it like
        every other library; what the publish would otherwise leave beside it is debug symbols
        (the vendor projects' and the native SkiaSharp and HarfBuzz ones, about 107 MB) and
-       UAssetTool's runtimeconfig, which matters only when UAssetTool runs as a program of its
-       own, which this app never does. Done here, so UAssetToolRivals itself is left as it is. -->
+       UAssetTool's runtimeconfig and launcher, which matter only when UAssetTool runs as a
+       program of its own, which this app never does. Done here, so UAssetToolRivals itself is
+       left as it is.
+
+       UAssetTool is an Exe, and an Exe reached through a library is built twice by a publish
+       for a runtime: once for that runtime and once for none. Each copy brings a runtimeconfig
+       of the same name, which is an error (NETSDK1152), and a launcher named for the machine
+       that built it, so a Linux publish made on Windows carried a stray UAssetTool.exe. -->
   <Target Name="PublishOnlyTheExe" AfterTargets="ComputeResolvedFilesToPublishList">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'UAssetTool.runtimeconfig.json'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(RelativePath)' == 'UAssetTool.exe' Or '%(RelativePath)' == 'UAssetTool'" />
     </ItemGroup>
   </Target>
 

@@ -29,7 +29,8 @@ public static class TestBankBuilder
     {
         var byNumber = new Dictionary<int, string>();
         string silent = null;
-        foreach (var f in Directory.EnumerateFiles(dir, "*.wem"))
+        // Any case of the extension: Linux matches a pattern by case, and "7.WEM" is still clip 7.
+        foreach (var f in Directory.EnumerateFiles(dir, "*.wem", new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive }))
         {
             var stem = Path.GetFileNameWithoutExtension(f);
             var m = NumName.Match(stem);

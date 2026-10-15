@@ -218,19 +218,9 @@ public sealed class Settings
     /// </summary>
     public void AutoDetect()
     {
-        if (string.IsNullOrWhiteSpace(PaksDir))
-        {
-            // Where a Steam library lives is the platform's business, not this
-            // method's -- drive letters on Windows, the home directory everywhere
-            // else. The rest of the path is the game's own and is the same either way,
-            // including under Proton, which lays the files out natively.
-            foreach (var lib in AppPaths.SteamLibraries())
-            {
-                var p = Path.Combine(lib, "steamapps", "common",
-                    "MarvelRivals", "MarvelGame", "Marvel", "Content", "Paks");
-                if (Directory.Exists(p)) { PaksDir = p; break; }
-            }
-        }
+        // A folder already chosen is never second-guessed, not even by a better one.
+        if (string.IsNullOrWhiteSpace(PaksDir) && FindPaks() is { } found)
+            PaksDir = found;
 
         // vgmstream ships inside the exe. A copy the user pointed at themselves wins;
         // otherwise one beside the exe, and failing that the bundled one is unpacked.
@@ -249,5 +239,35 @@ public sealed class Settings
                 ? Directory.GetFiles(AppContext.BaseDirectory, "*.usmap") : [];
             if (maps.Length > 0) UsmapPath = maps[0];
         }
+    }
+
+    /// <summary>
+    /// The game's Paks folder in the first Steam library that has one, or null. What
+    /// <see cref="AutoDetect"/> fills an empty paks box with, and on its own so the
+    /// platform self-test can say what this machine would be given without touching
+    /// anyone's settings.
+    ///
+    /// Where a Steam library lives is the platform's business, not this method's --
+    /// drive letters on Windows, the home directory everywhere else, and wherever Steam's
+    /// own list of libraries says. The rest of the path is the game's own and is the same
+    /// either way, including under Proton, which lays the files out natively.
+    ///
+    /// Nothing may escape from here. Part of the search reads a file Steam owns, and a
+    /// guess that goes wrong has to leave the box empty for the user, not stop the
+    /// window or the verb that asked from starting.
+    /// </summary>
+    public static string FindPaks()
+    {
+        try
+        {
+            foreach (var lib in AppPaths.SteamLibraries())
+            {
+                var p = Path.Combine(lib, "steamapps", "common",
+                    "MarvelRivals", "MarvelGame", "Marvel", "Content", "Paks");
+                if (Directory.Exists(p)) return p;
+            }
+        }
+        catch { /* a guess not made, which is all a failed guess ever costs */ }
+        return null;
     }
 }

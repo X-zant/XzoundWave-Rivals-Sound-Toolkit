@@ -78,7 +78,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -169,7 +169,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -201,7 +201,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -261,7 +261,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -324,7 +324,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -412,7 +412,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>().UseSkia()
+            AppBuilder.Configure<App>().UseBundledFonts().UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
             var main = new MainWindow { Width = 1440, Height = 840 };
             main.Show();
@@ -454,7 +454,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>().UseSkia()
+            AppBuilder.Configure<App>().UseBundledFonts().UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
             var main = new MainWindow { Width = 1440, Height = 840 };
             main.Show();
@@ -506,7 +506,7 @@ public static class Shot
     /// <summary>XzoundWave --shot-coldrag: what is under a column header's edge, and what a drag there does.</summary>
     public static int TakeColumnDrag()
     {
-        AppBuilder.Configure<App>().UseSkia()
+        AppBuilder.Configure<App>().UseBundledFonts().UseSkia()
                   .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
         var main = new MainWindow { Width = 1440, Height = 840 };
         main.Show();
@@ -560,7 +560,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -595,7 +595,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -771,7 +771,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -828,7 +828,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -854,7 +854,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -880,7 +880,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();
@@ -909,7 +909,7 @@ public static class Shot
     {
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();

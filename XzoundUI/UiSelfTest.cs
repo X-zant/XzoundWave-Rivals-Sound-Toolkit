@@ -41,7 +41,7 @@ public static class UiSelfTest
 
         try
         {
-            AppBuilder.Configure<App>()
+            AppBuilder.Configure<App>().UseBundledFonts()
                       .UseSkia()
                       .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                       .SetupWithoutStarting();

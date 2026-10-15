@@ -3,15 +3,18 @@
 A sound toolkit for Marvel Rivals. Browse, preview, annotate and re-pack the game's
 Wwise soundbanks.
 
-Standalone in the literal sense: the release is **one `XzoundWave.exe`** on Windows, or
-**one `xzoundwave`** on Linux. Nothing to install, nothing to unzip beside it, no folders
-exported from FModel first. The Vorbis encoder and vgmstream both ship inside the binary.
+Standalone in the literal sense: the release is **one `XzoundWave.exe`** on Windows, and
+on Linux **one `XzoundWave`** (the window) or **one `xzoundwave`** (the same engine with no
+window, for scripts and servers). Nothing to install, nothing to unzip beside it, no
+folders exported from FModel first. The Vorbis encoder and vgmstream both ship inside the
+binary.
 
 ## Running it on Windows
 
 Download `XzoundWave.exe` and run it.
 
-The one thing it does not carry is the **[.NET 10 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0)**.
+The one thing it does not carry is the **[.NET 10 Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0)**,
+the plain one: the Desktop Runtime is not needed.
 Most machines already have it; bundling it would have quadrupled the download for
 something Windows Update hands out. If it is missing, Windows says so when you double
 click and points you at the installer. Run `XzoundWave.exe --doctor` to see what your
@@ -32,13 +35,24 @@ and it will not run if antivirus has removed one of the codec DLLs beside it.
 
 ## Running it on Linux
 
-Download `xzoundwave`, make it executable, run it. Nothing to install at all here, not
-even the runtime: this one carries .NET inside it, which is why it is 53 MB. The platform
-that could not assume a runtime is the one that had to bring its own.
+Two downloads, the same engine in both:
 
-What it is not is the window. The Linux release is the toolkit without the tabs:
-`xzoundwave` is the engine and every verb under [Headless verbs](#headless-verbs),
-driving exactly the code the window drives.
+- **`XzoundWave`** is the window, the same tabs as on Windows. Make it executable and run
+  it from your desktop. It needs a desktop session (X11, or Wayland through XWayland),
+  which every Linux desktop already is; on a bare server image the missing pieces are
+  `libx11-6`, `libice6`, `libsm6` and `libfontconfig1`. It brings its own fonts, Inter for the interface and
+  Noto Sans SC for the game's Chinese, so it looks the same on every distribution and the
+  Category column is readable whether or not the machine has a Chinese font.
+- **`xzoundwave`** is the engine without the window: every verb under
+  [Headless verbs](#headless-verbs), driving exactly the code the window drives, and the
+  one to use over SSH or in a script. The verbs that make a mod (`--build`, `--merge`,
+  `--updatemod`, ...) write a finished `.pak` beside their output, the same as the window.
+  The window's binary takes the same verbs, so the smaller download is only needed where
+  there is no desktop.
+
+Nothing to install at all here, not even the runtime: both carry .NET inside them, which
+is why they are 57 MB and 76 MB. The platform that could not assume a runtime is the one
+that had to bring its own.
 
 `./xzoundwave --doctor` says what the machine provides, and writes the same report to
 `~/.config/XzoundWave/diagnostics.txt`. Settings, the unpacked tools and the optional
@@ -65,8 +79,9 @@ and composed from thirty clips inside the binary, so `--tts` and `--testbank` wo
 and write the same files.
 
 The game is looked for under `~/.local/share/Steam`, `~/.steam/steam`, `~/Games/Steam`
-and the Flatpak tree, so an install played through Proton is found where a native one
-would be.
+and the Flatpak and Snap trees, and then in every library Steam lists in its own
+`libraryfolders.vdf`, so a game on a second drive or a Steam Deck's SD card is found too.
+An install played through Proton is found where a native one would be.
 
 Numbers printed for a reader come out plain: a size reads `937,404` here, where a Windows
 machine set to German reads `937.404`. That is the visible half of a deliberate trade.
@@ -141,20 +156,23 @@ dotnet publish XzoundCli/XzoundCli.csproj -c Release -r linux-x64 --self-contain
 ```
 
 `--self-contained false` is spelled out because a runtime identifier on its own is taken
-as a request to bundle the runtime, which turns 55 MB into 128 MB to save the reader an
-install they have almost certainly already done. The Windows binary asks for .NET 10,
+as a request to bundle the runtime, which more than doubles the 60 MB exe to save the
+reader an install they have almost certainly already done. The Windows binary asks for .NET 10,
 and the plain runtime rather than the Desktop one is enough for it.
 
 The Linux binaries do carry their runtime, because "nothing to install" is the point of
 that release. It is the runtime identifier and not the framework that turns globalization
-off for them, which is why the Windows line keeps it and the two Linux ones do not.
+off for them, which is why the Windows line keeps it and the two Linux ones do not. The
+same runtime identifier is what puts the Chinese font into the Linux window and keeps it
+out of the Windows one (Inter is in both, because the headless renderer depends on it,
+and only the Linux window uses it), and what compresses the Linux window: 76 MB, against
+136 MB without compression. The CLI line asks for compression on the command line, which
+keeps it to 57 MB.
 
-The Windows publish also drops `libSkiaSharp.pdb` and `libHarfBuzzSharp.pdb` beside the
-exe, about 100 MB of debug symbols for somebody else's native libraries. They come out of
-the Skia package, they are not needed to run anything, and a release can leave them
-behind.
-
-Compression is what keeps that last one to 53 MB; without it, it is nearly twice that.
+Each publish is the one file and nothing beside it. The projects leave out the debug
+symbols the Skia packages would otherwise drop next to the exe (about 100 MB of them), and
+UAssetTool's own runtimeconfig and launcher, which this app never uses because it calls
+UAssetTool as a library.
 
 ## Setup — nothing here ships with the tool
 
@@ -311,9 +329,18 @@ themselves are the same on both.
 --testbank <skinId> <clipDir> <outDir> [bankFilter]
 --openbank <bnk|pak> [rows]             diff a mod against the game
 --merge <modA> <modB> <outDir>          A wins collisions
---import <file> <outDir>                any supported format -> wem
---recompress <bnk> <outDir>             PCM bank -> Vorbis
---volume <skinId> <wemDir> <outDir> <gain>
+--updatemod <mod> <outDir> [--made-for <version>] [--history-dir <dir>]
+                                        an old mod onto the current banks
+--organizewems <inDir> <outDir> [0-WEM-FOLDER-NAME-LIST.txt]
+                                        one folder per mod
+--snapshot [paksDir]                    record this game version for updates
+--history [dir]                         the versions and SoundKit lists known
+--importsubs <soundKitFolder>           SoundKit's old subtitle lists
+--import <file> <outWem>                any supported format -> wem
+--recompress <bnk|wem|pak|folder> <outDir>
+                                        PCM -> Vorbis
+--volume <skinId> <gain> <outDir> [bankFilter]
+--voicelinetest <audio> <outDir>        a new voice line, built and read back
 --media <id> [<id>…] [--bank <name>]    where a media lives, and how
 --wwiseprobe <skinId> [event|?]         what a .bnk says about a sound beyond
                                         its audio: the event graph, loop
@@ -330,7 +357,7 @@ themselves are the same on both.
 Self-tests, each printing `ALL CHECKS PASSED` or a numbered failure:
 
 ```
---selftest  --seltest  --bulktest  --tags  --rowfilters  --menutest  --themetest
+--selftest  --seltest  --bulktest  --tags  --rowfilters  --updatetest  --music
 --mediapath  --playtest  --cachetest  --mutetest  --noskinbuild  --openorder  --modset
 --prefetchpreview  --applied  --ingame  --sorting
 --roundtrip  --fmtcheck  --vorbistest  --setuproundtrip
@@ -366,7 +393,9 @@ Third-party components keep their own terms, set out in `THIRD-PARTY-NOTICES.md`
 of them ride inside the binary: the **aoTuV Vorbis codebooks** (Xiph BSD) and
 **vgmstream** with its codec libraries, some of which are **LGPL**. The Linux build
 carries a third, the **.NET runtime** itself, which the Windows one leaves to the
-machine. All of those notices are compiled in, so they travel with the binary
+machine. The window adds the native libraries it draws with (**Skia**, **HarfBuzz** and,
+on Windows, **ANGLE**, with what is linked into them) and, on Linux, its **fonts** (SIL
+Open Font License). All of those notices are compiled in, so they travel with the binary
 automatically — `--licences` prints them, and they are written out beside the unpacked
 vgmstream. If you redistribute the binary, that obligation is already met; if you
 repackage it, keep them with it.

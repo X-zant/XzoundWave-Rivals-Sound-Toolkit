@@ -148,7 +148,7 @@ public static class Program
                 Environment.NewLine +
                 "server or container image often does not; on Debian or Ubuntu the missing" +
                 Environment.NewLine +
-                "pieces are libx11-6, libice6 and libsm6." + Environment.NewLine +
+                "pieces are libx11-6, libice6, libsm6 and libfontconfig1." + Environment.NewLine +
                 Environment.NewLine +
                 "Nothing else is affected. Run with --help to see the verbs, which build," +
                 Environment.NewLine +
@@ -211,5 +211,5 @@ public static class Program
     }
 
     public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<App>().UsePlatformDetect().LogToTrace();
+        AppBuilder.Configure<App>().UseBundledFonts().UsePlatformDetect().LogToTrace();
 }

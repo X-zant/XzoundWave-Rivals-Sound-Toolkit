@@ -95,15 +95,15 @@ public static class Verbs
     [
         // ---- what a person would actually run -----------------------------
         new("--build", 3, "<skinId> <wemDir> <outDir> [--prefetch]",
-            "build a mod from a folder of named wems",
+            "build a mod .pak from a folder of named wems",
             (a, i) => SelfTest.BuildMod(a[i + 1], a[i + 2], a[i + 3], Flag(a, "--prefetch"))),
 
         new("--testbank", 3, "<skinId> <clipDir> <outDir> [bankFilter]",
-            "numbered test .bnk, so a sound says which one it is",
+            "numbered test .bnk in a .pak, so a sound says which one it is",
             (a, i) => SelfTest.TestBank(a[i + 1], a[i + 2], a[i + 3], Arg(a, i + 4))),
 
-        new("--volume", 3, "<skinId> <wemDir> <outDir> [gain]",
-            "rebuild at a different level",
+        new("--volume", 3, "<skinId> <gain> <outDir> [bankFilter]",
+            "rebuild a skin's banks with every sound at one level, as a .pak",
             (a, i) => SelfTest.Volume(a[i + 1], a[i + 2], a[i + 3], Arg(a, i + 4))),
 
         new("--import", 2, "<file> <outWem>", "any supported audio -> wem",
@@ -112,13 +112,13 @@ public static class Verbs
         new("--recompress", 2, "<bnk|wem|pak|folder> <outDir>", "re-encode PCM audio to Vorbis: a .bnk, loose .wem files, or a mod .pak",
             (a, i) => SelfTest.Recompress(a[i + 1], a[i + 2])),
 
-        new("--merge", 3, "<modA> <modB> <outDir>", "combine two mods; A wins collisions",
+        new("--merge", 3, "<modA> <modB> <outDir>", "combine two mods into one .pak; A wins collisions",
             (a, i) => SelfTest.Merge(a[i + 1], a[i + 2], a[i + 3])),
 
         // A mod that ships a whole .bnk puts the old bank back after every patch. This
         // rebuilds the game's current bank with only the mod's audio carried onto it.
         new("--updatemod", 2, $"<mod.pak|mod.bnk|folder> <outDir> [{ModUpdate.KeepWwiseBuiltFlag}] [--made-for <version>] [--history-dir <dir>]",
-            "carry an old mod's audio onto the game's current banks",
+            "carry an old mod's audio onto the game's current banks, as a .pak to replace it",
             (a, i) => ModUpdate.Run(a[i + 1], a[i + 2], Flag(a, ModUpdate.KeepWwiseBuiltFlag),
                                     madeFor: After(a, "--made-for"), historyDir: After(a, "--history-dir"))),
 
@@ -136,7 +136,7 @@ public static class Verbs
         new("--importsubs", 1, "<soundKitFolder> [--history-dir <dir>]", "copy SoundKit's old subtitle lists into the history",
             (a, i) => HistoryVerbs.ImportSubs(a[i + 1], After(a, "--history-dir"))),
 
-        new("--openbank", 1, "<bnk|pak> [rows]", "diff someone else's .bnk against the game",
+        new("--openbank", 1, "<bnk|pak> [rows]", "diff someone else's .bnk and loose Media wems against the game",
             (a, i) => SelfTest.OpenBank(a[i + 1],
                 int.TryParse(Arg(a, i + 2), out var n) ? n : 8)),
 

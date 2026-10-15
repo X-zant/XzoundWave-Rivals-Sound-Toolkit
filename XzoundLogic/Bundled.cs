@@ -50,7 +50,7 @@ public static class Bundled
         try
         {
             var stamped = File.Exists(StampFile) ? File.ReadAllText(StampFile).Trim() : null;
-            if (HasVgmstream && stamped == Stamp) return VgmstreamExe;
+            if (HasVgmstream && stamped == Stamp) { WriteHostNotices(); return VgmstreamExe; }
 
             using var res = typeof(Bundled).Assembly.GetManifestResourceStream(ZipResource);
             if (res is null)
@@ -79,6 +79,7 @@ public static class Bundled
 
             WriteText(Path.Combine(ToolsDir, "XzoundWave-LICENSE.txt"), LicenceResource);
             WriteText(Path.Combine(ToolsDir, "XzoundWave-THIRD-PARTY-NOTICES.md"), NoticesResource);
+            WriteHostNotices();
 
             File.WriteAllText(StampFile, Stamp);
             return HasVgmstream ? VgmstreamExe : null;
@@ -102,6 +103,57 @@ public static class Bundled
     public static string Licence => ReadText(LicenceResource);
     public static string Notices => ReadText(NoticesResource);
 
+    /// <summary>What a notice the running program embeds is named by.</summary>
+    private const string HostNoticePrefix = "XzoundWave.notices.";
+
+    /// <summary>
+    /// The notices the running program carries beyond the engine's own, by file name.
+    ///
+    /// The window draws with Skia, HarfBuzz and, on Windows, ANGLE: native libraries inside
+    /// its single file whose licences ask for their notices to travel with every copy. The
+    /// command line has none of them, so the texts are embedded in the window's assembly
+    /// rather than in this one, and found here by asking whichever program is running.
+    /// </summary>
+    public static IEnumerable<(string Name, string Text)> HostNotices() =>
+        HostNoticeResources().Select(r => (Name: r[HostNoticePrefix.Length..], Text: ReadHostNotice(r)))
+                             .Where(n => n.Text is not null);
+
+    private static Assembly Host =>
+        Assembly.GetEntryAssembly() is { } a && a != typeof(Bundled).Assembly ? a : null;
+
+    private static IEnumerable<string> HostNoticeResources() =>
+        (Host?.GetManifestResourceNames() ?? [])
+            .Where(n => n.StartsWith(HostNoticePrefix, StringComparison.Ordinal))
+            .OrderBy(n => n, StringComparer.Ordinal);
+
+    private static string ReadHostNotice(string resource)
+    {
+        using var s = Host?.GetManifestResourceStream(resource);
+        if (s is null) return null;
+        using var r = new StreamReader(s);
+        return r.ReadToEnd();
+    }
+
+    /// <summary>
+    /// Put the running program's own notices beside the engine's in the tools folder. Done
+    /// whenever one is missing rather than only on an unpack, because the window and the
+    /// command line share that folder and whichever ran first did the unpacking. Asked on
+    /// every EnsureVgmstream, so a notice already there costs one File.Exists and is not read.
+    /// </summary>
+    private static void WriteHostNotices()
+    {
+        try
+        {
+            foreach (var resource in HostNoticeResources())
+            {
+                var path = Path.Combine(ToolsDir, "XzoundWave-" + resource[HostNoticePrefix.Length..]);
+                if (File.Exists(path)) continue;
+                if (ReadHostNotice(resource) is { } text) File.WriteAllText(path, text);
+            }
+        }
+        catch { /* the same texts are printed by --licences; a folder we cannot write is not worth failing over */ }
+    }
+
     private static void WriteText(string path, string resource)
     {
         var text = ReadText(resource);
@@ -116,6 +168,14 @@ public static class Bundled
         Console.WriteLine(new string('-', 78));
         Console.WriteLine();
         Console.WriteLine(Notices ?? "(notices resource missing)");
+        foreach (var (name, text) in HostNotices())
+        {
+            Console.WriteLine();
+            Console.WriteLine(new string('-', 78));
+            Console.WriteLine(name);
+            Console.WriteLine();
+            Console.WriteLine(text);
+        }
         return Licence is null || Notices is null ? 1 : 0;
     }
 }

@@ -173,6 +173,133 @@ public static class PlatformSelfTest
                   : libs.All(l => !l.Contains(":\\", StringComparison.Ordinal)),
               string.Join(", ", libs.Take(3)));
 
+        // What this machine would actually be given, said rather than checked: a host
+        // without the game installed is not a host that failed anything.
+        var fromSteam = libs.Except(AppPaths.UsualLibraries(), AppPaths.Comparer).ToList();
+        W($"  --    {fromSteam.Count} of them from Steam's own list" +
+          (fromSteam.Count == 0 ? "" : $": {string.Join(", ", fromSteam)}"));
+        W($"  --    the game here: {Settings.FindPaks() ?? "not in any of them"}");
+
+        // ---- the libraries Steam itself lists -------------------------------
+        //
+        // A second library is the case the usual places miss, and Steam keeps every one
+        // of them in libraryfolders.vdf. The reading is tested on a file written here,
+        // because a machine with one library has nothing in its own file to get wrong.
+        W("");
+        W("reading Steam's own list of libraries");
+        var steamDir = Path.Combine(Path.GetTempPath(), "xzw-steam-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(steamDir);
+        try
+        {
+            // The current client's shape. Both kinds of folder sit in one file on
+            // purpose: which host reads the file must not change what comes out of it,
+            // and the backslashes in a Windows folder are written doubled.
+            var sample = Path.Combine(steamDir, "libraryfolders.vdf");
+            File.WriteAllText(sample, """
+                "libraryfolders"
+                {
+                    "0"
+                    {
+                        "path"        "D:\\Games\\Steam"
+                        "label"       ""
+                        "contentid"   "4721958234023650941"
+                        "totalsize"   "0"
+                        "apps"
+                        {
+                            "2767030"     "40453453824"
+                        }
+                    }
+                    "1"
+                    {
+                        "path"        "/run/media/mmcblk0p1/SteamLibrary"
+                        "label"       "SD card"
+                        "contentid"   "1873641873649813746"
+                        "totalsize"   "512110190592"
+                        "apps"
+                        {
+                        }
+                    }
+                }
+                """);
+            var listed = AppPaths.LibraryFolders(sample);
+            Check("both libraries come out, and nothing else does",
+                  listed.Count == 2, string.Join(" | ", listed));
+            Check("a Windows folder comes out with single backslashes",
+                  listed.ElementAtOrDefault(0) == @"D:\Games\Steam", listed.ElementAtOrDefault(0));
+            Check("a Linux folder comes out as written",
+                  listed.ElementAtOrDefault(1) == "/run/media/mmcblk0p1/SteamLibrary",
+                  listed.ElementAtOrDefault(1));
+
+            // The older shape, where the folder is the numbered key's own value.
+            var older = Path.Combine(steamDir, "older.vdf");
+            File.WriteAllText(older, """
+                "LibraryFolders"
+                {
+                    "TimeNextStatsReport"   "1626342145"
+                    "ContentStatsID"        "-4721958234023650941"
+                    "1"                     "E:\\SteamLibrary"
+                }
+                """);
+            var olderListed = AppPaths.LibraryFolders(older);
+            Check("the older shape is read too",
+                  olderListed is [@"E:\SteamLibrary"], string.Join(" | ", olderListed));
+
+            // What another program's file can do to us. None of these may throw, and
+            // a file cut short, here in the middle of a quoted value, still gives up
+            // what it got to before it stopped.
+            var cut = Path.Combine(steamDir, "cut.vdf");
+            var whole = File.ReadAllText(sample);
+            File.WriteAllText(cut, whole[..(whole.IndexOf("\"contentid\"", StringComparison.Ordinal) + 17)]);
+            var cutListed = AppPaths.LibraryFolders(cut);
+            Check("a file cut off part way gives what it had",
+                  cutListed is [@"D:\Games\Steam"], string.Join(" | ", cutListed));
+
+            var stray = Path.Combine(steamDir, "stray.vdf");
+            File.WriteAllText(stray, "}}}} \"path\" { \"1\" } \"2\" \"x/y\" \"path");
+            var strayListed = AppPaths.LibraryFolders(stray);
+            Check("stray braces and keys without values give nothing",
+                  strayListed.Count == 0, $"{strayListed.Count} found");
+            Check("a missing file gives nothing",
+                  AppPaths.LibraryFolders(Path.Combine(steamDir, "absent.vdf")).Count == 0);
+
+            // And through the same search the game is looked for with: the usual places
+            // first, then Steam's own folder, then what its file adds, each named once.
+            var install = Path.Combine(steamDir, "Steam");
+            Directory.CreateDirectory(Path.Combine(install, "steamapps"));
+            var usual = Path.Combine(steamDir, "Lib-A");
+            var recased = Path.Combine(steamDir, "LIB-A");
+            var added = Path.Combine(steamDir, "Lib-B");
+            string Q(string p) => "\"" + p.Replace("\\", "\\\\") + "\"";
+            File.WriteAllText(Path.Combine(install, "steamapps", "libraryfolders.vdf"),
+                "\"libraryfolders\"\n{\n" +
+                $"  \"0\" {{ \"path\" {Q(install)} }}\n" +
+                $"  \"1\" {{ \"path\" {Q(usual)} }}\n" +
+                $"  \"2\" {{ \"path\" {Q(recased)} }}\n" +
+                $"  \"3\" {{ \"path\" {Q(added)} }}\n" +
+                "}\n");
+            var order = AppPaths.Libraries([usual],
+                [install, Path.Combine(steamDir, "not-installed"), install]).ToList();
+            var names = string.Join(", ", order.Select(Path.GetFileName));
+            Check("the usual places still come first", order.FirstOrDefault() == usual, names);
+            Check("then Steam's own folder, then the library it adds",
+                  order.IndexOf(install) == 1 && order.LastOrDefault() == added, names);
+            Check("a library already tried is not tried again",
+                  order.Count(p => p == usual) == 1 && order.Count(p => p == install) == 1, names);
+            Check($"the same folder in another case {(windows ? "is a repeat" : "is another library")} here",
+                  order.Contains(recased) == !windows, names);
+            Check("an install that is not there is passed over",
+                  order.Count == (windows ? 3 : 4), $"{order.Count} place(s)");
+
+            // An install whose list is gone is still a library: it is where the client
+            // puts games until told otherwise.
+            var bare = Path.Combine(steamDir, "Bare");
+            Directory.CreateDirectory(bare);
+            var bareOrder = AppPaths.Libraries([], [bare]).ToList();
+            Check("a Steam folder with no list is still a library",
+                  bareOrder is [var only] && only == bare, string.Join(", ", bareOrder));
+        }
+        finally { try { Directory.Delete(steamDir, true); } catch { } }
+
         W("");
         W(fails == 0 ? "ALL CHECKS PASSED" : $"{fails} CHECK(S) FAILED");
         return fails == 0 ? 0 : 1;
