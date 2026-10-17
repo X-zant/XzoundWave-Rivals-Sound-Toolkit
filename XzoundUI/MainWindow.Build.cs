@@ -431,7 +431,7 @@ public partial class MainWindow
 
         var banks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var homeless = 0;
-        foreach (var p in _pending)
+        foreach (var p in _pending.Where(p => !IsNewMedia(p.MediaId)))
         {
             var found = Session.BanksForMedia(p.MediaId);
             if (found.Count == 0) homeless++;
@@ -532,19 +532,21 @@ public partial class MainWindow
         // New voice lines' audio is staged like any sound's, but it belongs to no bank yet:
         // it goes to BuildVoiceLines after the regular build, never into it, where the
         // checks below would rightly find its ids in no .bnk at all.
+        // An added sound's audio the same: it goes into its event's bank after the regular build.
         var lineIds = _project.VoiceLines.Select(l => l.MediaId).ToHashSet();
         var hasLines = _project.VoiceLines.Count > 0;
-        var regular = _pending.Where(p => !lineIds.Contains(p.MediaId)).ToList();
+        var hasLayers = _project.Layers.Count > 0;
+        var regular = _pending.Where(p => !lineIds.Contains(p.MediaId) && !IsNewMedia(p.MediaId)).ToList();
 
         // A mute is a build instruction, not a test-build one: silencing a line you do
         // not want is a thing people ship.
-        var mutedIds = Sounds?.Rows.Where(r => r.Muted).Select(r => r.MediaId).ToHashSet() ?? [];
+        var mutedIds = Sounds?.Rows.Where(r => r.Muted && !IsAddedRow(r)).Select(r => r.MediaId).ToHashSet() ?? [];
 
         // Picking a skin is only needed when there is nothing staged to build FROM. A
         // staged file carries its own media id and the id says which .bnk it belongs in,
         // so a folder of named wems may even span characters -- which no single skin
         // selection could express.
-        if (regular.Count == 0 && mutedIds.Count == 0 && !hasLines)
+        if (regular.Count == 0 && mutedIds.Count == 0 && !hasLines && !hasLayers)
         {
             Say(PickedSkin is null
                 ? "nothing to build -- stage audio with \"Set replacement…\", or pick a skin and mute something (right-click > Mute)."
@@ -586,11 +588,16 @@ public partial class MainWindow
 
     private async Task BuildModInto(string outRoot, string work, List<PendingWem> regular, HashSet<uint> mutedIds, bool hasLines)
     {
-        // Only new lines: there is no regular build to make first.
+        // Only new lines or added sounds: there is no regular build to make first.
         if (regular.Count == 0 && mutedIds.Count == 0)
         {
-            if (Config.SplitModsByGroup || HasPakNameList) await PackGroups(outRoot, work, [], "");
-            else await BuildVoiceLines(outRoot, work, []);
+            var only = new List<string>();
+            var layered = await AddLayersToBuild(outRoot, work, only, freshLog: true);
+            if (layered is null) return;
+            var said = layered.Length > 0 ? layered + "Details in build-log.txt." : "";
+            if (Config.SplitModsByGroup || HasPakNameList) await PackGroups(outRoot, work, only, said);
+            else if (hasLines) await BuildVoiceLines(outRoot, work, only);
+            else await PackOne(outRoot, work, only, $"{_project.Layers.Count} added sound(s)", said);
             return;
         }
 
@@ -688,8 +695,10 @@ public partial class MainWindow
         if (built is null) return;   // Working has already said why
         if (File.Exists(Path.Combine(work, "build-log.txt")))
             File.Copy(Path.Combine(work, "build-log.txt"), Path.Combine(outRoot, "build-log.txt"), true);
+        var layeredNote = await AddLayersToBuild(outRoot, work, built.Outputs, freshLog: !File.Exists(Path.Combine(work, "build-log.txt")));
+        if (layeredNote is null) return;
 
-        var summary = (built.Muted > 0 ? $"{built.Muted} muted. " : "") +
+        var summary = (built.Muted > 0 ? $"{built.Muted} muted. " : "") + layeredNote +
                       (built.Retimed > 0
                           ? $"{built.Retimed} clip(s) are not the length their .bnk states, which its timing " +
                             "still describes. " : "") +
@@ -708,8 +717,16 @@ public partial class MainWindow
             return;
         }
 
+        await PackOne(outRoot, work, built.Outputs,
+                      $"{built.Banks} .bnk(s)" + (built.Loose > 0 ? $" and {built.Loose} audio file(s)" : ""), summary);
+    }
+
+    /// <summary>The build as one .pak under the project's mod name.</summary>
+    /// <param name="what">what went in, for the status line: "3 .bnk(s) and 2 audio file(s)"</param>
+    private async Task PackOne(string outRoot, string work, IReadOnlyCollection<string> outputs, string what, string summary)
+    {
         var outputBase = Path.Combine(outRoot, ModBaseName());
-        var packed = await Working("packing the .pak", () => ModPackager.PackagePak(work, built.Outputs, outputBase));
+        var packed = await Working("packing the .pak", () => ModPackager.PackagePak(work, outputs, outputBase));
         if (!packed.Ok)
         {
             if (packed.Message is not null) Say("could not pack the mod: " + packed.Message);
@@ -721,8 +738,7 @@ public partial class MainWindow
         foreach (var e in stale) File.Delete(outputBase + e);
         _lastBuilt.Add(outputBase + ".pak");
 
-        Say($"built {built.Banks} .bnk(s)" + (built.Loose > 0 ? $" and {built.Loose} audio file(s)" : "") +
-            $" into {Path.GetFileName(outputBase)}.pak in {outRoot} -- copy it into ~mods, or Install to ~mods. " +
+        Say($"built {what} into {Path.GetFileName(outputBase)}.pak in {outRoot} -- copy it into ~mods, or Install to ~mods. " +
             (stale.Count > 0 ? $"(Removed the {string.Join("/", stale)} an earlier build left under that name.) " : "") +
             summary);
     }

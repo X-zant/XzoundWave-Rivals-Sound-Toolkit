@@ -21,7 +21,7 @@ namespace MRAudioKit.UI;
 /// This is also the honest way to show work: a screenshot of what was actually built,
 /// rather than a description of it.
 /// </summary>
-public static class Shot
+public static partial class Shot
 {
     /// <summary>XzoundWave --shot &lt;file.png&gt; [width] [height]</summary>
     /// <param name="stage">
@@ -671,6 +671,179 @@ public static class Shot
         catch (Exception ex)
         {
             Console.Error.WriteLine("could not run the notes check: " + ex);
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// XzoundWave --shot-projectmods &lt;dir&gt; &lt;mod&gt; &lt;mod&gt;...: several mods dropped on the window at
+    /// once, every one opened (a .pak of several banks answered with its first two); the project
+    /// saved; the mods closed; the project opened, which must open the same mods with the same
+    /// banks; Load game pressed again, which must bring them back; and a project whose first mod
+    /// has gone missing, which must say so and open the rest.
+    ///
+    /// Saves a project into &lt;dir&gt;, and a reload writes the settings, so run it under a settings
+    /// folder of its own (on Linux, HOME pointed at a scratch folder).
+    /// </summary>
+    public static int TakeProjectMods(string dir, IReadOnlyList<string> mods)
+    {
+        try
+        {
+            AppBuilder.Configure<App>().UseBundledFonts().UseSkia()
+                      .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
+            Directory.CreateDirectory(dir);
+            var main = new MainWindow { Width = 1440, Height = 840 };
+            main.Show();
+            main.LoadGameSync();
+            void Pump(Task t = null)
+            {
+                while (t is { IsCompleted: false }) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); }
+                for (var i = 0; i < 5; i++) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+            }
+            Pump();
+            main.ToldForShot = [];
+            main.PickBanksForShot = banks => banks.Take(2).ToList();
+
+            var failures = 0;
+            void Check(string what, bool ok, string detail = "")
+            {
+                Console.WriteLine($"  {(ok ? "ok  " : "FAIL")}  {what}{(detail.Length > 0 ? "   " + detail : "")}");
+                if (!ok) failures++;
+            }
+            // What is open, as a comparable string: each .bnk with the file it came from, and the loose files.
+            string Open() =>
+                string.Join(", ", main.ModsForShot.All.Select(e => $"{e.BankName}<{e.SourceName}")
+                                      .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)) +
+                $" + {main.ModsForShot.LooseFiles.Count} loose";
+
+            Pump(main.DropOpenForShot([.. mods]));
+            var dropped = Open();
+            Console.WriteLine($"  dropped {mods.Count}: {dropped}");
+            var sources = main.ModsForShot.Sources.ToList();
+            Check($"every one of the {mods.Count} dropped files opened",
+                  mods.All(m => sources.Contains(Path.GetFileName(m), StringComparer.OrdinalIgnoreCase)),
+                  string.Join(", ", sources));
+            Check("the status names all of them", main.Status.Text.Contains($"from {mods.Count} file(s)"), main.Status.Text);
+
+            var path = Path.Combine(dir, "mods-check" + Project.Extension);
+            Pump(main.SaveProjectForShot(path));
+            var saved = Project.Load(path);
+            Check("the saved project lists every mod, in order", saved.Mods?.Count == mods.Count &&
+                  saved.Mods.Select(m => Path.GetFileName(saved.ToFullPath(m.File))).SequenceEqual(mods.Select(Path.GetFileName)),
+                  string.Join("; ", saved.Mods?.Select(m => $"{m.File} [{string.Join(", ", m.Banks)}]") ?? []));
+
+            Pump(main.CloseModsForShot());
+            Check("closing the mods leaves none open", !main.ModsForShot.Any);
+
+            Pump(main.OpenProjectForShot(path));
+            Check("opening the project opens the same mods, the same .bnk files", Open() == dropped, Open());
+            Check("without asking which banks again, and the project opens clean",
+                  main.ToldForShot.Count == 0 && !main.CurrentProject.IsDirty,
+                  string.Join(" | ", main.ToldForShot));
+
+            Pump(main.ReloadForShot());
+            Check("Load game again brings them back", Open() == dropped, Open());
+
+            // The first mod moved away: the project says so and opens the rest.
+            var moved = File.ReadAllText(path).Replace(saved.Mods[0].File, saved.Mods[0].File + ".gone");
+            var broken = Path.Combine(dir, "mods-missing" + Project.Extension);
+            File.WriteAllText(broken, moved);
+            main.ToldForShot.Clear();
+            Pump(main.OpenProjectForShot(broken));
+            Check("a missing mod is named", main.ToldForShot.Any(t => t.Contains("Missing mods") && t.Contains(".gone")),
+                  string.Join(" | ", main.ToldForShot));
+            Check("and the rest still open",
+                  main.ModsForShot.Sources.Count() == mods.Count - 1 || mods.Count == 1,
+                  string.Join(", ", main.ModsForShot.Sources));
+
+            Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
+            return failures == 0 ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("could not run the project-mods check: " + ex);
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// XzoundWave --shot-modorder &lt;dir&gt; &lt;a.pak&gt; &lt;copyOfA.pak&gt; &lt;iostore.pak&gt;: which mod wins survives a
+    /// save and reopen, and a mod's .pak/.ucas/.utoc dropped together is one mod.
+    ///
+    /// Precedence: a.pak opened taking its first two banks, the copy taking the second (so the
+    /// copy owns it), then a.pak again for its third. The copy must still own the second bank
+    /// after the project is reopened -- the case an open log merged per file got wrong.
+    ///
+    /// IoStore: the three files of a voice-line bundle dropped at once must open once, and taking
+    /// only its English bnk_vo (it ships one per language under one name) must reopen only that.
+    /// </summary>
+    public static int TakeModOrder(string dir, string a, string copy, string iostore)
+    {
+        try
+        {
+            AppBuilder.Configure<App>().UseBundledFonts().UseSkia()
+                      .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
+            Directory.CreateDirectory(dir);
+            var main = new MainWindow { Width = 1440, Height = 840 };
+            main.Show();
+            main.LoadGameSync();
+            void Pump(Task t = null)
+            {
+                while (t is { IsCompleted: false }) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(20); }
+                for (var i = 0; i < 5; i++) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+            }
+            Pump();
+            main.ToldForShot = [];
+            var failures = 0;
+            void Check(string what, bool ok, string detail = "")
+            {
+                Console.WriteLine($"  {(ok ? "ok  " : "FAIL")}  {what}{(detail.Length > 0 ? "   " + detail : "")}");
+                if (!ok) failures++;
+            }
+            string Open() =>
+                string.Join(", ", main.ModsForShot.All.Select(e => $"{e.Bank.MountedAt ?? e.BankName}<{e.SourceName}")
+                                      .OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
+
+            // ---- precedence -------------------------------------------------------
+            var picks = new Queue<int[]>([[0, 1], [1], [2]]);
+            main.PickBanksForShot = banks => [.. picks.Dequeue().Where(i => i < banks.Count).Select(i => banks[i])];
+            Pump(main.DropOpenForShot([a]));
+            Pump(main.DropOpenForShot([copy]));
+            Pump(main.DropOpenForShot([a]));
+            var live = Open();
+            Console.WriteLine($"  live: {live}");
+            Check("the copy owns the bank it took last", live.Contains($"<{Path.GetFileName(copy)}"));
+            var path = Path.Combine(dir, "order" + Project.Extension);
+            Pump(main.SaveProjectForShot(path));
+            Pump(main.CloseModsForShot());
+            Pump(main.OpenProjectForShot(path));
+            Check("reopening the project gives the same winners", Open() == live, Open());
+
+            // ---- an IoStore mod's three files --------------------------------------
+            Pump(main.CloseModsForShot());
+            var stem = Path.Combine(Path.GetDirectoryName(iostore)!, Path.GetFileNameWithoutExtension(iostore));
+            main.PickBanksForShot = banks => [.. banks.Where(b => (b.MountedAt ?? "").Contains("English", StringComparison.OrdinalIgnoreCase))];
+            Pump(main.DropOpenForShot([stem + ".pak", stem + ".ucas", stem + ".utoc"]));
+            var english = Open();
+            Console.WriteLine($"  iostore: {english}");
+            var path2 = Path.Combine(dir, "iostore" + Project.Extension);
+            Pump(main.SaveProjectForShot(path2));
+            var saved = Project.Load(path2);
+            Check("its three files open as one mod", saved.Mods?.Count == 1,
+                  string.Join("; ", saved.Mods?.Select(m => $"{m.File} [{string.Join(", ", m.Banks)}]") ?? []));
+            Check("the English bnk_vo is the one taken", english.Contains("English", StringComparison.OrdinalIgnoreCase) &&
+                  !english.Contains("Japanese", StringComparison.OrdinalIgnoreCase), english);
+            Pump(main.CloseModsForShot());
+            Pump(main.OpenProjectForShot(path2));
+            Check("reopening takes the English one back, not another language's", Open() == english, Open());
+            Check("nothing went missing", main.ToldForShot.Count == 0, string.Join(" | ", main.ToldForShot));
+
+            Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
+            return failures == 0 ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("could not run the mod-order check: " + ex);
             return 1;
         }
     }

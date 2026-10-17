@@ -68,6 +68,8 @@ public partial class MainWindow
     /// </summary>
     public async Task Tell(string title, string body)
     {
+        // The render harness: a dialog there would wait for a click that never comes.
+        if (ToldForShot is not null) { ToldForShot.Add($"{title}: {body}"); return; }
         var ok = new Button { Content = "OK", Width = 90, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
         var panel = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(16) };
         panel.Children.Add(new TextBlock { Text = body, TextWrapping = Avalonia.Media.TextWrapping.Wrap, MaxWidth = 520 });
@@ -86,9 +88,16 @@ public partial class MainWindow
         await dialog.ShowDialog(this);
     }
 
+    /// <summary>The render harness: what <see cref="Tell"/> would have shown, instead of showing it.</summary>
+    internal List<string> ToldForShot;
+
+    /// <summary>The render harness's answer to a yes-or-no, by its title: nobody is there to click one.</summary>
+    internal Func<string, bool> AnswerForShot;
+
     /// <summary>A yes or no. Returns true only on an explicit yes.</summary>
     public async Task<bool> Ask(string title, string body, string yes = "Yes", string no = "Cancel")
     {
+        if (AnswerForShot is not null) return AnswerForShot(title);
         var answer = false;
         var yesButton = new Button { Content = yes, Width = 100 };
         var noButton = new Button { Content = no, Width = 100 };

@@ -29,6 +29,23 @@ public sealed class ProjectReplacement
 }
 
 /// <summary>
+/// A mod that was open when the project was saved: a .pak, .utoc, .bnk or unpacked folder,
+/// and the .bnk files taken from it. A build sits on top of the mods that are open, so they
+/// are part of the work as much as the staged files are.
+/// </summary>
+public sealed class ProjectMod
+{
+    /// <summary>Stored the way a staged file is (<see cref="Project.ToStoredPath"/>).</summary>
+    public string File { get; set; } = "";
+
+    /// <summary>
+    /// The .bnk files taken from it, by name inside it. Empty for a mod of loose Media wems
+    /// only. Reopened as these exactly, without asking again which banks to take.
+    /// </summary>
+    public List<string> Banks { get; set; } = [];
+}
+
+/// <summary>
 /// A saved piece of work: what you were editing, which custom files you staged, and
 /// the notes you took. Notes live here rather than in one global pile because a note
 /// like "too loud, drop 3 dB" belongs to a mod, not to the tool.
@@ -74,11 +91,26 @@ public sealed class Project
     public List<VoiceLine> VoiceLines { get; set; } = [];
 
     /// <summary>
+    /// Sounds added beside what an event already plays (right-click › Add a sound to this
+    /// event…). Their audio is staged like a new line's, as a <see cref="Replacements"/> entry
+    /// keyed by the layer's own media id. Absent from older files, which load with none.
+    /// </summary>
+    public List<ProjectLayer> Layers { get; set; } = [];
+
+    /// <summary>
     /// Level applied to every sound that has not been set by hand. Kept on the project
     /// rather than per sound so "make the whole mod quieter" is one number, and so the
     /// export can be labelled with it.
     /// </summary>
     public double BulkVolume { get; set; } = 1.0;
+
+    /// <summary>
+    /// The mods open when the project was saved, in the order they were opened: the one opened
+    /// last wins a .bnk or a loose file two of them ship, as it did then. Null in a project
+    /// written before mods were saved, which leaves whatever is open alone; empty means none
+    /// were open, and opening the project closes any that are.
+    /// </summary>
+    public List<ProjectMod> Mods { get; set; }
 
     /// <summary>Where this was loaded from / will save to. Null for an unsaved project.</summary>
     [JsonIgnore] public string Path { get; private set; }
@@ -272,7 +304,8 @@ public sealed class Project
     /// also true of a sound in another bank, or of a mod's bank playing an event from another
     /// id than the game's copy.
     /// </param>
-    public int ApplyNotes(IReadOnlyList<SoundRow> rows, Func<uint, bool> gone = null)
+    /// <param name="mayTake">rows an orphaned note may move onto; null for all</param>
+    public int ApplyNotes(IReadOnlyList<SoundRow> rows, Func<uint, bool> gone = null, Func<SoundRow, bool> mayTake = null)
     {
         static string Key(string bank, string evt) => $"{bank}|{evt}";
         var present = rows.Select(r => r.MediaId).ToHashSet();
@@ -281,7 +314,7 @@ public sealed class Project
                            .GroupBy(n => Key(n.Bank, n.Event), StringComparer.OrdinalIgnoreCase)
                            .Where(g => g.Count() == 1)
                            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        var unclaimed = rows.Where(r => FindNote(r.MediaId) is null)
+        var unclaimed = rows.Where(r => FindNote(r.MediaId) is null && (mayTake is null || mayTake(r)))
                             .GroupBy(r => Key(r.Bank, r.Display), StringComparer.OrdinalIgnoreCase)
                             .ToDictionary(g => g.Key, g => g.Select(r => r.MediaId).Distinct().ToList(),
                                           StringComparer.OrdinalIgnoreCase);

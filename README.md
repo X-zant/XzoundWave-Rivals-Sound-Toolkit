@@ -13,6 +13,8 @@ FModel exports, no repak.
 - **Work with other people's mods:** open them, see what they changed, merge two together,
   pull their wems out, or bring an old mod up to date after a patch.
 - **Add new voice lines** to a character, for kills, ults and other triggers.
+- **Add a sound to an event** without replacing anything, such as music that plays under
+  an ult.
 
 ## Download
 
@@ -22,11 +24,22 @@ Get the latest version from the
 | | Download | Needs |
 | --- | --- | --- |
 | **Windows** | `XzoundWave.exe` | the [.NET 10 Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0); Windows offers it on first start if it is missing |
-| **Linux** | `XzoundWave` (the app) | nothing; make it executable and run it |
-| **Linux, no desktop** | `xzoundwave` (command line only) | nothing; see [Command line](#command-line) |
+| **Linux** | `XzoundWave-linux-x64.tar.gz` (the app) | nothing |
+| **Linux, no desktop** | `xzoundwave-cli-linux-x64.tar.gz` (command line only) | nothing; see [Command line](#command-line) |
 
-Each is a single file with nothing to unzip. The first time you use voice lines, the app
-downloads the Oodle library they need and keeps it next to the program.
+Each is a single program. On Linux it comes in a `.tar.gz`, which keeps it executable;
+extract it and run it:
+
+```bash
+tar -xzf XzoundWave-linux-x64.tar.gz
+```
+
+```bash
+./XzoundWave
+```
+
+The first time you use voice lines, the app downloads the Oodle library they need and keeps
+it next to the program.
 
 ## First run
 
@@ -67,6 +80,12 @@ category. Ctrl+click several banks to see them together.
 - Type your own notes on a sound in the **Notes** column. The filter box searches them
   too.
 - Drag a column header's edge to resize it; the app remembers the widths.
+- Right-click a sound › **Add a sound to this event…** to play a file of yours once every
+  time that sound's event plays, alongside what it already plays. Nothing of the game's is
+  replaced, and your file comes out of the same bus at the same level as the sound you
+  picked. If the game stops that sound (an ult ending, say), you choose whether yours stops
+  there too, with the same fade. Added sounds are listed under **Added sounds** in the tree.
+  Drop a file on one to change it, or right-click › **Remove added sound**.
 
 ### Test
 
@@ -102,9 +121,10 @@ mod.
 
 ### Mods
 
-- **Open mod** loads a `.pak`, `.bnk`, `.utoc` or unpacked mod folder. Its sounds are
-  marked as modified or new, and builds go on top of it. **Show only changed** hides the
-  rest.
+- **Open mod** loads a `.pak`, `.bnk`, `.utoc` or unpacked mod folder, or drop one or several
+  onto the window. Its sounds are marked as modified or new, and builds go on top of it.
+  When two open mods change the same `.bnk`, the one opened last wins, as in game.
+  **Show only changed** hides the rest.
 - **Mod tools:**
   - **Update mod…** moves a mod made for an older patch onto the current one, following
     each sound rather than its id.
@@ -127,8 +147,13 @@ an audio file on the line.
 ### Projects
 
 The project button saves your work to an `.xzw` file and opens it again later: staged
-files, notes, mutes, volume levels, test numbers, new voice lines, and the skin and bank
-you had open. After a game patch, staged files and notes follow their sound to its new id.
+files, notes, mutes, volume levels, test numbers, new voice lines, added sounds, the mods
+you had open (with the `.bnk` files you took from each), and the skin and bank you had open.
+After a game patch, staged files and notes follow their sound to its new id.
+
+A built mod also records its new voice lines and added sounds inside each `.bnk` it
+changes. Building again on top of it replaces them instead of adding them twice, and
+**Update mod…** puts added sounds back onto the patched bank.
 
 ## Audio formats
 
@@ -162,6 +187,7 @@ The ones you are most likely to want:
 --build <skinId> <wemDir> <outDir>          build a mod from a folder of named wems
 --merge <modA> <modB> <outDir>              combine two mods; A wins clashes
 --updatemod <mod> <outDir>                  bring an old mod onto the current patch
+--addlayer <bank> <event> <audio> <outDir>  add a sound beside what an event plays
 --recompress <bnk|wem|pak|folder> <outDir>  shrink uncompressed audio
 --organizewems <inDir> <outDir> [list.txt]  sort wems into one folder per mod
 --import <file> <outWem>                    convert any audio to a wem

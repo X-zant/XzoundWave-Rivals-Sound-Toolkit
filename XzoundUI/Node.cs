@@ -16,8 +16,11 @@ namespace MRAudioKit.UI;
 /// </summary>
 public sealed class Node
 {
-    /// <summary>NewLines: the project's new voice lines, one row each, staged like any sound.</summary>
-    public enum Kind { Character, Skin, Bank, Group, NewLines }
+    /// <summary>
+    /// NewLines: the project's new voice lines, one row each, staged like any sound.
+    /// AddedSounds: the sounds it adds beside the game's events, the same way.
+    /// </summary>
+    public enum Kind { Character, Skin, Bank, Group, NewLines, AddedSounds }
 
     public Kind What { get; init; }
     public string Label { get; init; } = "";

@@ -1902,6 +1902,10 @@ public static class ModUpdate
         public int Unplaced { get; init; }
         public const string UnplacedFolder = "_unplaced";
 
+        /// <summary>Sounds the mod added beside the game's events (its manifest's layers), put back on the current bank, and not.</summary>
+        public int LayersPutBack { get; init; }
+        public int LayersNotPutBack { get; init; }
+
         /// <summary>The version the loose files were read as made for, when one was decided.</summary>
         public string MadeFor { get; init; }
 
@@ -2003,7 +2007,7 @@ public static class ModUpdate
         var sections = new StringBuilder();
         var summary = new List<string>();
         var events = new StringBuilder();
-        int banks = 0, loose = 0, carriedTotal = 0, refusedTotal = 0;
+        int banks = 0, loose = 0, carriedTotal = 0, refusedTotal = 0, layersPutBack = 0, layersNotPutBack = 0;
         int looseSame = 0, looseMoved = 0, looseUnverified = 0, unplaced = 0;
         string followMadeFor = null;
         IReadOnlyList<string> followVersions = [];
@@ -2170,7 +2174,28 @@ public static class ModUpdate
             handed.UnionWith(looseHere.Values);
             var looseBytes = looseHere.ToDictionary(kv => kv.Key, kv => kv.Value.Bytes);
 
-            var plan = Rebase(bank.Bytes, current, StreamedAt, keepWwiseBuilt, looseBytes, Shipped);
+            // Sounds this tool added beside the mod's events (its manifest names them) have no Sound
+            // in the game for the rebase to place them on. Taken out of the mod's bank first, so the
+            // rebase sees the mod without them, and added again to the patched bank below, anchored
+            // on the Sound each one copied.
+            var modBytes = bank.Bytes;
+            List<LayerManifest.Taken> layersTaken = [];
+            if (BnkBuilder.ReadSections(bank.Bytes).Any(s => s.Tag == VoiceLineBuilder.ManifestTag))
+            {
+                try
+                {
+                    var hb = HircBank.Parse(bank.Name, bank.Bytes);
+                    layersTaken = LayerManifest.TakeOut(hb, LayerManifest.Read(hb));
+                    if (layersTaken.Count > 0) modBytes = hb.Write();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // A bank the typed reader cannot take apart goes to the rebase as it is.
+                    layersTaken = [];
+                }
+            }
+
+            var plan = Rebase(modBytes, current, StreamedAt, keepWwiseBuilt, looseBytes, Shipped);
             var written = Write(plan, current, gamePath, outRoot, taken);
             outputs.AddRange(written.Outputs);
             if (written.BankPath is not null) banks++;
@@ -2200,12 +2225,38 @@ public static class ModUpdate
                 var file = Path.Combine(outRoot, at.Replace('/', Path.DirectorySeparatorChar));
                 return File.Exists(file) ? File.ReadAllBytes(file) : null;
             }
-            var audit = AuditPlacement(plan, bank.Bytes, current, outBank, WrittenLoose, session.EventName, looseBytes);
+            var audit = AuditPlacement(plan, modBytes, current, outBank, WrittenLoose, session.EventName, looseBytes);
             auditLines += audit.Lines;
             auditVerified += audit.Verified;
             auditInferred += audit.Inferred;
             auditProblems.AddRange(audit.Problems.Select(p => $"{bank.Name}: {p}"));
             auditInferences.AddRange(audit.Inferences.Select(i => $"{bank.Name}: {i}"));
+
+            // The added sounds, onto the bank as the update wrote it (or the game's, where it carried
+            // nothing into it): after the audit, which checks the rebase alone.
+            LayerBuild.Readded readded = null;
+            if (layersTaken.Count > 0)
+            {
+                readded = LayerBuild.Readd(outBank, current, gamePath, layersTaken,
+                                           id => session.MediaBank.ContainsKey(id) || session.LooseMedia(id) is not null,
+                                           session.EventName);
+                if (readded.Bytes is not null)
+                {
+                    var dest = Path.Combine(outRoot, gamePath.Replace('/', Path.DirectorySeparatorChar));
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                    File.WriteAllBytes(dest, readded.Bytes);
+                    var rel = Path.GetRelativePath(outRoot, dest);
+                    if (written.BankPath is null)
+                    {
+                        outputs.Add(rel);
+                        banks++;
+                    }
+                    // The report says what ships: this bank, as the added sounds left it.
+                    written = written with { BankPath = rel, BankBytes = readded.Bytes.Length };
+                }
+                layersPutBack += readded.Added;
+                layersNotPutBack += readded.Refused;
+            }
 
             // Names from the game's own rows for this bank, so a carried medium reads as the
             // line it is rather than a number. A bank the catalogue cannot name still reports.
@@ -2246,6 +2297,7 @@ public static class ModUpdate
             sections.Append(Describe(bank.Name + how, bank.MountedAt ?? bank.SourcePath, bank.Bytes.Length,
                                      gamePath, current.Length, plan, written, Name, session.EventName,
                                      id => session.LooseMedia(id, language) is not null, audit));
+            foreach (var line in readded?.Log ?? []) sections.AppendLine(line);
             sections.AppendLine();
 
             summary.Add($"  {bank.Name,-24} carried {plan.Carried.Count}" +
@@ -2265,6 +2317,9 @@ public static class ModUpdate
                     plan.Carried.GroupBy(x => x.Anchor).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal)
                                 .Select(g => $"{g.Count()} {g.Key}")));
             summary.Add($"  {"",-24} {audit.Line}" + (audit.Clean ? "" : $", {audit.Problems.Count} disagreement(s)"));
+            if (readded is not null)
+                summary.Add($"  {"",-24} added sounds: {readded.Added} of {layersTaken.Count} put back" +
+                            (readded.Refused > 0 ? $", {readded.Refused} not (the reasons are in its section)" : ""));
 
             // An event is written by name only where the game's catalogue has one, and many
             // it does not, so the count of each is kept for the summary to say so.
@@ -2531,7 +2586,8 @@ public static class ModUpdate
                  AuditLines = auditLines, AuditVerified = auditVerified,
                  AuditInferred = auditInferred, AuditProblems = auditProblems, AuditInferences = auditInferences,
                  LooseSame = looseSame, LooseMoved = looseMoved, LooseUnverified = looseUnverified, Unplaced = unplaced,
-                 MadeFor = followMadeFor, Versions = followVersions };
+                 MadeFor = followMadeFor, Versions = followVersions,
+                 LayersPutBack = layersPutBack, LayersNotPutBack = layersNotPutBack };
     }
 
     // A paragraph of the report cut into lines of at most this many characters at spaces, the
@@ -2623,6 +2679,9 @@ public static class ModUpdate
             W("");
             W(r.Report);
             W($"{r.Banks} bank(s) and {r.Loose} loose file(s) written, {r.Carried} carried, {r.Refused} not carried.");
+            if (r.LayersPutBack + r.LayersNotPutBack > 0)
+                W($"Added sounds: {r.LayersPutBack} put back, {r.LayersNotPutBack} not" +
+                  (r.LayersNotPutBack > 0 ? $" (why is in {ReportName})." : "."));
             // Repeated as the last thing printed, because a person who reads only the end of
             // the output is the one most likely to miss audio that was left out on purpose.
             if (r.WwiseBuilt > 0 && (r.WwiseBuiltProven > 0 || r.WwiseBuiltForeign > 0))

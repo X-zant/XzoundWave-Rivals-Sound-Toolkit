@@ -66,6 +66,7 @@ public partial class MainWindow
 
     private async Task ModOpenAsync()
     {
+        if (StillReopeningMods()) return;
         // Without the game mounted there is nothing to compare against, and every row
         // in the mod would read as NEW -- which is the one answer that looks right and
         // is not.
@@ -78,7 +79,68 @@ public partial class MainWindow
         var files = await PickFiles("Open .bnk files, or a mod .pak to pick them from",
                                     ".bnk or mod .pak", "*.bnk", "*.pak", "*.utoc");
         if (files.Count == 0) return;
+        await ModOpenManyAsync(OneOpenPerContainer(files).Select(f => new ModOpen(f, null)).ToList());
+    }
 
+    /// <summary>
+    /// One open of a mod this session: the file, and the .bnk files it put into the set, by
+    /// <see cref="BankKey"/> (null: ask, as a pick or a drop does). Kept in the order they
+    /// happened, which is the order a project reopens them in: the one opened last wins a
+    /// .bnk or a loose file two of them ship, so replaying the opens in order gives back the
+    /// same winners.
+    /// </summary>
+    private sealed record ModOpen(string Path, IReadOnlyCollection<string> Banks);
+
+    private readonly List<ModOpen> _modOpens = [];
+
+    /// <summary>
+    /// Which bank of a mod this is: its path inside the mod, language folder included, or its
+    /// name when it never said. A voice mod ships one bnk_vo_ per language under the same file
+    /// name, so the name alone would bring every language's copy back.
+    /// </summary>
+    private static string BankKey(ModBank.Bank bank) => bank.MountedAt ?? bank.Name;
+
+    /// <summary>
+    /// Record an open that put something into the set. Each open is its own entry, because a
+    /// file opened again for one more .bnk did not take back the ones another mod has since
+    /// claimed. An earlier open of the same file is dropped only when this one took everything
+    /// it took: replaying this one re-takes all of it, later, which is what happened.
+    /// </summary>
+    private void NoteModOpened(string path, IReadOnlyCollection<string> banks)
+    {
+        _modOpens.RemoveAll(m => AppPaths.SamePath(m.Path, path) &&
+                                 (m.Banks ?? []).All(b => banks.Contains(b, StringComparer.OrdinalIgnoreCase)));
+        _modOpens.Add(new ModOpen(path, banks));
+        if (_restoringMods > 0) return;
+        _project.Touch();
+        RefreshProjectLabel();
+    }
+
+    /// <summary>Above zero while a project's mods are being reopened, which is not an edit of the project.</summary>
+    private int _restoringMods;
+
+    /// <summary>
+    /// A mod's .pak, .ucas and .utoc are one mod: opening any of them mounts all three. A drop or a
+    /// pick of the usual three files is therefore one open, not two of the same mod.
+    /// </summary>
+    private static List<string> OneOpenPerContainer(IEnumerable<string> paths)
+    {
+        var seen = new HashSet<string>(AppPaths.Comparer);
+        return paths.Where(p => seen.Add(ModBank.IsPak(p)
+                                    ? System.IO.Path.Combine(System.IO.Path.GetDirectoryName(p) ?? "",
+                                                             System.IO.Path.GetFileNameWithoutExtension(p))
+                                    : p))
+                    .ToList();
+    }
+
+    /// <summary>
+    /// Open several mod files and say once what they did together. The Open mod pick, a drop
+    /// of several files and a project's own list all come through here.
+    /// </summary>
+    /// <param name="carryOn">Asked before each file: false stops, when the project being restored is no longer the open one.</param>
+    /// <returns>The files that opened nothing (a failure, an empty mod, a pick backed out of).</returns>
+    private async Task<List<string>> ModOpenManyAsync(IReadOnlyList<ModOpen> opens, Func<bool> carryOn = null)
+    {
         // Two mods at once is the ordinary way a stack gets loaded, and it is also
         // where they are likeliest to claim the same .bnk. Each file reports itself on
         // the status line, but the next file's report overwrites it: a displaced .bnk
@@ -87,12 +149,28 @@ public partial class MainWindow
         var taken = new List<ModSet.Entry>();
         var displaced = new List<ModSet.Entry>();
         var takenLoose = new List<ModSet.Loose>();
+        var failed = new List<string>();
+        var opened = 0;
 
-        foreach (var file in files) await ModOpenOneAsync(file, taken, displaced, takenLoose);
+        foreach (var open in opens)
+        {
+            if (carryOn is not null && !carryOn()) break;
+            if (await ModOpenOneAsync(open.Path, taken, displaced, takenLoose, open.Banks)) opened++;
+            else failed.Add(open.Path);
+        }
 
-        // One file has already said everything there is to say about itself, and a pick
-        // that loaded nothing should keep whatever the failure said.
-        if (files.Count == 1 || taken.Count + takenLoose.Count == 0) return;
+        // One file has already said everything there is to say about itself.
+        if (opens.Count == 1) return failed;
+        if (taken.Count + takenLoose.Count == 0)
+        {
+            // Several files and not one opened: each one's own line was written over by the
+            // next file's progress, so they are named here, together.
+            if (failed.Count > 0)
+                Say($"none of the {failed.Count} file(s) opened: " +
+                    string.Join(", ", failed.Select(System.IO.Path.GetFileName)) +
+                    ". Open them one at a time to see why each did not.");
+            return failed;
+        }
 
         // By stem, because two files in one pick can claim the same .bnk and only the
         // last one is still in the set: counting both would double what it changed.
@@ -113,14 +191,18 @@ public partial class MainWindow
         // as "these mods do nothing".
         var compared = live.Any(e => e.Sounds.Rows.Any(r => r.ModTag is not null));
 
+        // A file that opened nothing is named here: its own failure line was written over by
+        // the next file's progress, and this line is the one that stays.
         Say($"loaded {live.Count} .bnk" + (takenLoose.Count > 0 ? $" and {takenLoose.Count} loose wem(s)" : "") +
-            $" from {files.Count} file(s) — " +
+            $" from {opened} file(s) — " +
             (compared ? $"{live.Sum(e => e.Changed):N0} sound(s) changed from the shipped .bnk files"
                       : "no shipped .bnk to compare against") +
             (displaced.Count > 0
                 ? "  —  replaced " + string.Join(", ", displaced.Select(d => $"{d.BankName} from {d.SourceName}"))
                 : "") +
+            (failed.Count > 0 ? "  —  not opened: " + string.Join(", ", failed.Select(System.IO.Path.GetFileName)) : "") +
             ".  Builds now use these as their base.");
+        return failed;
     }
 
     /// <summary>
@@ -130,8 +212,14 @@ public partial class MainWindow
     /// </summary>
     /// <param name="taken">Collects what this file put into the set, for the caller's report.</param>
     /// <param name="displaced">Collects what that pushed aside, for the same reason.</param>
-    private async Task ModOpenOneAsync(string path, List<ModSet.Entry> taken,
-                                       List<ModSet.Entry> displaced, List<ModSet.Loose> takenLoose = null)
+    /// <param name="wanted">
+    /// The .bnk files to take, by <see cref="BankKey"/>, when they are already known -- a
+    /// project reopening what it had -- so a .pak of several is not asked about again. Null asks.
+    /// </param>
+    /// <returns>Whether anything went into the set: a .bnk with audio in it, or a loose file.</returns>
+    private async Task<bool> ModOpenOneAsync(string path, List<ModSet.Entry> taken,
+                                             List<ModSet.Entry> displaced, List<ModSet.Loose> takenLoose = null,
+                                             IReadOnlyCollection<string> wanted = null)
     {
         // A picked folder comes back ending in a separator, which leaves it no file name.
         path = Path.TrimEndingDirectorySeparator(path);
@@ -140,7 +228,7 @@ public partial class MainWindow
         // holds, which the game reads by path), and one that ships banks too was otherwise
         // shown without half of what it changes.
         var opened = await Working($"Opening {name}", () => ModBank.Open(path, Config, withMedia: true));
-        if (opened is null) return;   // Working has already said why
+        if (opened is null) return false;   // Working has already said why
 
         if (opened.Banks.Count == 0 && opened.Media.Count == 0)
         {
@@ -148,34 +236,111 @@ public partial class MainWindow
                 (opened.Skipped.Count > 0
                     ? $" — {opened.Skipped.Count} container(s) could not be opened."
                     : "."));
-            return;
+            return false;
         }
 
         // A .pak usually holds several banks. Guessing which one was meant is how
         // someone ends up looking at a bank they did not open. Asked before the loose
         // files are taken, so backing out of it loads nothing at all.
         List<ModBank.Bank> banks = [];
-        if (opened.Banks.Count > 0)
+        if (wanted is not null)
+        {
+            // Known already, so nothing to ask. One that is no longer in the file is said
+            // rather than dropped quietly; a mod updated since is the usual reason.
+            banks = opened.Banks.Where(b => wanted.Contains(BankKey(b), StringComparer.OrdinalIgnoreCase)).ToList();
+            var gone = wanted.Where(w => !opened.Banks.Any(b => BankKey(b).Equals(w, StringComparison.OrdinalIgnoreCase))).ToList();
+            if (gone.Count > 0)
+            {
+                _modsNotFound.AddRange(gone.Select(g => $"{Path.GetFileName(g)} in {name}"));
+                _modsBanksGone.Add(path);
+            }
+            if (banks.Count == 0 && opened.Media.Count == 0) return false;
+        }
+        else if (opened.Banks.Count > 0)
         {
             banks = opened.Banks.Count == 1
                 ? opened.Banks
                 : await ModPickBanksAsync(opened.Banks, name);
-            if (banks is null || banks.Count == 0) return;
+            if (banks is null || banks.Count == 0) return false;
         }
 
         var loose = await ModTakeLooseAsync(opened.Media, name);
-        if (loose is null) return;   // Working has already said why
+        if (loose is null) return false;   // Working has already said why
         takenLoose?.AddRange(loose);
 
+        // What this file put into the set, as opposed to what it was asked for: a .bnk with no
+        // embedded audio is skipped, and a read can fail part way.
+        var mine = new List<ModSet.Entry>();
         if (banks.Count > 0)
-            await ModTakeAsync(banks, path, opened.Skipped, opened.Banks.Count, taken, displaced, loose);
+            await ModTakeAsync(banks, path, opened.Skipped, opened.Banks.Count, mine, displaced, loose);
         else
             await ModShowLooseAsync(loose, name, opened.Skipped);
+        taken?.AddRange(mine);
+
+        if (mine.Count == 0 && loose.Count == 0) return false;
+        NoteModOpened(path, mine.Select(e => BankKey(e.Bank)).ToList());
+        return true;
+    }
+
+    /// <summary>What a project's mods asked for that is no longer there, collected while they reopen.</summary>
+    private readonly List<string> _modsNotFound = [];
+
+    /// <summary>
+    /// The files among them that opened but lacked some of their banks: reported by the banks,
+    /// not again as a file that could not be opened, which would read as a broken file.
+    /// </summary>
+    private readonly HashSet<string> _modsBanksGone = new(AppPaths.Comparer);
+
+    /// <summary>What reopening a list of mods came to.</summary>
+    /// <param name="Missing">Files that are not there any more.</param>
+    /// <param name="Failed">Files that are there and opened nothing.</param>
+    /// <param name="BanksGone">.bnk files no longer in a file that did open.</param>
+    private sealed record ModRestored(List<string> Missing, List<string> Failed, List<string> BanksGone, int Opened)
+    {
+        public bool Clean => Missing.Count + Failed.Count + BanksGone.Count == 0;
+
+        /// <summary>Every problem, one per line, for a dialog.</summary>
+        public IEnumerable<string> Lines =>
+            Missing.Select(m => $"{m}  (not found)")
+                   .Concat(Failed.Select(f => $"{f}  (could not be opened)"))
+                   .Concat(BanksGone.Select(b => $"{b}  (no longer in the mod)"));
+    }
+
+    /// <summary>
+    /// Make the open mods exactly these, in this order: what a project had open when it was
+    /// saved, or what was open before a reload of the game closed it. Each is taken as it was,
+    /// the same .bnk files and no question asked.
+    /// </summary>
+    /// <param name="carryOn">False once another project has replaced the one being restored.</param>
+    private async Task<ModRestored> ModRestoreAsync(IReadOnlyList<ModOpen> opens, Func<bool> carryOn = null)
+    {
+        _modsNotFound.Clear();
+        _modsBanksGone.Clear();
+        _modsAfterLoad = null;   // realised here, whatever was parked
+        if (Mods.Any || _modOpens.Count > 0)
+        {
+            Mods.Clear();
+            _modOpens.Clear();
+            ModStandIns();
+            ModMarkTree(expand: false);
+        }
+        bool Here(ModOpen o) => File.Exists(o.Path) || Directory.Exists(o.Path);
+        var missing = opens.Where(o => !Here(o)).Select(o => o.Path).ToList();
+        var present = opens.Where(Here).ToList();
+        if (present.Count == 0) return new ModRestored(missing, [], [], 0);
+
+        _restoringMods++;
+        List<string> failed;
+        try { failed = await ModOpenManyAsync(present, carryOn); }
+        finally { _restoringMods--; }
+        return new ModRestored(missing, [.. failed.Where(f => !_modsBanksGone.Contains(Path.TrimEndingDirectorySeparator(f)))],
+                               [.. _modsNotFound], present.Count - failed.Count);
     }
 
     /// <summary>"Open mod folder…": an unpacked mod, read where it sits.</summary>
     private async Task ModOpenFolderAsync()
     {
+        if (StillReopeningMods()) return;
         if (Session?.Provider is null)
         {
             Say("load the game first — a mod's rows are read against the game's own .bnk files.");
@@ -351,6 +516,7 @@ public partial class MainWindow
     /// <summary>A pak usually holds several banks; ask which ones rather than guessing.</summary>
     private async Task<List<ModBank.Bank>> ModPickBanksAsync(List<ModBank.Bank> banks, string source)
     {
+        if (PickBanksForShot is not null) return PickBanksForShot(banks);
         List<ModBank.Bank> answer = null;
 
         var list = new ListBox
@@ -421,10 +587,31 @@ public partial class MainWindow
 
     private async Task ModCloseAsync()
     {
-        if (!Mods.Any) { Say("no mods are open."); return; }
+        if (StillReopeningMods()) return;
+        if (!Mods.Any)
+        {
+            // Nothing in the set, but the project may still list some (parked for a game that
+            // is not loaded yet): closing means it stops listing them too.
+            if (_modOpens.Count + (_modsAfterLoad?.Count ?? 0) > 0)
+            {
+                _modOpens.Clear();
+                _modsAfterLoad = null;
+                _project.Touch();
+                RefreshProjectLabel();
+                Say("closed the project's mods; none were open yet.");
+                return;
+            }
+            Say("no mods are open.");
+            return;
+        }
 
         var sources = Mods.Sources.ToList();
         Mods.Clear();
+        // The open mods are the project's: closing them is an edit of it.
+        _modOpens.Clear();
+        _modsAfterLoad = null;
+        _project.Touch();
+        RefreshProjectLabel();
 
         var keep = Tree.SelectedItems.OfType<Node>().ToList();
 
@@ -647,6 +834,8 @@ public partial class MainWindow
                     $"{result.LooseUnverified} kept unverified{(result.MadeFor is null ? "" : $", read as made for {result.MadeFor}")})"
                   : "") +
               (result.Unplaced > 0 ? $"; {result.Unplaced} in {ModUpdate.Result.UnplacedFolder} to stage by hand" : "") +
+              (result.LayersPutBack + result.LayersNotPutBack > 0
+                  ? $"; added sounds: {result.LayersPutBack} put back, {result.LayersNotPutBack} not" : "") +
               $". Copy it into ~mods in place of the old mod; details in {ModUpdate.ReportName}.");
     }
 
@@ -730,6 +919,15 @@ public partial class MainWindow
 
     /// <summary>The render harness: open one mod, close them all, and the set they are in.</summary>
     internal Task OpenModForShot(string path) => ModOpenOneAsync(path, [], []);
+
+    /// <summary>The render harness: how a .pak of several banks is answered, in place of its dialog.</summary>
+    internal Func<List<ModBank.Bank>, List<ModBank.Bank>> PickBanksForShot;
+
+    /// <summary>The render harness: files dropped on the window, as a drop of several opens them.</summary>
+    internal Task DropOpenForShot(List<string> paths) => DropOpen(paths);
+
+    /// <summary>The render harness: Load game pressed again, which remounts and must bring the mods back.</summary>
+    internal Task ReloadForShot() => SetupLoadAsync();
     internal Task CloseModsForShot() => ModCloseAsync();
     internal ModSet ModsForShot => Mods;
 

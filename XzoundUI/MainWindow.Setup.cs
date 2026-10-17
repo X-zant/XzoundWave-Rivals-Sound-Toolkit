@@ -158,6 +158,10 @@ public partial class MainWindow
             Tree.SelectedItems.Clear();
             _picked.Clear();
             _skinCache.Clear();
+            // Open mods are read against the game, so they go with it, and come back once it
+            // is loaded: they are the project's as much as its staged files, and a save after
+            // the reload must not quietly leave them out.
+            if (_modOpens.Count > 0) _modsAfterLoad = [.. _modOpens];
             _mods.Clear();
             _sounds = null;
             Grid_.ItemsSource = null;
@@ -188,7 +192,12 @@ public partial class MainWindow
             // From now on the window loads the game by itself when it opens.
             if (!Config.LoadedOnce) { Config.LoadedOnce = true; Config.Save(); }
 
-            if (hadMods > 0)
+            if (_modsAfterLoadNote is { } reopened)
+            {
+                Say(Status.Text + reopened);
+                _modsAfterLoadNote = null;
+            }
+            else if (hadMods > 0)
                 Say(Status.Text + $"  {hadMods} loaded mod file{(hadMods == 1 ? "" : "s")} " +
                     "closed by the reload.");
 

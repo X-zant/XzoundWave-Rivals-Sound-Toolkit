@@ -228,8 +228,13 @@ public partial class MainWindow
             return "that is not audio, a .bnk or a .pak.";
 
         if (carried.Banks.Count > 0)
-            return $"drop to open {Path.GetFileName(carried.Banks[0])}" +
-                   (carried.Banks.Count > 1 ? ", one .bnk or .pak at a time." : ".");
+        {
+            // A mod's .pak and .utoc are one mod, so they are counted as one.
+            var mods = OneOpenPerContainer(carried.Banks);
+            return mods.Count == 1
+                ? $"drop to open {Path.GetFileName(mods[0])}."
+                : $"drop to open these {mods.Count} mods; the last one wins a .bnk two of them ship.";
+        }
 
         // Counted off the grid rather than through SelectedRows: this runs on every
         // pointer move, and building a list of four hundred rows each time to learn
@@ -259,9 +264,10 @@ public partial class MainWindow
     // ---- a bank or a pak ----------------------------------------------------
 
     /// <summary>
-    /// Open a dropped .bnk or .pak, which is the Mods tab's job. Only the first one:
-    /// opening a pak asks which banks to take out of it, and a queue of those dialogs
-    /// is not what someone dropping a handful of files is asking for.
+    /// Open dropped .bnk and .pak files, which is the Mods tab's job, all of them, as its
+    /// Open mod pick does: in the order dropped, the last winning a .bnk two of them ship,
+    /// with one report at the end. A .pak of several banks still asks which to take, one at
+    /// a time, as it would from the pick.
     /// </summary>
     private async Task DropOpen(List<string> openable)
     {
@@ -273,16 +279,9 @@ public partial class MainWindow
             Say("load the game first, a mod's rows are read against the game's own .bnk files.");
             return;
         }
+        if (StillReopeningMods()) return;
 
-        // The empty lists are the report the Mods tab collects when it opens several
-        // files at once and has to sum them up at the end. One file says everything
-        // about itself as it goes, which is why that tab discards them too.
-        await ModOpenOneAsync(openable[0], [], []);
-
-        // Appended rather than said first: opening writes its own report over anything
-        // said beforehand, and a warning nobody can still read has not been given.
-        if (openable.Count > 1)
-            Say($"{Status.Text}  Only {Path.GetFileName(openable[0])} was opened; " +
-                "drop one .bnk or .pak at a time.");
+        // The usual three files of one IoStore mod are one mod, not two opens of it.
+        await ModOpenManyAsync(OneOpenPerContainer(openable).Select(p => new ModOpen(p, null)).ToList());
     }
 }

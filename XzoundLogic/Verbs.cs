@@ -126,6 +126,10 @@ public static class Verbs
             "copy a folder of wems into one folder per mod: by a SoundKit rule list, or by character, skin and bank",
             (a, i) => OrganizeVerb(a[i + 1], a[i + 2], Arg(a, i + 3) is { } r && !r.StartsWith("--") ? r : null)),
 
+        new("--addlayer", 4, "<bank> <startEvent> <audio> <outDir> [--stop <event>] [--name <pak>]",
+            "add a sound beside what an event already plays (music under an ult), as a .pak",
+            (a, i) => LayerVerb.Run(a[i + 1], a[i + 2], a[i + 3], a[i + 4], After(a, "--stop"), After(a, "--name"))),
+
         new("--snapshot", 0, "[paksDir] [--history-dir <dir>]",
             "record which sound plays every media id in this version of the game (or the one in paksDir)",
             (a, i) => HistoryVerbs.Snapshot(Arg(a, i + 1) is { } d && !d.StartsWith("--") ? d : null, After(a, "--history-dir"))),

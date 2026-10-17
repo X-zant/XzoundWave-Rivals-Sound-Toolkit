@@ -33,6 +33,7 @@ public partial class MainWindow
             _project.Touch();
             RefreshProjectLabel();
             RefreshNewLinesNode();
+            RefreshAddedNode();
             _voiceLinesWindow?.AudioChanged();
         };
         Closing += OnClosingAskToSave;
@@ -183,10 +184,10 @@ public partial class MainWindow
             lock (_anchors) if (_anchors.ContainsKey(id)) continue;
             try
             {
-                // The streaming walk reads every bank once: not for a new voice line's id, which no
-                // game bank has, nor before the bank index is in, when every id would take it.
+                // The streaming walk reads every bank once: not for a new voice line's id or an added
+                // sound's, which no game bank has, nor before the bank index is in, when every id would.
                 var bank = _session.BanksForMedia(id).FirstOrDefault()
-                           ?? (_session.BankIndexReady && !_project.VoiceLines.Any(l => l.MediaId == id)
+                           ?? (_session.BankIndexReady && !IsNewMedia(id)
                                ? _session.StreamingBank(id) : null);
                 if (bank is null || _session.Bank(bank) is not { } file) continue;
                 if (!shapes.TryGetValue(bank, out var shape)) shapes[bank] = shape = ModUpdate.Read(file.Read());
@@ -287,8 +288,11 @@ public partial class MainWindow
     private int ApplyProjectToRows(IReadOnlyList<SoundRow> rows)
     {
         var session = _session;
+        // The project's own media are in no game bank by design: an added sound shares its event
+        // with the sound it copies, and its note must not follow that event onto the game's row.
         var relinked = _project.ApplyNotes(rows, gone: id =>
-            session?.Provider is not null && !session.MediaBank.ContainsKey(id) && session.LooseMedia(id) is null);
+            session?.Provider is not null && !session.MediaBank.ContainsKey(id) && session.LooseMedia(id) is null &&
+            !IsNewMedia(id), mayTake: r => !IsProjectRow(r));
         if (relinked > 0) RefreshProjectLabel();
         return relinked;
     }
@@ -319,6 +323,13 @@ public partial class MainWindow
     private void CaptureIntoProject()
     {
         _project.BulkVolume = _bulkVolume;
+        // The mods open now, in the order they were opened, stored the way staged files are; or,
+        // with no game loaded yet, the ones waiting for it, which are still this project's.
+        _project.Mods = (_modsAfterLoad ?? _modOpens).Select(m => new ProjectMod
+        {
+            File = _project.ToStoredPath(m.Path),
+            Banks = [.. m.Banks ?? []],
+        }).ToList();
         var first = _picked.FirstOrDefault(n => n.Skin is not null);
         _project.Character = first?.CharId ?? _project.Character;
         _project.Skin = first?.Skin?.SkinId ?? _project.Skin;
@@ -380,6 +391,7 @@ public partial class MainWindow
         MarkStagedRows();
         BuildRedraw();
         RefreshNewLinesNode();
+        RefreshAddedNode();
         if (edited || moved.Count > 0) project.Touch(); else project.MarkClean();
         RefreshProjectLabel();
         if (moved.Count > 0)
@@ -401,8 +413,21 @@ public partial class MainWindow
         return answer == 1 || await SaveProject(false);
     }
 
+    /// <summary>
+    /// True, and said, while a project's mods are reopening. Saving then would write only the
+    /// ones reopened so far; opening another project, or a mod, would land in the middle of
+    /// it; so each of those waits the few seconds it takes.
+    /// </summary>
+    private bool StillReopeningMods()
+    {
+        if (_restoringMods == 0) return false;
+        Say("still reopening the project's mods — give it a moment.");
+        return true;
+    }
+
     private async Task<bool> SaveProject(bool forcePrompt)
     {
+        if (StillReopeningMods()) return false;
         // Where each staged file's sound sits, so the project can follow it through a game update.
         var ids = _pending.Select(p => p.MediaId).ToList();
         if (_session?.Provider is not null && ids.Count > 0)
@@ -447,7 +472,7 @@ public partial class MainWindow
 
     private async Task NewProject()
     {
-        if (!await ConfirmDiscard()) return;
+        if (StillReopeningMods() || !await ConfirmDiscard()) return;
         _project = Project.New();
         _pending.Clear();
         ClearRowState();
@@ -455,6 +480,7 @@ public partial class MainWindow
         MarkStagedRows();
         BuildRedraw();
         RefreshNewLinesNode();
+        RefreshAddedNode();
         // Clearing the staged list touched it; nothing has been done in it yet.
         _project.MarkClean();
         RefreshProjectLabel();
@@ -464,14 +490,15 @@ public partial class MainWindow
 
     private async Task OpenProjectPicked()
     {
-        if (!await ConfirmDiscard()) return;
+        if (StillReopeningMods() || !await ConfirmDiscard()) return;
         var path = await PickFile("Open project", "XzoundWave project", "*" + Project.Extension, "*" + Project.LegacyExtension);
         if (path is not null) await OpenProject(path, announce: true);
     }
 
     private async Task OpenProject(string path, bool announce)
     {
-        try { _project = Project.Load(path); }
+        Project project;
+        try { _project = project = Project.Load(path); }
         catch (Exception ex)
         {
             Say("could not open the project: " + ex.Message);
@@ -487,17 +514,77 @@ public partial class MainWindow
         _voiceLinesWindow?.ProjectReplaced();
         await RestoreFromProject();
         _voiceLinesWindow?.ProjectReplaced();
+        // Another project opened while this one's files were read: the rest is that one's to do.
+        if (!ReferenceEquals(project, _project)) return;
+
+        // The mods it had open, as they were, after the staged files: a build sits on top of
+        // them. A project written before mods were saved lists none and leaves the open ones
+        // alone. With no game loaded yet they wait for it (LoadGame). Whatever an earlier
+        // project parked for the game is not this one's, so it goes first.
+        _modsAfterLoad = null;
+        ModRestored restored = null;
+        if (project.Mods is { } mods)
+        {
+            var opens = mods.Select(m => new ModOpen(project.ToFullPath(m.File), m.Banks ?? [])).ToList();
+            if (!GameReadyForMods) _modsAfterLoad = opens;
+            else restored = await ModRestoreAsync(opens, () => ReferenceEquals(project, _project));
+            if (!ReferenceEquals(project, _project)) return;
+        }
+
         // After the restore, which marks the project clean: a note relinked to a new media id
         // here leaves it unsaved, and says so.
         var relinked = _sounds is null ? 0 : ApplyProjectToRows(_sounds.Rows);
         BuildRedraw();
+        var modsNote = project.Mods is not { Count: > 0 } ? ""
+            : restored is null ? $" Its {project.Mods.Count} mod(s) open once the game has loaded."
+            : $" {restored.Opened} of its {project.Mods.Count} mod(s) reopened.";
         if (announce)
-            Say($"opened \"{_project.Name}\": {_project.Replacements.Count} staged file(s), " +
-                $"{_project.VoiceLines.Count} new voice line(s), " +
-                $"{_project.Notes.Count(n => !n.IsEmpty)} sound(s) with a note, mute, level or test number." +
-                RelinkedNote(relinked));
+            Say($"opened \"{project.Name}\": {project.Replacements.Count} staged file(s), " +
+                $"{project.VoiceLines.Count} new voice line(s), " +
+                (project.Layers.Count > 0 ? $"{project.Layers.Count} added sound(s), " : "") +
+                $"{project.Notes.Count(n => !n.IsEmpty)} sound(s) with a note, mute, level or test number." +
+                modsNote + RelinkedNote(relinked));
         else if (relinked > 0)
             Say(RelinkedNote(relinked).Trim());
+        if (restored is { Clean: false })
+            await Tell("Missing mods", "The project had these open, and they did not come back:" +
+                       Environment.NewLine + string.Join(Environment.NewLine, restored.Lines.Take(15)) +
+                       Environment.NewLine + Environment.NewLine +
+                       "Everything else opened. Saving the project now leaves them out.");
+    }
+
+    /// <summary>
+    /// Mods to reopen once the game is loaded: a project's, opened before the game was, or the
+    /// ones a reload of the game closed (SetupLoadAsync). LoadGame reopens them; a save before
+    /// then writes these, since they are still the project's (CaptureIntoProject).
+    /// </summary>
+    private List<ModOpen> _modsAfterLoad;
+
+    /// <summary>
+    /// Whether a mod can be read against the game now: mounted, done mounting, and with banks in
+    /// it. Mount sets the provider on its first line, so the provider alone says yes while it is
+    /// still being read, and after a load that failed.
+    /// </summary>
+    private bool GameReadyForMods => Session?.Provider is not null && !_mounting && _roots.Count > 0;
+
+    /// <summary>True from the start of a game load until it has mounted and reopened the last project.</summary>
+    private bool _mounting;
+
+    /// <summary>What reopening <see cref="_modsAfterLoad"/> came to, for the load's own report.</summary>
+    private string _modsAfterLoadNote;
+
+    /// <summary>Reopen <see cref="_modsAfterLoad"/>, now that there is a game to read them against.</summary>
+    private async Task ReopenModsAfterLoad()
+    {
+        // Only into a game that loaded something: a load that found no banks keeps them
+        // parked for the next one, and does not dress itself up as a success with their
+        // stand-in nodes (SetupLoadAsync reads an empty tree as the failure it is).
+        if (_modsAfterLoad is not { } opens || !GameReadyForMods) return;
+        var project = _project;
+        var restored = await ModRestoreAsync(opens, () => ReferenceEquals(project, _project));
+        var trouble = restored.Missing.Concat(restored.Failed).Select(Path.GetFileName).Concat(restored.BanksGone).ToList();
+        _modsAfterLoadNote = $"  {restored.Opened} mod file(s) reopened" +
+                             (trouble.Count > 0 ? $"; did not come back: {string.Join(", ", trouble.Take(5))}" : "") + ".";
     }
 
     /// <summary>
@@ -510,7 +597,8 @@ public partial class MainWindow
     {
         if (_reopenTried) return;
         _reopenTried = true;
-        if (_project.IsDirty || _project.IsSaved || _project.VoiceLines.Count > 0 || _pending.Count > 0) return;
+        if (_project.IsDirty || _project.IsSaved || _project.VoiceLines.Count > 0 || _project.Layers.Count > 0 ||
+            _pending.Count > 0) return;
         if (!string.IsNullOrEmpty(_settings.LastProject) && File.Exists(_settings.LastProject))
             await OpenProject(_settings.LastProject, announce: false);
     }

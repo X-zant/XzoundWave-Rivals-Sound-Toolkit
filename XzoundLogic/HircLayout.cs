@@ -52,6 +52,45 @@ public static class HircLayout
         return new BaseSpan(start, busAt, parentAt, end, parsed);
     }
 
+    /// <summary>Where a BaseHierarchy's AkPropBundle (its properties, then its ranged modifiers) sits.</summary>
+    public sealed record PropsSpan(int At, int End, AkPropBundle Parsed);
+
+    /// <summary>
+    /// The BaseHierarchy's property bundle, found where reading it back gives exactly the bundle the
+    /// object's own reader parsed AND writing it gives exactly the bytes there. Null for an object
+    /// with no properties, which has nothing in its bundle to write. The bytes between DirectParentId
+    /// and the bundle (the priority flags) are not named here, only stepped over: the search starts
+    /// at DirectParentId's end and goes no further than a few bytes.
+    /// </summary>
+    public static PropsSpan Props(byte[] body, BaseSpan span, uint version)
+    {
+        var want = span.Parsed.PropBundle;
+        if (want.Props is not { Length: > 0 }) return null;
+        static bool Same(AkPropBundle a, AkPropBundle b) =>
+            a.Props.Length == b.Props.Length &&
+            a.Props.Zip(b.Props).All(p => p.First.Id == p.Second.Id && p.First.Value.u32 == p.Second.Value.u32) &&
+            (a.PropRanges ?? []).Length == (b.PropRanges ?? []).Length &&
+            (a.PropRanges ?? []).Zip(b.PropRanges ?? []).All(p => p.First.Id == p.Second.Id &&
+                p.First.Min.u32 == p.Second.Min.u32 && p.First.Max.u32 == p.Second.Max.u32);
+        for (var at = span.ParentAt + 4; at <= span.ParentAt + 8 && at < span.End; at++)
+        {
+            AkPropBundle got;
+            int end;
+            try
+            {
+                var ar = HircBank.Archive(body, version);
+                ar.Position = at;
+                got = new AkPropBundle(ar);
+                end = (int)ar.Position;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { continue; }
+            if (end <= span.End && Same(got, want) &&
+                HircWriter.PropBundle(got.Props, got.PropRanges).AsSpan().SequenceEqual(body.AsSpan(at, end - at)))
+                return new PropsSpan(at, end, got);
+        }
+        throw new InvalidDataException("HIRC layout check failed: the property bundle is not where its reader puts it");
+    }
+
     public sealed record SoundSpan(int SourceStart, int SourceTypeAt, int SourceIdAt, int MemSizeAt,
                                    int FlagsAt, int PluginParamsAt, int SourceEnd, BaseSpan Base,
                                    HierarchySoundSfxVoice Parsed);
@@ -147,8 +186,11 @@ public static class HircWriter
     /// positioning, aux, advanced settings, states, RTPCs) carried over as the template's own
     /// bytes, its bounds as found by the reader.
     /// </summary>
+    /// <param name="dropProps">properties left out of the object's own bundle (a copy that must
+    /// not loop where its template does); the rest of the bundle is written from the parsed values,
+    /// by a writer that reproduces the template's bundle first</param>
     public static void Base(BinaryWriter w, byte[] template, HircLayout.BaseSpan span, uint version,
-                            uint? directParentId = null)
+                            uint? directParentId = null, IReadOnlySet<byte> dropProps = null)
     {
         var b = span.Parsed;
         w.Write(b.OverrideFx);
@@ -171,7 +213,37 @@ public static class HircWriter
         if (version > 89 && version <= 145) w.Write(b.OverrideAttachmentParams);
         w.Write(b.OverrideBusId);
         w.Write(directParentId ?? b.DirectParentId);
-        w.Write(template, span.ParentAt + 4, span.End - (span.ParentAt + 4));
+        var props = dropProps is { Count: > 0 } ? HircLayout.Props(template, span, version) : null;
+        if (props is null || !props.Parsed.Props.Any(p => dropProps.Contains(p.Id)) &&
+                             !(props.Parsed.PropRanges ?? []).Any(p => dropProps.Contains(p.Id)))
+        {
+            w.Write(template, span.ParentAt + 4, span.End - (span.ParentAt + 4));
+            return;
+        }
+        w.Write(template, span.ParentAt + 4, props.At - (span.ParentAt + 4));
+        w.Write(PropBundle([.. props.Parsed.Props.Where(p => !dropProps.Contains(p.Id))],
+                           [.. (props.Parsed.PropRanges ?? []).Where(p => !dropProps.Contains(p.Id))]));
+        w.Write(template, props.End, span.End - props.End);
+    }
+
+    /// <summary>
+    /// AkPropBundle as this bank version lays it out: the properties (count, ids, values), then
+    /// the ranged modifiers (count, ids, min/max pairs). <see cref="HircLayout.Props"/> only
+    /// accepts a bundle this writes back byte for byte.
+    /// </summary>
+    public static byte[] PropBundle(IReadOnlyList<AkProp> props, IReadOnlyList<AkPropRange> ranges)
+    {
+        ranges ??= [];
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+        w.Write((byte)props.Count);
+        foreach (var p in props) w.Write(p.Id);
+        foreach (var p in props) w.Write(p.Value.u32);
+        w.Write((byte)ranges.Count);
+        foreach (var r in ranges) w.Write(r.Id);
+        foreach (var r in ranges) { w.Write(r.Min.u32); w.Write(r.Max.u32); }
+        w.Flush();
+        return ms.ToArray();
     }
 
     /// <summary>
@@ -182,7 +254,7 @@ public static class HircWriter
     /// </summary>
     public static byte[] Sound(byte[] template, HircLayout.SoundSpan span, uint version, uint id,
                                EAKBKSourceType sourceType, uint sourceId, uint inMemoryMediaSize, byte sourceFlags,
-                               uint? directParentId = null)
+                               uint? directParentId = null, IReadOnlySet<byte> dropProps = null)
     {
         var s = span.Parsed.Source;
         using var ms = new MemoryStream();
@@ -194,7 +266,7 @@ public static class HircWriter
         w.Write(inMemoryMediaSize);
         w.Write(sourceFlags);
         if (s.HasPluginParams) w.Write(template, span.PluginParamsAt, span.SourceEnd - span.PluginParamsAt);
-        Base(w, template, span.Base, version, directParentId);
+        Base(w, template, span.Base, version, directParentId, dropProps);
         w.Flush();
         return ms.ToArray();
     }

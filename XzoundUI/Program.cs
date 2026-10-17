@@ -35,6 +35,18 @@ public static class Program
         if (args.Any(a => a.Equals("--shot-coldrag", StringComparison.OrdinalIgnoreCase))) return Shot.TakeColumnDrag();
         if (args.Any(a => a.Equals("--shot-colpersist", StringComparison.OrdinalIgnoreCase))) return Shot.TakeColumnPersist();
 
+        var mo = Array.FindIndex(args, a => a.Equals("--shot-modorder", StringComparison.OrdinalIgnoreCase));
+        if (mo >= 0 && args.Length > mo + 4)
+            return Shot.TakeModOrder(args[mo + 1], args[mo + 2], args[mo + 3], args[mo + 4]);
+
+        var pm = Array.FindIndex(args, a => a.Equals("--shot-projectmods", StringComparison.OrdinalIgnoreCase));
+        if (pm >= 0 && args.Length > pm + 2)
+            return Shot.TakeProjectMods(args[pm + 1], args.Skip(pm + 2).ToList());
+
+        var ly = Array.FindIndex(args, a => a.Equals("--shot-layers", StringComparison.OrdinalIgnoreCase));
+        if (ly >= 0 && args.Length > ly + 2)
+            return Shot.TakeLayers(args[ly + 1], args[ly + 2]);
+
         var nt = Array.FindIndex(args, a => a.Equals("--shot-notes", StringComparison.OrdinalIgnoreCase));
         if (nt >= 0 && args.Length > nt + 1)
             return Shot.TakeNotes(args[nt + 1]);

@@ -88,6 +88,13 @@ public sealed class HircBank
             EAKBKHircType.FxCustom => new HierarchyFxCustom(ar),
             EAKBKHircType.AuxiliaryBus => new HierarchyAuxiliaryBus(ar),
             EAKBKHircType.AudioDevice => new HierarchyAudioDevice(ar),
+            // The modulators an SFX bank carries (Emma Frost's has a TimeMod), which a voice bank
+            // never did. Read only, so the exact-length check below holds for them too; nothing
+            // here writes one.
+            EAKBKHircType.LFO => new HierarchyLFO(ar),
+            EAKBKHircType.Envelope => new HierarchyEnvelope(ar),
+            EAKBKHircType.TimeMod => new HierarchyTimeMod(ar),
+            EAKBKHircType.SidechainMix => new HierarchySidechainMix(ar),
             _ => throw new InvalidDataException($"{what}: no reader for type {type}"),
         };
         if (ar.Position != body.Length)

@@ -217,6 +217,9 @@ public static class VoiceLineBuilder
             // A section by that tag that is not a lines manifest (an earlier experiment's, or not
             // JSON at all) is carried along as "previous", never parsed into a failed build.
             object previous = null;
+            // The sounds added beside the bank's events (LayerManifest), carried through untouched:
+            // the layer step that wrote them runs before this one and is the only one that edits them.
+            object layers = null;
             if (bank.Sections.FirstOrDefault(s => s.Tag == ManifestTag) is { } old)
             {
                 var text = Encoding.UTF8.GetString(old.Body).TrimEnd(' ', '\0');
@@ -226,18 +229,23 @@ public static class VoiceLineBuilder
                 {
                     // Every entry has to name every id, or none of it is acted on: taking out half a
                     // line, or the wrong objects, is worse than keeping a section nobody can read.
+                    // A manifest of ours with no "lines" (only added sounds so far) has none to take out.
                     if (doc?.RootElement is { ValueKind: JsonValueKind.Object } root
-                        && root.TryGetProperty("lines", out var oldLines) && oldLines.ValueKind == JsonValueKind.Array
-                        && oldLines.EnumerateArray().All(ml => ManifestIds.Read(ml) is not null))
+                        && (root.TryGetProperty("lines", out var oldLines)
+                            ? oldLines.ValueKind == JsonValueKind.Array && oldLines.EnumerateArray().All(ml => ManifestIds.Read(ml) is not null)
+                            : root.TryGetProperty("format", out var f) && f.ValueKind == JsonValueKind.String &&
+                              f.GetString() == LayerManifest.Format))
                     {
-                        foreach (var ml in oldLines.EnumerateArray())
-                        {
-                            var ids = ManifestIds.Read(ml);
-                            if (keep?.Contains(ids.VoiceId) == true) { manifestLines.Add(ml.Clone()); continue; }
-                            RemoveLine(bank, ids);
-                            Say($"{bp}: took out line {ids.VoiceId}, from an earlier build");
-                        }
+                        if (oldLines.ValueKind == JsonValueKind.Array)
+                            foreach (var ml in oldLines.EnumerateArray())
+                            {
+                                var ids = ManifestIds.Read(ml);
+                                if (keep?.Contains(ids.VoiceId) == true) { manifestLines.Add(ml.Clone()); continue; }
+                                RemoveLine(bank, ids);
+                                Say($"{bp}: took out line {ids.VoiceId}, from an earlier build");
+                            }
                         if (root.TryGetProperty("previous", out var carried)) previous = carried.Clone();
+                        if (root.TryGetProperty("layers", out var added)) layers = added.Clone();
                     }
                     else
                     {
@@ -264,6 +272,7 @@ public static class VoiceLineBuilder
                 format = "xzoundwave.manifest", version = 1,
                 builtOn = new { bank = Path.GetFileNameWithoutExtension(bp), path = bp, sha256 = Convert.ToHexString(SHA256.HashData(game)).ToLowerInvariant() },
                 lines = manifestLines,
+                layers,
                 previous,
             }, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
             var body = new byte[(manifest.Length + 3) & ~3];

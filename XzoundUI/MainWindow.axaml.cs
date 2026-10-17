@@ -58,6 +58,8 @@ public partial class MainWindow : Window
             if (e.Container is TreeViewItem item && item.DataContext is Node n)
                 item.IsExpanded = n.Expanded;
         };
+        // Ahead of the arrow's own button, so a click on it toggles once, not twice.
+        Tree.AddHandler(PointerPressedEvent, ToggleFromGutter, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         // State at a glance, in the same colours the tree uses. Avalonia has no
         // DataTrigger, and a row's fill depends on four properties of its item, so it
         // is set as the row is realised rather than expressed as a style. Order
@@ -142,6 +144,31 @@ public partial class MainWindow : Window
             },
             n => n.Children);
     }
+
+    /// <summary>
+    /// The whole gutter left of a node's label opens and shuts it, not only the arrow. The
+    /// theme's arrow is a 12 px button centred in a 36 px gutter on a 30 px row, so a click a
+    /// few pixels off its middle landed on the row and selected it instead: people reported
+    /// having to hit the arrow dead centre. The label still selects, and a double-click on it
+    /// still opens, as before.
+    /// </summary>
+    private void ToggleFromGutter(object sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(Tree).Properties.IsLeftButtonPressed) return;
+        if ((e.Source as Avalonia.Visual)?.FindAncestorOfType<TreeViewItem>(includeSelf: true) is not { ItemCount: > 0 } item) return;
+        // The item's own header and label: the first of each below it, ahead of its children's.
+        var parts = item.GetVisualDescendants().OfType<Control>();
+        if (parts.FirstOrDefault(c => c.Name == "PART_Header") is not { } header ||
+            parts.FirstOrDefault(c => c.Name == "PART_HeaderPresenter") is not { } label) return;
+        var at = e.GetPosition(header);
+        if (at.X < 0 || at.X >= label.Bounds.X || at.Y < 0 || at.Y >= header.Bounds.Height) return;
+        item.IsExpanded = !item.IsExpanded;
+        e.Handled = true;
+    }
+
+    /// <summary>The render harness: a node of its own in the tree, and out again.</summary>
+    internal void AddRootForShot(Node node) => _roots.Add(node);
+    internal void RemoveRootForShot(Node node) => _roots.Remove(node);
 
     /// <summary>Characters, their skins, and the .bnk files under each.</summary>
     private void PopulateTree()
@@ -639,6 +666,21 @@ public partial class MainWindow : Window
              "one. Mute the sound you have already identified to hear what is under it.");
         menu.Opening += (_, _) =>
             mute.Header = SelectedRows is { Count: > 0 } picked && picked.All(r => r.Muted) ? "Unmute" : "Mute";
+        // Beside the event rather than instead of anything in it: the one way to ADD audio to
+        // what the game plays, so it has no toolbar home.
+        var addLayer = Item("Add a sound to this event…", () => _ = AddLayerAsync(),
+             "Plays a file of yours every time this sound's event plays, beside what it already " +
+             "plays (music under an ult, say). Nothing of the game's is replaced. Saved in the " +
+             "project, listed under \"Added sounds\", and put in by Build mod.");
+        var removeLayer = Item("Remove added sound", RemoveLayers);
+        menu.Opening += (_, _) =>
+        {
+            var picked = SelectedRows;
+            var added = picked.Count > 0 && picked.All(IsAddedRow);
+            removeLayer.IsVisible = added;
+            addLayer.IsVisible = !added;
+            addLayer.IsEnabled = picked.Count == 1 && !IsProjectRow(picked[0]);
+        };
         menu.Items.Add(new Separator());
         Item("Copy media id(s)", () => _ = CopyIds());
         return menu;
@@ -654,7 +696,10 @@ public partial class MainWindow : Window
     /// </summary>
     private void ToggleMute()
     {
-        var rows = SelectedRows;
+        // An added sound is the project's own; it goes by being removed, not by a mute that would
+        // write a silent file under an id the game has never had.
+        var rows = SelectedRows.Where(r => !IsAddedRow(r)).ToList();
+        if (rows.Count == 0 && SelectedRows.Count > 0) { Say("an added sound is not muted: right-click › Remove added sound."); return; }
         if (rows.Count == 0) { Say("select one or more sounds in the list first."); return; }
 
         // A mixed selection becomes all-muted rather than flipping each one, which is
@@ -782,6 +827,10 @@ public partial class MainWindow : Window
     private void ShowRows()
     {
         _sounds = Merge();
+        // Rows are built fresh here, so what is staged is marked on them here: a new line's or an
+        // added sound's row has nothing to play until it is, and a skin read after staging would
+        // show nothing green.
+        MarkStagedRows();
         var relinked = ApplyProjectToRows(_sounds.Rows);
         ApplyFilter();
         Say($"{_picked.Count} selected, {_sounds.Rows.Count:N0} sounds." + RelinkedNote(relinked));
@@ -805,6 +854,12 @@ public partial class MainWindow : Window
             {
                 foreach (var row in NewLineRows())
                     if (done.Add("newline:" + row.MediaId)) merged.Rows.Add(row);
+                continue;
+            }
+            if (node.What == Node.Kind.AddedSounds)
+            {
+                foreach (var row in AddedRows())
+                    if (done.Add("added:" + row.MediaId)) merged.Rows.Add(row);
                 continue;
             }
             var stems = node.Bank is not null
@@ -1039,13 +1094,19 @@ public partial class MainWindow : Window
     {
         try
         {
+            // A project opened while this runs parks its mods rather than reading them against
+            // a game half mounted (OpenProject); they are taken up just below.
+            _mounting = true;
             _settings.AutoDetect();
             await Task.Run(() => _session.Mount(_settings, _ => { }));
             AfterMount();
             await ReopenLastProject();
+            _mounting = false;
+            // A project opened before the game was, or the mods a reload closed.
+            await ReopenModsAfterLoad();
         }
         catch (Exception ex) { Say("could not load the game: " + ex.Message); }
-        finally { RefreshSetupNeeded(); }
+        finally { _mounting = false; RefreshSetupNeeded(); }
     }
 
     /// <summary>
@@ -1080,6 +1141,7 @@ public partial class MainWindow : Window
         _extractor = null;   // its containers are the previous mount's
         PopulateTree();
         RefreshNewLinesNode();
+        RefreshAddedNode();
         Say($"{_session.Characters.Count} characters, " +
             $"{_session.OtherBanks.Sum(g => g.Skins.Count)} other .bnk files.");
     }

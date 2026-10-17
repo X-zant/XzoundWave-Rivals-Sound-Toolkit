@@ -62,6 +62,21 @@ globalization, the Noto Sans SC font, and compression of the window. The project
 the debug symbols the Skia packages would leave beside the exe (about 100 MB) and
 UAssetTool's own runtimeconfig and launcher, since the app calls UAssetTool as a library.
 
+### Packing the Linux release
+
+A browser download drops the executable bit, so each Linux binary ships in a `.tar.gz`,
+which keeps it. Pack on Linux (or WSL, on its own file system rather than `/mnt/…`, where
+every file looks executable), so the mode in the archive is a real one:
+
+```
+chmod 755 XzoundWave xzoundwave
+tar --owner=0 --group=0 --numeric-owner -czf XzoundWave-linux-x64.tar.gz XzoundWave
+tar --owner=0 --group=0 --numeric-owner -czf xzoundwave-cli-linux-x64.tar.gz xzoundwave
+```
+
+The two archive names also keep the uploads apart: `XzoundWave` and `xzoundwave` differ only
+in case, which Windows, and possibly a release page, treats as one name.
+
 ## Platform notes
 
 **Fonts.** The Linux window uses Inter as its interface font and Noto Sans SC as the

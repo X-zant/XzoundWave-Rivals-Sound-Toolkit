@@ -1441,6 +1441,63 @@ public static class UiSelfTest
                   : string.Join("; ", all.Where(f => !f.Fits)));
         }
 
+        // People reported having to hit a node's arrow dead centre: it is a 12 px button in a
+        // 36 px gutter. Real clicks, at the gutter's edges and corners as well as its middle,
+        // on a node of the test's own; and one on the label, which selects and leaves it alone.
+        W("");
+        W("a node opens from anywhere in its arrow's gutter");
+        {
+            var bankNode = new Node { What = Node.Kind.Bank, Label = "bnk_vo_9999001.bnk", Bank = "bnk_vo_9999001.bnk" };
+            var skinNode = new Node { What = Node.Kind.Skin, Label = "Gutter test skin   (1 .bnk)", Children = [bankNode] };
+            var hero = new Node { What = Node.Kind.Character, Label = "Gutter test hero", Children = [skinNode] };
+            window.AddRootForShot(hero);
+            Dispatcher.UIThread.RunJobs();
+            var item = tree.GetVisualDescendants().OfType<TreeViewItem>().FirstOrDefault(i => i.DataContext == hero);
+            var parts = item?.GetVisualDescendants().OfType<Control>().ToList() ?? [];
+            var header = parts.FirstOrDefault(c => c.Name == "PART_Header");
+            var label = parts.FirstOrDefault(c => c.Name == "PART_HeaderPresenter");
+            Check("the test node is drawn with a header and a label", item is not null && header is not null && label is not null);
+            if (item is not null && header is not null && label is not null)
+            {
+                item.BringIntoView();
+                Dispatcher.UIThread.RunJobs();
+                void ClickGutter(double x, double y)
+                {
+                    var on = header.TranslatePoint(new Point(x, y), window) ?? default;
+                    window.MouseDown(on, MouseButton.Left, RawInputModifiers.None);
+                    window.MouseUp(on, MouseButton.Left, RawInputModifiers.None);
+                    Dispatcher.UIThread.RunJobs();
+                }
+                var gutter = label.Bounds.X;
+                var tall = header.Bounds.Height;
+                W($"    gutter {gutter:0} px wide, row {tall:0} px tall");
+                foreach (var (x, y, where) in new[]
+                         {
+                             (gutter / 2, tall / 2, "on the arrow"),
+                             (2.0, tall / 2, "at the gutter's left edge"),
+                             (gutter - 2, tall / 2, "at the gutter's right edge"),
+                             (gutter / 2, 2.0, "above the arrow"),
+                             (gutter / 2, tall - 2, "below the arrow"),
+                             (3.0, 3.0, "in the gutter's corner"),
+                         })
+                {
+                    var was = item.IsExpanded;
+                    ClickGutter(x, y);
+                    Check($"a click {where} {(was ? "closes" : "opens")} the node, once", item.IsExpanded != was,
+                          $"at {x:0},{y:0}: {(was ? "open" : "shut")} -> {(item.IsExpanded ? "open" : "shut")}");
+                }
+                var before = item.IsExpanded;
+                ClickGutter(gutter + 20, tall / 2);
+                Check("a click on the label selects the node and leaves it as it was",
+                      tree.SelectedItems.Contains(hero) && item.IsExpanded == before,
+                      $"selected {tree.SelectedItems.Contains(hero)}, {(item.IsExpanded ? "open" : "shut")}");
+                tree.SelectedItems.Clear();
+                Dispatcher.UIThread.RunJobs();
+            }
+            window.RemoveRootForShot(hero);
+            Dispatcher.UIThread.RunJobs();
+        }
+
         W("");
         W(fails == 0 ? "ALL CHECKS PASSED" : $"{fails} CHECK(S) FAILED");
         return fails == 0 ? 0 : 1;
