@@ -522,7 +522,7 @@ public partial class MainWindow
             // chain, and every one of those carries a value that is not 0 dB, which is why
             // the branch below can say they cancel rather than that they are all zero.
             var levels = a.Props.Where(p => !p.Driven && p.Unit == WwiseProps.Unit.Db &&
-                                            p.Id is 0x00 or 0x06).ToList();
+                                            a.CountsToLevel(p)).ToList();
             Para(levels.Any(p => Math.Abs(p.Float) > 0.001)
                     ? $"Nothing you can hear. The bank sets the level {levels.Count} times and " +
                       "they cancel to 0 dB."
@@ -603,8 +603,8 @@ public partial class MainWindow
     /// headings.
     ///
     /// A group is only SUMMED where the code that reads the bank already sums: volume and
-    /// make-up gain in dB, undriven, which is what <see cref="WwiseProps.Applied.StaticDb"/>
-    /// adds up. Wwise does not add up seven aux sends, so neither does this: the others show
+    /// make-up gain in dB, undriven, and the output-bus volume when no aux send carries the
+    /// sound, which is what <see cref="WwiseProps.Applied.StaticDb"/> adds up. Wwise does not add up seven aux sends, so neither does this: the others show
     /// their contributions and no total, because a total nobody computes is a number this
     /// panel would have invented.
     /// </summary>
@@ -617,7 +617,7 @@ public partial class MainWindow
         {
             var parts = group.ToList();
             var summable = parts.All(p => !p.Driven && p.Unit == WwiseProps.Unit.Db &&
-                                          p.Id is 0x00 or 0x06);
+                                          a.CountsToLevel(p));
             var heading = parts.Count == 1 ? $"{group.Key}: {parts[0].Text}"
                         : summable ? $"{group.Key}: {parts.Sum(p => p.Float):+0.##;-0.##;0} dB " +
                                      $"over {parts.Count} levels"

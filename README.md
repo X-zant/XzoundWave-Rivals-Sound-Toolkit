@@ -82,9 +82,10 @@ category. Ctrl+click several banks to see them together.
 - Drag a column header's edge to resize it; the app remembers the widths.
 - Right-click a sound › **Add a sound to this event…** to play a file of yours once every
   time that sound's event plays, alongside what it already plays. Nothing of the game's is
-  replaced, and your file comes out of the same bus at the same level as the sound you
-  picked. If the game stops that sound (an ult ending, say), you choose whether yours stops
-  there too, with the same fade. Added sounds are listed under **Added sounds** in the tree.
+  replaced, and your file comes out of the same bus at the same level as the event's own
+  sound. If the sound you picked is one the game has muted, or what you hear sits in a random
+  container, the app copies a sound you can actually hear. If the game stops that sound (an ult
+  ending, say), you choose whether yours stops there too, with the same fade. Added sounds are listed under **Added sounds** in the tree.
   Drop a file on one to change it, or right-click › **Remove added sound**.
 
 ### Test

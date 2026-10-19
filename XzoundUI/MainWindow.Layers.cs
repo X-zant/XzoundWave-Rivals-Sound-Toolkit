@@ -26,7 +26,10 @@ public partial class MainWindow
     private bool IsProjectRow(SoundRow r) => IsNewMedia(r.MediaId);
 
     /// <summary>What adding to an event found before a file is asked for.</summary>
-    private sealed record LayerPlan(uint? Template, string Why, List<uint> Stops, HircBank Bank);
+    /// <param name="Event">the event the sound goes on: the row's, or the one that plays the row's sound when the row's only stops it</param>
+    /// <param name="InContainer">what is copied is a random container holding the sound you hear</param>
+    private sealed record LayerPlan(uint Event, string EventName, uint? Template, string Why, List<uint> Stops, HircBank Bank,
+                                    bool InContainer);
 
     /// <summary>The render harness: right-click › Add a sound… with the file and the answer given.</summary>
     internal Task AddLayerForShot(string audio, bool stops) => AddLayerAsync(audio, stops);
@@ -70,17 +73,37 @@ public partial class MainWindow
             var bank = HircBank.Parse(Path.GetFileName(bp), bytes);
             if (!bank.Write().AsSpan().SequenceEqual(bytes))
                 throw new InvalidDataException($"{Path.GetFileName(bp)} does not read back as it was, so nothing can be added to it");
-            var template = EventLayer.TemplateFor(bank, row.EventHash, row.MediaId, out var why);
-            if (template is null) return new LayerPlan(null, why, [], null);
+            // The event named on the row, which is what the menu says the sound goes on. A row stands
+            // for one medium and is named after one event that touches it, though, which can be one
+            // that only stops it (1023's fire loop is named after the release that ends it) and has
+            // nothing a sound can be added beside. Only then does it go on an event that plays the
+            // row's sound instead, a named one first, and the status line says so.
+            var ev = row.EventHash;
+            var template = EventLayer.TemplateFor(bank, ev, row.MediaId, out var why);
+            if (template is null)
+                foreach (var p in EventLayer.PlayersOf(bank, row.MediaId).Where(p => p != row.EventHash)
+                                            .OrderBy(p => session.EventName(p) is null).ThenBy(p => session.EventName(p), StringComparer.Ordinal).ThenBy(p => p))
+                    if (EventLayer.TemplateFor(bank, p, row.MediaId, out _) is { } t)
+                    {
+                        (ev, template) = (p, t);
+                        break;
+                    }
+            var evName = ev == row.EventHash ? row.EventName : session.EventName(ev);
+            if (template is null) return new LayerPlan(ev, evName, null, why, [], null, false);
             var stops = EventLayer.StopsOf(bank, template.Value);
             // A dry run on a copy: every writer has to reproduce this bank's own objects first,
             // and an event one cannot is better refused here than at build time.
-            EventLayer.Add(HircBank.Parse("dry run", bytes), row.EventHash, new byte[64], EventLayer.Ids.For("dry run"),
+            EventLayer.Add(HircBank.Parse("dry run", bytes), ev, new byte[64], EventLayer.Ids.For("dry run"),
                            template, stops);
-            return new LayerPlan(template, null, stops, bank);
+            return new LayerPlan(ev, evName, template, null, stops, bank,
+                                 bank.Nodes.GetValueOrDefault(template.Value) is CUE4Parse.UE4.Wwise.Objects.HIRC.Containers.HierarchyRandomSequenceContainer);
         });
         if (plan is null) return;   // Working has already said why
-        if (plan.Template is null) { Say($"can't add a sound to {what}: {plan.Why}."); return; }
+        var moved = plan.Event != row.EventHash;
+        var on = plan.EventName ?? plan.Event.ToString();
+        var why = moved ? $" ({what}, which names this row, has nothing a sound can be added beside; {on} plays this row's sound)" : "";
+        if (plan.Template is null) { Say($"can't add a sound to {on}{why}: {plan.Why}."); return; }
+        what = on;
 
         var path = audioForShot ?? (await PickFiles($"Sound to play with {what}", "Audio",
                                                     [.. AudioDecode.Extensions.Select(e => "*" + e)])).FirstOrDefault();
@@ -105,7 +128,8 @@ public partial class MainWindow
             var listed = string.Join(", ", stopNames.Take(4)) + (stopNames.Count > 4 ? $" and {stopNames.Count - 4} more" : "");
             var answer = stopsForShot is { } s ? (s ? 0 : 1) : await AskScope("Add a sound to this event",
                 $"{name} will play once every time {what} plays, beside what it already plays. Nothing of the game's " +
-                "is replaced, and it comes out the way the sound you picked does: the same bus, level and position." +
+                $"is replaced, and it comes out the way {(plan.InContainer ? "the event's own sound" : "the sound you picked")} does: " +
+                "the same bus, level and position." +
                 Environment.NewLine + Environment.NewLine +
                 $"The game stops that sound with {listed}. Stop yours there too, with the same fade, or let it play to the end?",
                 "Stop with it", "Play to the end");
@@ -121,8 +145,8 @@ public partial class MainWindow
         var layer = new ProjectLayer
         {
             Bank = bp,
-            Event = row.EventHash,
-            EventName = row.EventName,
+            Event = plan.Event,
+            EventName = plan.EventName,
             Template = plan.Template.Value,
             Stops = stopsWith,
             Name = LayerBuild.NameFor(plan.Bank, $"{what}/{Path.GetFileNameWithoutExtension(path)}",
@@ -133,7 +157,7 @@ public partial class MainWindow
         _pending.Add(PendingWem.ForMedia(layer.MediaId, path, data.bytes, $"added to {what}", data.converted));
         MarkStagedRows();
         LayersChanged();
-        Say($"{name} added to {what}" +
+        Say($"{name} added to {what}{why}" +
             (stopsWith ? $", stopped where the game stops the sound it copies ({stopNames.Count} event(s))"
              : plan.Stops.Count > 0 ? ", playing to the end" : ", playing to the end (nothing in this bank stops the sound it copies)") +
             ". Build mod puts it in; it is listed under \"Added sounds\" in the tree.");
@@ -198,7 +222,7 @@ public partial class MainWindow
                 MediaId = l.MediaId,
                 Subtitle = staged?.FileName ?? "(no audio: drop a file on this row)",
                 Seconds = staged?.Seconds,
-                Category = l.Stops ? $"added; stops where Sound {l.Template} does" : "added; plays to the end",
+                Category = l.Stops ? "added; stops where the game stops what it copies" : "added; plays to the end",
                 Origin = AddedOrigin,
             });
         }

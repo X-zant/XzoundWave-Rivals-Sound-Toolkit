@@ -258,6 +258,50 @@ public static partial class Shot
                 Check("and the status line counts it", main.Status.Text.Contains("added sounds: 1 put back"), main.Status.Text);
             }
 
+            // ---- 1023: a row named after an event that only stops its sound, and an ult start
+            // whose only directly played Sound the game has muted ----------------------------------
+            Console.WriteLine("  1023:");
+            Pump(main.SaveProjectForShot(path));
+            Pump(main.NewProjectForShot());
+            main.ShowSkinSync("1023001", "sfx");
+            Pump();
+            var rocketRows = main.SoundsForShot.Rows;
+            var fireRow = rocketRows.FirstOrDefault(r => r.MediaId == 395501421);
+            var mutedRow = rocketRows.FirstOrDefault(r => r.MediaId == 256755055);
+            Check("the fire loop's row is named after the release that stops it", fireRow?.EventName == "sfx_1023001_left_end_play", fireRow?.EventName);
+            if (fireRow is not null && mutedRow is not null)
+            {
+                grid.SelectedItem = fireRow;
+                Pump();
+                Pump(main.AddLayerForShot(audio, stops: true));
+                var fire = main.CurrentProject.Layers.LastOrDefault();
+                Check("adding from it puts the sound on the fire loop's own event, and says so",
+                      fire?.Event == VoiceLine.Fnv("sfx_1023001_left_lp_play") && fire.Template == 698353017 &&
+                      main.Status.Text.Contains("plays this row's sound"), main.Status.Text);
+                grid.SelectedItem = mutedRow;
+                Pump();
+                Pump(main.AddLayerForShot(audio, stops: false));
+                var ult = main.CurrentProject.Layers.LastOrDefault();
+                Check("adding from the muted ult-start Sound's row copies the ult start's random container",
+                      main.CurrentProject.Layers.Count == 2 && ult?.Event == VoiceLine.Fnv("sfx_1023001_q_star_play") && ult.Template == 937071405,
+                      main.Status.Text);
+                var rocketOut = Path.Combine(dir, "built-1023");
+                Pump(main.BuildForShot(rocketOut));
+                var rocketPak = Directory.Exists(rocketOut) ? Directory.GetFiles(rocketOut, "*.pak").FirstOrDefault() : null;
+                var rocketBank = rocketPak is null ? null
+                    : ModBank.Open(rocketPak, settings, withMedia: true).Banks.FirstOrDefault(b => b.Name.Equals("bnk_sfx_1023001.bnk", StringComparison.OrdinalIgnoreCase));
+                var rb = rocketBank is null ? null : HircBank.Parse("1023", rocketBank.Bytes);
+                var entries = rb is null ? [] : LayerManifest.Entries(LayerManifest.Read(rb));
+                var inUlt = entries.FirstOrDefault(e => e.EventId == VoiceLine.Fnv("sfx_1023001_q_star_play"));
+                var inFire = entries.FirstOrDefault(e => e.EventId == VoiceLine.Fnv("sfx_1023001_left_lp_play"));
+                Check("Build mod: the ult start plays a container copy holding the added sound",
+                      inUlt is { Container: not 0 } && rb.Nodes.GetValueOrDefault(inUlt.Container) is HierarchyRandomSequenceContainer uc &&
+                      uc.ChildIds.SequenceEqual([inUlt.SoundId]) &&
+                      ((HierarchyEvent)rb.Nodes[inUlt.EventId]).EventActionIds.Contains(inUlt.PlayId), main.Status.Text);
+                Check("and the fire loop plays a Sound copy that its release stops",
+                      inFire is { Container: 0 } && inFire.Stops.Count > 0 && rb.Nodes.ContainsKey(inFire.SoundId), main.Status.Text);
+            }
+
             Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : $"{failures} CHECK(S) FAILED");
             return failures == 0 ? 0 : 1;
         }

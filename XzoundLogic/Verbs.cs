@@ -202,6 +202,8 @@ public static class Verbs
             (a, i) => ModSetSelfTest.Run()),
         new("--updatetest", 0, "", "an old mod's audio lands on the current bank, and only where it should",
             (a, i) => ModUpdateSelfTest.Run()),
+        new("--layertest", 0, "", "added sounds against the game's banks: muted sounds, containers, and out again exactly",
+            (a, i) => LayerSelfTest.Run()),
         new("--voicesets", 0, "", "every voice set: each hero's, and the skins that carry their own",
             (a, i) => ListVoiceSets()),
         new("--voicelinecheck", 2, "<project.xzw> <modDir> [swappedMediaId]", "a built voice-line mod against its project, read the way the game reads it",

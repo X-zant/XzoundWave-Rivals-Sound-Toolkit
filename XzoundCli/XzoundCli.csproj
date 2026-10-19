@@ -33,7 +33,7 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Product>XzoundWave</Product>
     <Authors>Nikolas Becic</Authors>
     <Company>Nikolas Becic</Company>

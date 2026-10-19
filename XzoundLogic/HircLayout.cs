@@ -131,6 +131,39 @@ public static class HircLayout
 
     public sealed record MixerSpan(BaseSpan Base, int ChildrenAt, HierarchyActorMixer Parsed);
 
+    /// <summary>
+    /// A random or sequence container: its BaseHierarchy, its own fields (loop count, transition,
+    /// avoid-repeat, modes, playlist flags) up to <see cref="ChildrenAt"/>, its AkChildren, then
+    /// its playlist from <see cref="PlaylistAt"/> to the end.
+    /// </summary>
+    public sealed record ContainerSpan(BaseSpan Base, int ChildrenAt, int PlaylistAt, HierarchyRandomSequenceContainer Parsed);
+
+    /// <summary>
+    /// The children list is found where its count and every id read back as the reader's, after
+    /// the container's own fields; the playlist after it must hold the reader's items and end the
+    /// body exactly, or the layout is not the one this writes.
+    /// </summary>
+    public static ContainerSpan RandomContainer(byte[] body, uint version)
+    {
+        var parsed = (HierarchyRandomSequenceContainer)HircBank.ReadExact(EAKBKHircType.RandomSequenceContainer, body, version, "container");
+        var b = Base(body, 4, version);
+        var kids = parsed.ChildIds ?? [];
+        Check(kids.Length > 0, "a container with children");
+        var childrenAt = -1;
+        for (var at = b.End; at + 4 + kids.Length * 4 <= body.Length && childrenAt < 0; at++)
+            if (U32(body, at) == kids.Length && kids.Select((k, i) => U32(body, at + 4 + i * 4) == k).All(x => x))
+                childrenAt = at;
+        Check(childrenAt >= 0, "AkChildren in the container");
+        var playlistAt = childrenAt + 4 + kids.Length * 4;
+        var items = parsed.Playlist ?? [];
+        Check(playlistAt + 2 <= body.Length && BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(playlistAt)) == items.Length &&
+              playlistAt + 2 + items.Length * 8 == body.Length, "the playlist ends the container");
+        for (var i = 0; i < items.Length; i++)
+            Check(U32(body, playlistAt + 2 + i * 8) == items[i].PlayId &&
+                  BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(playlistAt + 6 + i * 8)) == items[i].Weight, "playlist item");
+        return new ContainerSpan(b, childrenAt, playlistAt, parsed);
+    }
+
     /// <summary>CAkActorMixer: id, BaseHierarchy, AkChildren.</summary>
     public static MixerSpan Mixer(byte[] body, uint version)
     {
@@ -279,6 +312,26 @@ public static class HircWriter
     }
 
     /// <summary>CAkActorMixer: id, BaseHierarchy, AkChildren.</summary>
+    /// <summary>
+    /// CAkRanSeqCntr with a chosen id, children and playlist: the BaseHierarchy and the container's
+    /// own fields as the template has them, so the copy plays, sends and loops exactly as it does.
+    /// </summary>
+    public static byte[] RandomContainer(byte[] template, HircLayout.ContainerSpan span, uint version, uint id,
+                                         IReadOnlyList<uint> childIds, IReadOnlyList<(uint Id, int Weight)> playlist)
+    {
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+        w.Write(id);
+        Base(w, template, span.Base, version);
+        w.Write(template, span.Base.End, span.ChildrenAt - span.Base.End);
+        w.Write((uint)childIds.Count);
+        foreach (var c in childIds) w.Write(c);
+        w.Write((ushort)playlist.Count);
+        foreach (var (pid, weight) in playlist) { w.Write(pid); w.Write(weight); }
+        w.Flush();
+        return ms.ToArray();
+    }
+
     public static byte[] Mixer(byte[] template, HircLayout.MixerSpan span, uint version, uint[] childIds)
     {
         using var ms = new MemoryStream();

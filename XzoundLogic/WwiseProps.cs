@@ -397,12 +397,27 @@ public static class WwiseProps
         public bool LevelDriven { get; set; }
 
         /// <summary>
+        /// An aux send carries the sound somewhere besides its output bus (a game-defined send, or
+        /// one of its own). The output-bus volume then only turns down part of what is heard, so
+        /// it is left out of <see cref="StaticDb"/>.
+        /// </summary>
+        public bool AuxSends { get; set; }
+
+        /// <summary>
+        /// Whether a property is part of the level: volume and make-up gain always, and the
+        /// output-bus volume (0x18) when nothing but the output bus carries the sound. 1023's ult
+        /// start plays a Sound whose output bus sits at -96 dB on the Sound and on its mixer, and
+        /// counting only volume and make-up gain called it audible: the game plays nothing there.
+        /// </summary>
+        public bool CountsToLevel(Prop p) => p.Id is 0x00 or 0x06 || p.Id == 0x18 && !AuxSends;
+
+        /// <summary>
         /// The fixed part of the level, in dB: volume and make-up gain summed the way
         /// Wwise sums them down the chain, leaving out anything a game parameter
         /// drives because that is not a number anyone can add up here.
         /// </summary>
         public float StaticDb => Props
-            .Where(p => !p.Driven && p.Unit == Unit.Db && p.Id is 0x00 or 0x06)
+            .Where(p => !p.Driven && p.Unit == Unit.Db && CountsToLevel(p))
             .Sum(p => p.Float);
 
         /// <summary>
@@ -599,12 +614,14 @@ public static class WwiseProps
             {
                 applied.Rtpc++;
                 live.Add((name, owner, rank));
-                if (propId is 0x00 or 0x06) applied.LevelDriven = true;
+                if (propId is 0x00 or 0x06 or 0x18) applied.LevelDriven = true;
                 foreach (var p in here.Where(p => p.Id == propId)) p.Driven = true;
             }
 
             applied.Props.AddRange(here);
             applied.StateGroups += Count(bp, "StateGroups");
+            if (Field(bp, "AuxParams") is CUE4Parse.UE4.Wwise.Objects.AkAuxParams aux && EventLayer.SendsToAux(aux))
+                applied.AuxSends = true;
 
             var parentId = Field(bp, "DirectParentId") as uint? ?? 0;
             if (parentId == 0 || !seen.Add(parentId) || !nodes.TryGetValue(parentId, out var parent))

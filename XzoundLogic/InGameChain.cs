@@ -44,8 +44,9 @@ public static class InGameChain
         // drives is left out: the bank stores where it starts, not what is heard, and
         // applying a starting value of -96 dB would play silence for a sound the game
         // turns up.
+        // The output-bus volume counts too when nothing else carries the sound (CountsToLevel).
         var db = applied.Props
-            .Where(p => !p.Driven && p.Unit == WwiseProps.Unit.Db && p.Id is 0x00 or 0x06)
+            .Where(p => !p.Driven && p.Unit == WwiseProps.Unit.Db && applied.CountsToLevel(p))
             .Sum(p => p.Float);
 
         // Pitch is in cents and Wwise applies it by resampling, so it moves the speed
