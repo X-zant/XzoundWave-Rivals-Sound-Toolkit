@@ -658,6 +658,12 @@ public partial class MainWindow : Window
              () => { if (CurrentRow is not null) PlayRow(CurrentRow, original: true); },
              "Ignores a staged replacement and a loaded mod, so you can hear what the " +
              "game shipped and compare.");
+        // The audio out, named so it stages straight back in: what the old window called Export.
+        Item("Extract wem(s)…", () => _ = ExtractRowsAsync(asWav: false),
+             "Writes the selected sounds' audio as {media id}-{event}.wem, the audio the row plays " +
+             "(an open mod's for its rows). Drop one back in and it stages onto the same sound.");
+        Item("Extract as WAV…", () => _ = ExtractRowsAsync(asWav: true),
+             "The same, decoded to WAV to listen to or edit.");
         menu.Items.Add(new Separator());
         // A mute is a build instruction for the rows themselves, not a test-only one, so it
         // lives with them rather than on the Test tab. Named for what a click will do.

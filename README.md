@@ -80,6 +80,8 @@ category. Ctrl+click several banks to see them together.
 - Type your own notes on a sound in the **Notes** column. The filter box searches them
   too.
 - Drag a column header's edge to resize it; the app remembers the widths.
+- Right-click › **Extract wem(s)…** or **Extract as WAV…** writes the selected sounds out of
+  the game as `{media id}-{event}` files; drop one back in and it stages onto the same sound.
 - Right-click a sound › **Add a sound to this event…** to play a file of yours once every
   time that sound's event plays, alongside what it already plays. Nothing of the game's is
   replaced, and your file comes out of the same bus at the same level as the event's own

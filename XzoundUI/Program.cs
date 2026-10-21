@@ -43,6 +43,10 @@ public static class Program
         if (pm >= 0 && args.Length > pm + 2)
             return Shot.TakeProjectMods(args[pm + 1], args.Skip(pm + 2).ToList());
 
+        var xr = Array.FindIndex(args, a => a.Equals("--shot-extract", StringComparison.OrdinalIgnoreCase));
+        if (xr >= 0 && args.Length > xr + 1)
+            return Shot.TakeExtractRows(args[xr + 1]);
+
         var ly = Array.FindIndex(args, a => a.Equals("--shot-layers", StringComparison.OrdinalIgnoreCase));
         if (ly >= 0 && args.Length > ly + 2)
             return Shot.TakeLayers(args[ly + 1], args[ly + 2]);
