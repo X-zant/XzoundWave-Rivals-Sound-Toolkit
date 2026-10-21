@@ -178,6 +178,42 @@ public static class LayerSelfTest
         }
 
         W("");
+        W("a playback limit above the layer (1023's ult voice line: one sound per character)");
+        {
+            // In game the music played and the line did not: the voice mixer drops the older sound.
+            var voPath = session.BankPaths.First(p => System.IO.Path.GetFileName(p).Equals("bnk_vo_1023001.bnk", StringComparison.OrdinalIgnoreCase) &&
+                                                      string.Equals(GameSession.LanguageOf(p), session.Language, StringComparison.OrdinalIgnoreCase));
+            var voBytes = session.Bank(voPath).Read();
+            var vo = HircBank.Parse("vo", voBytes);
+            var line = E("vo_10230045_q_p13_play");
+            var tmpl = EventLayer.TemplateFor(vo, line, null, out var why);
+            Check("the ult line's own Sound is what is copied", tmpl == 72452803, why ?? $"{tmpl}");
+            var ids = EventLayer.Ids.For("layertest/vo");
+            var added = EventLayer.Add(vo, line, wem, ids, tmpl);
+            var mine = ((HierarchySoundSfxVoice)vo.Nodes[ids.SoundId]).BaseParams.AdvSettingsParams;
+            var theirs = ((HierarchySoundSfxVoice)vo.Nodes[72452803]).BaseParams.AdvSettingsParams;
+            Check("the copy is left out of the mixer's limit, every other playback setting the line's own",
+                  (Convert.ToByte(mine.AdvSettingsFlags) & HircWriter.IgnoreParentMaxNumInst) != 0 &&
+                  (Convert.ToByte(mine.AdvSettingsFlags) & ~HircWriter.IgnoreParentMaxNumInst) == Convert.ToByte(theirs.AdvSettingsFlags) &&
+                  mine.MaxNumInstance == theirs.MaxNumInstance && mine.VirtualQueueBehavior == theirs.VirtualQueueBehavior &&
+                  mine.BelowThresholdBehavior == theirs.BelowThresholdBehavior && mine.HdrEnvelopeFlags == theirs.HdrEnvelopeFlags,
+                  $"flags {mine.AdvSettingsFlags} vs {theirs.AdvSettingsFlags}, max {mine.MaxNumInstance}");
+            Check("and the build log says why", added.Log.Any(l => l.Contains("left out of that count")), string.Join(" | ", added.Log));
+            LayerManifest.Write(vo, LayerManifest.Read(vo), [LayerManifest.Of("layertest/vo", "vo_10230045_q_p13_play", line, added, false)], voPath, voBytes);
+            var back = HircBank.Parse("back", vo.Write());
+            LayerManifest.TakeOut(back, LayerManifest.Read(back));
+            LayerManifest.Write(back, LayerManifest.Read(back), [], null, null);
+            Check("taking it out gives the voice bank back, byte for byte", back.Write().AsSpan().SequenceEqual(voBytes));
+
+            var em = HircBank.Parse("emma", emmaBytes);
+            var emIds = EventLayer.Ids.For("layertest/emma-limit");
+            EventLayer.Add(em, E("sfx_1053001_q_start_play"), wem, emIds, 149773038);
+            Check("with no limit above it (Emma's ult), the copy's playback settings are her Sound's, untouched",
+                  ((HierarchySoundSfxVoice)em.Nodes[emIds.SoundId]).BaseParams.AdvSettingsParams.AdvSettingsFlags ==
+                  ((HierarchySoundSfxVoice)em.Nodes[149773038]).BaseParams.AdvSettingsParams.AdvSettingsFlags);
+        }
+
+        W("");
         W(fails == 0 ? "ALL CHECKS PASSED" : $"{fails} CHECK(S) FAILED");
         return fails == 0 ? 0 : 1;
     }

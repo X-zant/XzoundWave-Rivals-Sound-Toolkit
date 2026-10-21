@@ -62,16 +62,59 @@ public static class HircLayout
     /// and the bundle (the priority flags) are not named here, only stepped over: the search starts
     /// at DirectParentId's end and goes no further than a few bytes.
     /// </summary>
+    private static bool SameBundle(AkPropBundle a, AkPropBundle b) =>
+        (a.Props ?? []).Length == (b.Props ?? []).Length &&
+        (a.Props ?? []).Zip(b.Props ?? []).All(p => p.First.Id == p.Second.Id && p.First.Value.u32 == p.Second.Value.u32) &&
+        (a.PropRanges ?? []).Length == (b.PropRanges ?? []).Length &&
+        (a.PropRanges ?? []).Zip(b.PropRanges ?? []).All(p => p.First.Id == p.Second.Id &&
+            p.First.Min.u32 == p.Second.Min.u32 && p.First.Max.u32 == p.Second.Max.u32);
+
+    /// <summary>Where a BaseHierarchy's AkAdvSettingsParams (playback limit, virtual voice, HDR) sits: six bytes.</summary>
+    public sealed record AdvSpan(int At, AkAdvSettingsParams Parsed);
+
+    /// <summary>
+    /// The playback-limit block, found by reading the BaseHierarchy's pieces in their order from where
+    /// its property bundle starts: the bundle, positioning, aux sends, then this. Accepted only where the
+    /// bundle and the block read back as the object's own reader parsed them and the block is the six
+    /// bytes <see cref="HircWriter.AdvSettings"/> writes back exactly; a block that reads two ways is refused.
+    /// </summary>
+    public static AdvSpan Adv(byte[] body, BaseSpan span, uint version)
+    {
+        var want = span.Parsed.AdvSettingsParams;
+        AdvSpan found = null;
+        for (var at = span.ParentAt + 4; at <= span.ParentAt + 8 && at < span.End; at++)
+        {
+            int advAt;
+            AkAdvSettingsParams adv;
+            try
+            {
+                var ar = HircBank.Archive(body, version);
+                ar.Position = at;
+                if (!SameBundle(new AkPropBundle(ar), span.Parsed.PropBundle)) continue;
+                _ = new AkPositioningParams(ar);
+                _ = new AkAuxParams(ar);
+                advAt = (int)ar.Position;
+                adv = new AkAdvSettingsParams(ar);
+                if ((int)ar.Position - advAt != 6 || advAt + 6 > span.End) continue;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { continue; }
+            if (adv.AdvSettingsFlags != want.AdvSettingsFlags || adv.MaxNumInstance != want.MaxNumInstance ||
+                adv.VirtualQueueBehavior != want.VirtualQueueBehavior || adv.BelowThresholdBehavior != want.BelowThresholdBehavior ||
+                adv.HdrEnvelopeFlags != want.HdrEnvelopeFlags ||
+                !HircWriter.AdvSettings(adv, Convert.ToByte(adv.AdvSettingsFlags), adv.MaxNumInstance).AsSpan().SequenceEqual(body.AsSpan(advAt, 6)))
+                continue;
+            Check(found is null || found.At == advAt, "the playback-limit block reads one way");
+            found = new AdvSpan(advAt, adv);
+        }
+        Check(found is not null, "the playback-limit block is where its reader puts it");
+        return found;
+    }
+
     public static PropsSpan Props(byte[] body, BaseSpan span, uint version)
     {
         var want = span.Parsed.PropBundle;
         if (want.Props is not { Length: > 0 }) return null;
-        static bool Same(AkPropBundle a, AkPropBundle b) =>
-            a.Props.Length == b.Props.Length &&
-            a.Props.Zip(b.Props).All(p => p.First.Id == p.Second.Id && p.First.Value.u32 == p.Second.Value.u32) &&
-            (a.PropRanges ?? []).Length == (b.PropRanges ?? []).Length &&
-            (a.PropRanges ?? []).Zip(b.PropRanges ?? []).All(p => p.First.Id == p.Second.Id &&
-                p.First.Min.u32 == p.Second.Min.u32 && p.First.Max.u32 == p.Second.Max.u32);
+        static bool Same(AkPropBundle a, AkPropBundle b) => SameBundle(a, b);
         for (var at = span.ParentAt + 4; at <= span.ParentAt + 8 && at < span.End; at++)
         {
             AkPropBundle got;
@@ -222,8 +265,11 @@ public static class HircWriter
     /// <param name="dropProps">properties left out of the object's own bundle (a copy that must
     /// not loop where its template does); the rest of the bundle is written from the parsed values,
     /// by a writer that reproduces the template's bundle first</param>
+    /// <param name="ignoreParentLimit">set the object's "ignore the parent's playback limit" flag, so its
+    /// sounds are not counted by a limit above it (a voice mixer's one-sound-per-character); the rest of
+    /// its playback-limit block stays the template's</param>
     public static void Base(BinaryWriter w, byte[] template, HircLayout.BaseSpan span, uint version,
-                            uint? directParentId = null, IReadOnlySet<byte> dropProps = null)
+                            uint? directParentId = null, IReadOnlySet<byte> dropProps = null, bool ignoreParentLimit = false)
     {
         var b = span.Parsed;
         w.Write(b.OverrideFx);
@@ -246,18 +292,42 @@ public static class HircWriter
         if (version > 89 && version <= 145) w.Write(b.OverrideAttachmentParams);
         w.Write(b.OverrideBusId);
         w.Write(directParentId ?? b.DirectParentId);
+        // The rest of the block is the template's bytes, with only the pieces asked for rewritten
+        // from parsed values: none, for every copy that needs neither, which is then the template's.
+        var patches = new List<(int At, int End, byte[] Bytes)>();
         var props = dropProps is { Count: > 0 } ? HircLayout.Props(template, span, version) : null;
-        if (props is null || !props.Parsed.Props.Any(p => dropProps.Contains(p.Id)) &&
-                             !(props.Parsed.PropRanges ?? []).Any(p => dropProps.Contains(p.Id)))
+        if (props is not null && (props.Parsed.Props.Any(p => dropProps.Contains(p.Id)) ||
+                                  (props.Parsed.PropRanges ?? []).Any(p => dropProps.Contains(p.Id))))
+            patches.Add((props.At, props.End,
+                         PropBundle([.. props.Parsed.Props.Where(p => !dropProps.Contains(p.Id))],
+                                    [.. (props.Parsed.PropRanges ?? []).Where(p => !dropProps.Contains(p.Id))])));
+        if (ignoreParentLimit)
         {
-            w.Write(template, span.ParentAt + 4, span.End - (span.ParentAt + 4));
-            return;
+            var adv = HircLayout.Adv(template, span, version);
+            patches.Add((adv.At, adv.At + 6,
+                         AdvSettings(adv.Parsed, (byte)(Convert.ToByte(adv.Parsed.AdvSettingsFlags) | IgnoreParentMaxNumInst), adv.Parsed.MaxNumInstance)));
         }
-        w.Write(template, span.ParentAt + 4, props.At - (span.ParentAt + 4));
-        w.Write(PropBundle([.. props.Parsed.Props.Where(p => !dropProps.Contains(p.Id))],
-                           [.. (props.Parsed.PropRanges ?? []).Where(p => !dropProps.Contains(p.Id))]));
-        w.Write(template, props.End, span.End - props.End);
+        var pos = span.ParentAt + 4;
+        foreach (var (at, end, bytes) in patches.OrderBy(p => p.At))
+        {
+            w.Write(template, pos, at - pos);
+            w.Write(bytes);
+            pos = end;
+        }
+        w.Write(template, pos, span.End - pos);
     }
+
+    /// <summary>The playback-limit flag bit "ignore the parent's max instances" (wwiser's bIgnoreParentMaxNumInst).</summary>
+    public const byte IgnoreParentMaxNumInst = 0x08;
+
+    /// <summary>
+    /// AkAdvSettingsParams as these banks lay it out: flags, virtual-voice queue behaviour, max
+    /// instances (u16), below-threshold behaviour, HDR envelope flags. <see cref="HircLayout.Adv"/>
+    /// only accepts a block this writes back byte for byte.
+    /// </summary>
+    public static byte[] AdvSettings(AkAdvSettingsParams a, byte flags, ushort maxNumInstance) =>
+        [flags, Convert.ToByte(a.VirtualQueueBehavior), (byte)maxNumInstance, (byte)(maxNumInstance >> 8),
+         Convert.ToByte(a.BelowThresholdBehavior), Convert.ToByte(a.HdrEnvelopeFlags)];
 
     /// <summary>
     /// AkPropBundle as this bank version lays it out: the properties (count, ids, values), then
@@ -287,7 +357,7 @@ public static class HircWriter
     /// </summary>
     public static byte[] Sound(byte[] template, HircLayout.SoundSpan span, uint version, uint id,
                                EAKBKSourceType sourceType, uint sourceId, uint inMemoryMediaSize, byte sourceFlags,
-                               uint? directParentId = null, IReadOnlySet<byte> dropProps = null)
+                               uint? directParentId = null, IReadOnlySet<byte> dropProps = null, bool ignoreParentLimit = false)
     {
         var s = span.Parsed.Source;
         using var ms = new MemoryStream();
@@ -299,7 +369,7 @@ public static class HircWriter
         w.Write(inMemoryMediaSize);
         w.Write(sourceFlags);
         if (s.HasPluginParams) w.Write(template, span.PluginParamsAt, span.SourceEnd - span.PluginParamsAt);
-        Base(w, template, span.Base, version, directParentId, dropProps);
+        Base(w, template, span.Base, version, directParentId, dropProps, ignoreParentLimit);
         w.Flush();
         return ms.ToArray();
     }
@@ -317,12 +387,13 @@ public static class HircWriter
     /// own fields as the template has them, so the copy plays, sends and loops exactly as it does.
     /// </summary>
     public static byte[] RandomContainer(byte[] template, HircLayout.ContainerSpan span, uint version, uint id,
-                                         IReadOnlyList<uint> childIds, IReadOnlyList<(uint Id, int Weight)> playlist)
+                                         IReadOnlyList<uint> childIds, IReadOnlyList<(uint Id, int Weight)> playlist,
+                                         bool ignoreParentLimit = false)
     {
         using var ms = new MemoryStream();
         using var w = new BinaryWriter(ms);
         w.Write(id);
-        Base(w, template, span.Base, version);
+        Base(w, template, span.Base, version, ignoreParentLimit: ignoreParentLimit);
         w.Write(template, span.Base.End, span.ChildrenAt - span.Base.End);
         w.Write((uint)childIds.Count);
         foreach (var c in childIds) w.Write(c);

@@ -275,6 +275,16 @@ public static class EventLayer
             ? $"copies random container {target} with one of its Sounds, {sSpan.Parsed.Id} (media {sSpan.Parsed.Source.SourceId}), in mixer {mixerId}, which event {startEvent} plays"
             : $"copies Sound {sSpan.Parsed.Id} (media {sSpan.Parsed.Source.SourceId}) in mixer {mixerId}, which event {startEvent} plays");
 
+        // A playback limit above where the layer goes (1023's voice mixer: one sound per character,
+        // the older one dropped) would count the layer as one of the game's own and cut the line it
+        // plays beside -- in game, the music played and the voice line did not. The layer is left
+        // out of that count with the flag Wwise has for it; only where such a limit exists, so a
+        // layer anywhere else is written exactly as before.
+        var limit = LimitAbove(bank, mixerId);
+        if (limit is { } lim)
+            log.Add($"mixer {lim.Id} plays at most {lim.Max} sound(s) at once per {(lim.Global ? "game" : "character")}; " +
+                    "the added sound is left out of that count, so it does not cut off the game's own");
+
         // ---- the Stops, if asked for: one each stop event already makes on the template --------
         var stops = new List<(HircObject Event, HircObject Stop, HircLayout.ActionSpan Span)>();
         foreach (var se in stopEvents)
@@ -297,7 +307,8 @@ public static class EventLayer
                                          : (byte)(sSpan.Parsed.Source.BankSourceFlags & ~EBankSourceFlags.Prefetch);
         var sound = new HircObject { RawType = tSndObj.RawType, Type = tSndObj.Type,
             Body = HircWriter.Sound(tSndObj.Body, sSpan, bank.Version, ids.SoundId, EAKBKSourceType.Data, ids.MediaId, (uint)wem.Length, flags,
-                                    directParentId: inContainer ? ids.ContainerId : null, dropProps: PlaysOnce) };
+                                    directParentId: inContainer ? ids.ContainerId : null, dropProps: PlaysOnce,
+                                    ignoreParentLimit: !inContainer && limit is not null) };
         sound.Node = HircBank.ReadExact(sound.Type, sound.Body, bank.Version, "layer sound");
         if (((HierarchySoundSfxVoice)sound.Node).BaseParams.PropBundle.Props?.Any(p => PlaysOnce.Contains(p.Id)) == true)
             throw new InvalidDataException($"{bank.Name}: the copy of Sound {sSpan.Parsed.Id} still loops");
@@ -322,7 +333,8 @@ public static class EventLayer
             var weight = cSpan.Parsed.Playlist.First(p => p.PlayId == tSndObj.Id).Weight;
             List<(uint, int)> playlist = [(ids.SoundId, weight)];
             var container = new HircObject { RawType = cObj.RawType, Type = cObj.Type,
-                Body = HircWriter.RandomContainer(cObj.Body, cSpan, bank.Version, ids.ContainerId, [ids.SoundId], playlist) };
+                Body = HircWriter.RandomContainer(cObj.Body, cSpan, bank.Version, ids.ContainerId, [ids.SoundId], playlist,
+                                                  ignoreParentLimit: limit is not null) };
             container.Node = HircBank.ReadExact(container.Type, container.Body, bank.Version, "layer container");
             // After its Sound: banks lay a subtree out children first, then the parent.
             bank.Objects.Insert(at + 1, container);
@@ -363,6 +375,18 @@ public static class EventLayer
         log.Add($"added Sound {ids.SoundId}{(inContainer ? $" in container {ids.ContainerId}" : "")} with media {ids.MediaId} ({wem.Length:N0} B), Play {ids.PlayId}" +
                 (stops.Count > 0 ? $", {stops.Count} Stop(s) from {ids.StopId}" : ""));
         return new Added(ids, target, mixerId, inContainer ? ids.ContainerId : 0, stopEvents, log);
+    }
+
+    /// <summary>The nearest object from <paramref name="id"/> upwards that limits how many of its sounds play at once.</summary>
+    private static (uint Id, int Max, bool Global)? LimitAbove(HircBank bank, uint id)
+    {
+        var seen = new HashSet<uint>();
+        for (var cur = id; seen.Add(cur) && BaseOf(bank.Nodes.GetValueOrDefault(cur)) is { } bp; cur = bp.DirectParentId)
+        {
+            if (bp.AdvSettingsParams.MaxNumInstance > 0) return (cur, bp.AdvSettingsParams.MaxNumInstance, bp.AdvSettingsParams.IsGlobalLimit);
+            if (bp.DirectParentId == 0) break;
+        }
+        return null;
     }
 
     private static HircObject Event(HircBank bank, uint id)
