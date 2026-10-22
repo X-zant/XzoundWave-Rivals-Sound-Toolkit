@@ -27,7 +27,49 @@ public sealed class AudioPreview : IDisposable
     private readonly string _cache = Path.Combine(Path.GetTempPath(), "XzoundWave");
     public string VgmstreamPath { get; set; }
 
-    public AudioPreview() => Directory.CreateDirectory(_cache);
+    public AudioPreview()
+    {
+        Directory.CreateDirectory(_cache);
+        // Preview files are named by their content (Decode), so the same sound's other versions pile
+        // up beside each other; the ones not touched for a few days go. Only this cache's own top-level
+        // .wem/.wav files: the build and voice-line folders under it are left alone.
+        try
+        {
+            var old = DateTime.UtcNow.AddDays(-3);
+            foreach (var f in Directory.EnumerateFiles(_cache, "*.wem").Concat(Directory.EnumerateFiles(_cache, "*.wav")))
+                try { if (File.GetLastWriteTimeUtc(f) < old) File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
+    /// A cached file's name: the media id, for a person reading the folder, and a hash of the bytes,
+    /// so the game's version of a sound and a mod's (or a staged file) never share one. Named by the
+    /// media id alone, the wav still open in the player after the modded version played could not be
+    /// overwritten on Windows, and Play the game's original played the mod's again from it.
+    /// </summary>
+    private static string Key(byte[] data, uint mediaId) =>
+        $"{mediaId}-{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data), 0, 8).ToLowerInvariant()}";
+
+    /// <summary>
+    /// Write a file into the cache whole or not at all: to a name of its own first, then moved into
+    /// place. A name already there holds these same bytes (the name is their hash), so it is kept.
+    /// </summary>
+    private static string Settle(string path, Action<string> write)
+    {
+        if (File.Exists(path)) return path;
+        // The same extension, so the decoder writes the kind of file it is asked for.
+        var temp = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "." + Guid.NewGuid().ToString("N") + Path.GetExtension(path));
+        try
+        {
+            write(temp);
+            if (!File.Exists(temp)) return null;
+            try { File.Move(temp, path); }
+            catch (IOException) when (File.Exists(path)) { }   // another read of the same bytes got there first
+            return File.Exists(path) ? path : null;
+        }
+        finally { try { if (File.Exists(temp)) File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+    }
 
     /// <summary>
     /// The loose streamed file when one exists, otherwise the bank's copy.
@@ -145,12 +187,8 @@ public sealed class AudioPreview : IDisposable
         catch { return null; }
     }
 
-    public string WriteWem(byte[] data, uint mediaId)
-    {
-        var p = Path.Combine(_cache, $"{mediaId}.wem");
-        File.WriteAllBytes(p, data);
-        return p;
-    }
+    public string WriteWem(byte[] data, uint mediaId) =>
+        Settle(Path.Combine(_cache, Key(data, mediaId) + ".wem"), p => File.WriteAllBytes(p, data));
 
     /// <summary>
     /// Decode to wav, returning the path, or null with a reason.
@@ -169,12 +207,15 @@ public sealed class AudioPreview : IDisposable
                     "Settings > Tools shows what it is using and can point at your own copy.";
             return null;
         }
-        var wem = WriteWem(data, mediaId);
-        var wav = Path.Combine(_cache, $"{mediaId}.wav");
         try
         {
-            Run($"{AudioDecode.NoLoop} -o \"{wav}\" \"{wem}\"", out var stderr, out var exit);
-            if (File.Exists(wav)) return wav;
+            var wem = WriteWem(data, mediaId);
+            // These bytes' own wav: decoded once, then played from the cache. Never another version's.
+            string stderr = null;
+            var exit = 0;
+            var wav = Settle(Path.Combine(_cache, Key(data, mediaId) + ".wav"),
+                             temp => Run($"{AudioDecode.NoLoop} -o \"{temp}\" \"{wem}\"", out stderr, out exit));
+            if (wav is not null) return wav;
 
             // Say which kind of failure it was: a decoder that will not start at all
             // is a different problem from one that rejected this particular sound.

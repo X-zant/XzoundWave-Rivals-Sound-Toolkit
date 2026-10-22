@@ -175,6 +175,26 @@ public static class AudioDecodeSelfTest
                 Check("a level change ships one pass",
                       scaled is not null && scaled.TotalSamples == Frames * 2,
                       scaled is null ? "it would not decode" : $"{scaled.TotalSamples / 2} frames");
+
+                // Two versions of one sound (a mod's and the game's), the first still held open the way
+                // the player holds what it played. Named by the media id alone, the second decode could
+                // not overwrite the first on Windows and handed it back: Play the game's original played
+                // the mod again. Each version is its own file now.
+                var modded = Wav(1, 16, 2, samples);
+                var game = Wav(1, 16, 2, samples[..(samples.Length / 2)]);
+                var first = preview.Decode(modded, 990000003, out var firstWhy);
+                if (first is null) Check("two versions of one sound each play as themselves", false, firstWhy);
+                else
+                {
+                    string second;
+                    using (new FileStream(first, FileMode.Open, FileAccess.Read, FileShare.Read))
+                        second = preview.Decode(game, 990000003, out _);
+                    var frames = second is null ? -1 : WwiseWem.ReadWav(File.ReadAllBytes(second)).Pcm.Length / 4;
+                    Check("two versions of one sound each play as themselves, the other held open",
+                          second is not null && second != first && frames == Frames / 2,
+                          $"{frames} frames from the second, {Frames / 2} expected");
+                    Check("and the same bytes again play from the cache", preview.Decode(modded, 990000003, out _) == first);
+                }
             }
 
             // ---- a format with no in-process reader ------------------------
